@@ -1,0 +1,28 @@
+# Cambridge 15 Academic.pdf  pages=145
+
+p   1: <empty>
+p   2: 
+p   3: <empty>
+p   4: <empty>
+p   5: @IELTSBANK
+p   6: @IELTSBANK
+p   7: <empty>
+p   8: <empty>
+p   9: <empty>
+p  10: <empty>
+p  12: PART 1
+        -> PART 1
+        -> Questions 1–10
+p  13: PART 2
+        -> PART 2
+        -> Questions 11–20
+        -> Questions 11–14
+        -> Questions 15–20
+p  14: 
+        -> PART 3
+        -> Questions 21–30
+        -> Questions 21–26
+        -> Questions 21–26.
+p  15: PART 4
+        -> PART 4
+        -> Questions 31–40

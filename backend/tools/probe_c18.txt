@@ -1,0 +1,357 @@
+# Cambridge 18.pdf  pages=147
+
+p   1: iP CAMBRIDGE
+p   2: What does it mean?
+        -> Answer key
+p   3: CAMBRIDGE
+p   4: g#«£§g (cip)iMg
+p   5: Contents
+        -> Test 1
+        -> Test 2
+        -> Test 3
+        -> Test 4
+p   6: Introduction
+p   7: Introduction
+p   8: Introduction
+p   9: Introduction
+p  10: Introduction
+p  12: Test 1
+        -> Test 1
+        -> LISTENING
+        -> Questions 1-10
+        -> PART 1
+p  13: Listening
+        -> Questions 11-20
+        -> PART 2
+        -> Questions 11-13
+p  14: Test 1
+        -> Test 1
+        -> Questions 16-20
+        -> Questions 16-20.
+p  15: Listening
+        -> Questions 21-30
+        -> PART 3
+        -> Questions 21-26
+p  16: Test 1
+        -> Test 1
+p  17: Listening
+        -> Questions 31-40
+        -> PART 4
+p  18: Test 1
+        -> Test 1
+        -> READING
+        -> READING PASSAGE 1
+p  20: Test 1
+        -> Test 1
+        -> Questions 1-3
+        -> Questions 4-7
+p  21: Reading
+        -> Questions 8-13
+p  22: Test 1
+        -> Test 1
+        -> READING PASSAGE 2
+p  24: Test 1
+        -> Test 1
+        -> Questions 14-18
+        -> Reading Passage 2 has seven paragraphs, A-G.
+p  25: Reading
+        -> Questions 19-21
+p  26: Test 1
+        -> Test 1
+        -> Questions 22-26
+p  27: Reading
+        -> READING PASSAGE 3
+p  28: Test 1
+        -> Test 1
+p  29: Reading
+        -> Questions 27-31
+        -> Reading Passage 3 has six sections, A-F.
+        -> Questions 32-35
+p  30: Test 1
+        -> Test 1
+        -> Questions 36-40
+p  31: WRITING
+        -> WRITING
+        -> WRITING TASK 1
+p  32: Test 1
+        -> Test 1
+        -> WRITING TASK 2
+p  33: SPEAKING
+        -> SPEAKING
+        -> PART 1
+        -> PART 2
+        -> PART 3
+p  34: lest 2
+        -> LISTENING
+        -> Questions 1-10
+        -> PART 1
+        -> Questions 1-5
+p  35: Listening
+        -> Questions 6-10
+p  36: Test 2
+        -> Test 2
+        -> Questions 11-20
+        -> PART 2
+p  37: Listening
+        -> Questions 15-20
+p  38: Test 2
+        -> Test 2
+        -> Questions 21-30
+        -> PART 3
+        -> Questions 21-24
+p  39: Listening
+        -> Questions 27-30
+        -> Questions 27-30.
+p  40: Test 2
+        -> Test 2
+        -> Questions 31-40
+        -> PART 4
+p  41: READING
+        -> READING
+        -> READING PASSAGE 1
+p  42: Test 2
+        -> Test 2
+p  43: Reading
+        -> Questions 1-8
+p  44: Test 2
+        -> Test 2
+        -> Questions 9-13
+p  45: Reading
+        -> READING PASSAGE 2
+p  46: Test 2
+        -> Test 2
+p  47: Reading
+        -> Questions 14-19
+p  48: Test 2
+        -> Test 2
+        -> Questions 20-23
+p  49: Reading
+        -> Questions 24-26
+p  50: Test 2
+        -> Test 2
+        -> READING PASSAGE 3
+p  52: Test 2
+        -> Test 2
+        -> Questions 27-33
+p  53: Reading
+        -> Questions 34-40
+p  54: Test 2
+        -> Test 2
+        -> WRITING
+        -> WRITING TASK 1
+p  55: Writing
+        -> WRITING TASK 2
+p  56: Test 2
+        -> Test 2
+        -> SPEAKING
+        -> PART 1
+        -> PART 2
+        -> PART 3
+p  57: sest 3
+        -> LISTENING
+        -> PART 1
+        -> Questions 1-10
+        -> Questions 1-4
+        -> Questions 5-10
+p  58: Test 3
+        -> Test 3
+        -> PART 2
+        -> Questions 11-20
+p  59: Listening
+        -> Questions 15-20
+p  60: Test 3
+        -> Test 3
+        -> Questions 21-30
+        -> PART 3
+p  61: Listening
+        -> Questions 25-30
+        -> Questions 25-30.
+p  62: Test 3
+        -> Test 3
+        -> Questions 31-40
+        -> PART 4
+p  63: READING
+        -> READING
+        -> READING PASSAGE 1
+p  64: Test 3
+        -> Test 3
+p  65: Reading
+        -> Questions 1-4
+        -> Reading Passage 1 has eight sections, A-H.
+        -> Questions 5-8
+p  66: Test 3
+        -> Test 3
+        -> Questions 9-13
+p  67: Reading
+        -> READING PASSAGE 2
+        -> Questions 14-20
+        -> Reading Passage 2 has seven paragraphs, A-G.
+p  68: Test 3
+        -> Test 3
+p  70: Test 3
+        -> Test 3
+        -> Questions 21-23
+p  71: Reading
+        -> Questions 24-26
+p  72: Test 3
+        -> Test 3
+        -> READING PASSAGE 3
+p  74: Test 3
+        -> Test 3
+        -> Questions 27-30
+p  75: Reading
+        -> Questions 31-35
+p  76: Test 3
+        -> Test 3
+        -> Questions 36-40
+p  77: WRITING
+        -> WRITING
+        -> WRITING TASK 1
+p  78: Test 3
+        -> Test 3
+        -> WRITING TASK 2
+p  79: SPEAKING
+        -> SPEAKING
+        -> PART 1
+        -> PART 2
+        -> PART 3
+p  80: Test 4
+        -> Test 4
+        -> LISTENING
+        -> PART 1
+        -> Questions 1-10
+p  81: Listening
+        -> Questions 11-20
+        -> PART 2
+        -> Questions 11-14
+p  82: Test 4
+        -> Test 4
+        -> Questions 15-20
+        -> Questions 15-20.
+p  83: Listening
+        -> Questions 21-30
+        -> PART 3
+        -> Questions 23-27
+        -> Questions 23-27.
+p  84: Test 4
+        -> Test 4
+        -> Questions 28-30
+p  85: Listening
+        -> Questions 31-40
+        -> PART 4
+p  86: Test 4
+        -> Test 4
+        -> READING
+        -> READING PASSAGE 1
+p  88: Test 4
+        -> Test 4
+        -> Questions 1-5
+        -> Reading Passage 1 has five paragraphs, A-E.
+        -> Questions 6-9
+p  90: Test 4
+        -> Test 4
+        -> READING PASSAGE 2
+p  92: Test 4
+        -> Test 4
+        -> Questions 14-16
+p  93: Reading
+        -> Questions 17-22
+        -> Questions 23-26
+p  94: Test 4
+        -> Test 4
+        -> READING PASSAGE 3
+p  96: Test 4
+        -> Test 4
+        -> Questions 27-30
+        -> Questions 31-36
+p  97: Reading
+        -> Questions 37-40
+p  98: Test 4
+        -> Test 4
+        -> WRITING
+        -> WRITING TASK 1
+p  99: Writing
+        -> WRITING TASK 2
+p 100: Test 4
+        -> Test 4
+        -> SPEAKING
+        -> PART 1
+        -> PART 2
+        -> PART 3
+p 101: Audioscripts
+        -> TEST 1
+        -> PART 1
+p 102: Audioscripts
+        -> PART 2
+p 103: Test 1
+        -> Test 1
+        -> PART 3
+p 105: Test 1
+        -> Test 1
+p 106: Audioscripts
+        -> TEST 2
+        -> PART 1
+p 107: Test 2
+        -> Test 2
+p 108: Audioscripts
+        -> PART 3
+p 109: Test 2
+        -> Test 2
+p 110: Audioscripts
+        -> PART 4
+p 111: TEST 3
+        -> TEST 3
+        -> PART 1
+p 115: Test 3
+        -> Test 3
+        -> PART 4
+p 116: Audioscripts
+        -> TEST 4
+        -> PART 1
+p 117: Test 4
+        -> Test 4
+        -> PART 2
+p 118: Audioscripts
+        -> PART 3
+p 119: Test 4
+        -> Test 4
+p 121: Listening and Reading answer keys
+        -> TEST 1
+        -> LISTENING
+        -> Answer key with extra explanations
+p 122: Listening and Reading answer keys
+        -> TEST 1
+        -> READING
+        -> Answer key with extra explanations
+        -> Reading Passage 1,
+        -> Questions 1-13
+p 123: Listening and Reading answer keys
+        -> TEST 2
+        -> LISTENING
+        -> Answer key with extra explanations
+p 124: Listening and Reading answer keys
+        -> TEST 2
+        -> READING
+        -> Answer key with extra explanations
+        -> Reading Passage 1,
+        -> Questions 1-13
+p 125: Listening and Reading answer keys
+        -> TEST 3
+        -> LISTENING
+        -> Answer key with extra explanations
+p 126: Listening and Reading answer keys
+        -> TEST 3
+        -> READING
+        -> Answer key with extra explanations
+        -> Reading Passage 1,
+        -> Questions 1-13
+p 127: Listening and Reading answer keys
+        -> TEST 4
+        -> LISTENING
+        -> Answer key with extra explanations
+p 128: Listening and Reading answer keys
+        -> TEST 4
+        -> READING
+        -> Answer key with extra explanations
+        -> Reading Passage 1,
+        -> Questions 1-13

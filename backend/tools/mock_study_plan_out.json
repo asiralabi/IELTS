@@ -1,0 +1,71 @@
+{
+  "summary": "The student has shown strengths in Writing Task 2, achieving a band 7.5, but has areas for improvement in Speaking Part 2, where they struggle with fluency, sentence structure, and vocabulary. In Reading and Listening, the student has demonstrated a need for improvement, with estimated band scores of 6.25 and 5.0 respectively. To reach the target band of 7.5, the student needs to focus on developing their speaking skills, improving their reading comprehension, and enhancing their listening abilities.",
+  "priorities": [
+    "Improve Speaking Part 2 fluency and sentence structure",
+    "Enhance Reading comprehension and accuracy",
+    "Develop Listening skills and accuracy"
+  ],
+  "study_plan": [
+    {
+      "day": 1,
+      "focus": "Speaking Part 2",
+      "tasks": [
+        "Practice speaking about a familiar topic for 2 minutes without hesitation or fillers",
+        "Record yourself and review your performance, focusing on sentence structure and grammar"
+      ]
+    },
+    {
+      "day": 2,
+      "focus": "Reading comprehension",
+      "tasks": [
+        "Read a passage from Cambridge IELTS book 14, Test 2, and attempt to answer the questions",
+        "Review your answers and analyze your mistakes, focusing on identifying the main ideas and supporting details"
+      ]
+    },
+    {
+      "day": 3,
+      "focus": "Listening skills",
+      "tasks": [
+        "Listen to a recording from the official IELTS website and attempt to answer the questions",
+        "Review your answers and analyze your mistakes, focusing on identifying the main ideas and supporting details"
+      ]
+    },
+    {
+      "day": 4,
+      "focus": "Speaking Part 2",
+      "tasks": [
+        "Practice speaking about a familiar topic for 2 minutes, focusing on using precise vocabulary",
+        "Record yourself and review your performance, focusing on vocabulary usage"
+      ]
+    },
+    {
+      "day": 5,
+      "focus": "Reading comprehension",
+      "tasks": [
+        "Read a passage from Cambridge IELTS book 10, Test 3, and attempt to answer the questions",
+        "Review your answers and analyze your mistakes, focusing on identifying the main ideas and supporting details"
+      ]
+    },
+    {
+      "day": 6,
+      "focus": "Listening skills",
+      "tasks": [
+        "Listen to a recording from the official IELTS website and attempt to answer the questions",
+        "Review your answers and analyze your mistakes, focusing on identifying the main ideas and supporting details"
+      ]
+    },
+    {
+      "day": 7,
+      "focus": "Full timed practice",
+      "tasks": [
+        "Attempt a full timed practice test for Speaking, Reading, and Listening",
+        "Review your performance and analyze your mistakes, focusing on identifying areas for improvement"
+      ]
+    }
+  ],
+  "resources": [
+    "Cambridge IELTS book 14, Test 2",
+    "Cambridge IELTS book 10, Test 3",
+    "Official IELTS website recordings"
+  ]
+}

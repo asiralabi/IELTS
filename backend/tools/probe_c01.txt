@@ -1,0 +1,216 @@
+# Cambridge Practice Tests for IELTS 1.pdf  pages=162
+
+p   1: i
+p   2: ii
+p   3: iii
+p   4: iv
+p   5: v
+p   6: Acknowledgements
+p   7: 1
+p   8: 2
+p   9: 3
+p  10: 4
+p  18: 12
+        -> LISTENING
+p  20: 14
+        -> SECTION 2     Questions 11-21
+p  22: 16
+        -> SECTION 3    Questions 22-31
+p  24: 18
+        -> SECTION 4    Questions 32-41
+p  26: 20
+        -> READING PASSAGE 1
+p  30: 24
+        -> READING PASSAGE 2
+p  34: 28
+        -> READING PASSAGE 3
+p  36: 30
+        -> Reading Passage 3 describes a number of cause and effect relationships. Match ea
+p  37: Writing
+        -> WRITING
+        -> WRITING TASK 1
+p  38: 32
+        -> WRITING TASK 2
+p  39: SPEAKING
+        -> SPEAKING
+p  40: 34
+        -> LISTENING
+p  46: 40
+        -> READING
+        -> READING PASSAGE 1
+p  50: 44
+        -> READING PASSAGE 2
+p  52: 46
+        -> Reading Passage 2
+p  54: 48
+        -> READING PASSAGE 3
+p  57: 51
+        -> WRITING TASK 1
+        -> WRITING
+p  58: 52
+        -> WRITING TASK 2
+p  59: 53
+        -> SPEAKING
+p  60: 54
+        -> LISTENING
+        -> SECTION 1
+        -> Questions 1-12
+        -> Questions 1-4
+p  61: 55
+        -> Questions 5-10
+        -> Questions 11-12
+p  62: 56
+        -> SECTION 2
+        -> Questions 13-23
+p  63: 57
+        -> SECTION 3
+        -> Questions 24-32
+        -> Questions 24-27
+p  64: 58
+        -> SECTION 4
+        -> Questions 33-42
+        -> Questions 33-37
+p  65: 59
+        -> Questions 38-42
+p  66: 60
+        -> READING
+        -> READING PASSAGE 1
+p  68: 62
+        -> Questions 1-6
+        -> Reading Passage 1 has seven paragraphs (A-G). Choose the most suitable heading f
+p  69: 63
+        -> Questions 7-11
+p  70: 64
+        -> READING PASSAGE 2
+p  72: 66
+        -> Questions 13-20
+        -> Reading Passage 2 has nine paragraphs (A-I). Choose the most suitable heading fo
+p  73: 67
+        -> Questions 21-26
+p  74: 68
+        -> READING PASSAGE 3
+p  76: 70
+        -> Questions 27-32
+        -> Questions 33-34
+p  77: 71
+        -> Questions 35-38
+p  78: 72
+        -> WRITING TASK 1
+        -> WRITING
+p  79: 73
+        -> WRITING TASK 2
+p  80: 74
+        -> SPEAKING
+p  81: 75
+        -> LISTENING
+        -> SECTION 1
+        -> Questions 1-12
+        -> Questions 1-5
+p  82: 76
+        -> Questions 11-12
+        -> Questions 6-10
+p  83: 77
+        -> SECTION 2
+        -> Questions 13-21
+p  84: 78
+        -> SECTION 3
+        -> Questions 22-31
+        -> Questions 22-25
+        -> Questions 26-31
+p  85: 79
+        -> SECTION 4
+        -> Questions 32-42
+        -> Questions 32-42
+p  86: 80
+        -> READING
+        -> READING PASSAGE 1
+p  88: 82
+        -> Questions 1-5
+        -> Reading Passage 1 has six paragraphs (A-F). Choose the most suitable heading/or 
+p  89: 83
+        -> Questions 6-8
+        -> Questions 9-13
+p  90: 84
+        -> READING PASSAGE 2
+p  92: 86
+        -> Questions 14-19
+        -> Reading Passage 2 has 7 paragraphs (A-G). State which paragraph discusses each o
+        -> Questions 20-23
+        -> Questions 24-27
+p  93: 87
+        -> READING PASSAGE 3
+p  95: 89
+        -> Questions 28-31
+        -> Questions 32-35
+p  96: 90
+        -> Questions 36-38
+p  97: 91
+        -> WRITING TASK 1
+        -> WRITING
+p  99: 93
+        -> SPEAKING
+p 101: 95
+        -> Questions 1-4
+        -> Questions 5-8
+p 103: 97
+        -> Questions 9-14
+p 104: 9 8
+        -> Questions 15-21
+p 106: 100
+        -> Questions 22-29
+p 108: 102
+        -> READING PASSAGE 3
+p 110: 104
+        -> Questions 30-36
+        -> Questions 37-41
+p 111: 105
+        -> WRITING TASK 1
+        -> WRITING
+p 112: 106
+        -> WRITING TASK 2
+p 113: 107
+        -> SECTION 1
+p 115: 109
+        -> SECTION 3
+p 117: 111
+        -> SECTION 4
+p 118: 112
+        -> SECTION 1
+p 120: 114
+        -> SECTION 2
+p 125: 119
+        -> SECTION 2
+p 126: 120
+        -> SECTION 3
+p 128: 122
+        -> SECTION 4
+p 129: 123
+        -> SECTION 1
+p 131: 125
+        -> SECTION 2
+p 132: 126
+        -> SECTION 3
+p 134: 128
+        -> SECTION 4
+p 136: 130
+        -> LISTENING
+p 137: 131
+        -> READING
+        -> Questions 1-8
+        -> Questions 9-15
+p 140: 134
+        -> LISTENING KEYS
+p 141: 135
+        -> READING
+p 144: 138
+        -> LISTENING
+p 145: 139
+        -> READING
+p 148: 142
+        -> LISTENING
+p 149: 143
+        -> READING
+p 152: 146
+        -> READING MODULE
+p 155: 149
+        -> WRITING: MODEL ANSWERS

@@ -1,0 +1,393 @@
+# Cambridge Practice Tests for IELTS 3.pdf  pages=179
+
+p   1: <empty>
+p   2: Cambridge IELTS 3
+p   3: PUBLISHED BY THE PRESS SYNDICATE OF THE UNIVERSITY OF CAMBRIDGE
+p   4: Contents
+        -> Answer key        149
+p   5: Acknowledgements
+p   6: 1
+p   7: Introduction
+p   8: Introduction
+p   9: Introduction
+p  10: Introduction
+p  13: 8
+        -> Test 1
+        -> LISTENING
+        -> SECTION 1         Questions 1-10
+p  14: Listening
+        -> Questions 13-17
+p  15: Test 1
+        -> Test 1
+        -> Questions 18-20
+p  16: Listening
+        -> SECTION 3         Questions 21-30
+p  17: Test 1
+        -> Test 1
+        -> SECTION 4        Questions 31-40
+        -> Questions 31-36
+p  18: Listening
+        -> Questions 37-40
+p  19: Test 1
+        -> Test 1
+        -> READING PASSAGE 1
+        -> Questions 1-4
+        -> Reading Passage 1 has six paragraphs A-F.
+p  21: Test 1
+        -> Test 1
+p  22: Reading
+        -> Questions 7-10
+p  23: Test 1
+        -> Test 1
+        -> Questions 11-14
+p  24: Reading
+        -> READING PASSAGE 2
+p  25: Test 1
+        -> Test 1
+p  26: Reading
+        -> Questions 15-17
+        -> Questions 18-21
+p  27: Test 1
+        -> Test 1
+        -> Questions 22-24
+        -> Questions 25-28
+p  28: Reading
+        -> READING PASSAGE 3
+        -> Questions 29-33
+        -> Reading Passage 3 has seven paragraphs A-G.
+p  29: Test 1
+        -> Test 1
+p  31: Test 1
+        -> Test 1
+        -> Questions 36-39
+p  32: Writing
+        -> WRITING
+        -> WRITING TASK 1
+p  33: Test 1
+        -> Test 1
+        -> WRITING TASK 2
+p  34: Speaking
+        -> SPEAKING
+        -> PART 1
+        -> PART 2
+        -> PART 3
+p  35: 30
+        -> Test 2
+        -> LISTENING
+        -> SECTION 1        Questions 1-10
+        -> Questions 1-5
+p  36: Listening
+        -> Questions 6-10
+p  37: Test 2
+        -> Test 2
+        -> SECTION 2         Questions 11-20
+        -> Questions 11-15
+p  38: Listening
+        -> Questions 16-20
+p  39: Test 2
+        -> Test 2
+        -> SECTION 3       Questions 21-30
+        -> Questions 21-24
+p  40: Listening
+        -> Questions 25-29
+p  41: Test 2
+        -> Test 2
+p  42: Listening
+        -> Questions 35-37
+        -> Questions 38-40
+p  43: Test 2
+        -> Test 2
+        -> READING
+        -> READING PASSAGE 1
+p  45: Test 2
+        -> Test 2
+        -> Questions 1-5
+        -> Questions 6-8
+p  46: Reading
+        -> Question 9-13
+p  47: Test 2
+        -> Test 2
+        -> READING PASSAGE 2
+        -> Questions 14-18
+        -> Reading Passage 2 has six sections A-F.
+p  49: Test 2
+        -> Test 2
+p  50: Reading
+        -> Questions 19-22
+p  51: Test 2
+        -> Test 2
+        -> Questions 23-27
+p  52: Reading
+        -> READING PASSAGE 3
+p  53: Test 2
+        -> Test 2
+p  54: Reading
+        -> Questions 29-35
+p  55: Test 2
+        -> Test 2
+        -> Questions 36-39
+p  56: Writing
+        -> WRITING
+        -> WRITING TASK 1
+p  57: Test 2
+        -> Test 2
+        -> WRITING TASK 2
+p  58: Writing
+        -> SPEAKING
+        -> PART 1
+        -> PART 2
+        -> PART 3
+p  59: 54
+        -> Test 3
+        -> LISTENING
+        -> SECTION 1         Questions 1-10
+p  60: Listening
+        -> Questions 11-13
+        -> Questions 14-16
+p  61: Test 3
+        -> Test 3
+        -> Questions 17-20
+p  62: Listening
+        -> SECTION 3         Questions 21-30
+p  63: Test 3
+        -> Test 3
+        -> Questions 31-33
+        -> Questions 34-36
+p  64: Listening
+        -> Questions 37-40
+p  65: Test 3
+        -> Test 3
+        -> READING
+        -> READING PASSAGE 1
+p  67: Test 3
+        -> Test 3
+        -> Questions 1-6
+p  68: Reading
+        -> Questions 7-12
+p  69: Test 3
+        -> Test 3
+        -> READING PASSAGE 2
+        -> Questions 13-15
+        -> Reading Passage 2 has six sections A-F.
+p  71: Test 3
+        -> Test 3
+p  72: Reading
+        -> Questions 16-21
+p  73: Test 3
+        -> Test 3
+        -> Questions 22-25
+p  74: Reading
+        -> READING PASSAGE 3
+p  75: Test 3
+        -> Test 3
+p  76: Reading
+        -> Questions 26-28
+        -> Questions 29-34
+p  77: Test 3
+        -> Test 3
+        -> Questions 35-37
+        -> Questions 38-40
+p  78: Writing
+        -> WRITING
+        -> WRITING TASK 1
+p  79: Test 3
+        -> Test 3
+        -> WRITING TASK 2
+p  80: Speaking
+        -> SPEAKING
+        -> PART 1
+        -> PART 2
+        -> PART 3
+p  81: 76
+        -> Test 4
+        -> LISTENING
+        -> SECTION 1         Questions 1-10
+        -> Questions 3-5
+p  82: Listening
+        -> Questions 6-10
+p  83: Test 4
+        -> Test 4
+        -> SECTION 2        Questions 11-20
+p  84: Listening
+        -> Questions 21-23
+        -> Questions 24-26
+p  85: Test 4
+        -> Test 4
+        -> Questions 27-30
+p  86: Listening
+        -> Questions 31-34
+p  87: Test 4
+        -> Test 4
+        -> Questions 36-38
+p  89: Test 4
+        -> Test 4
+        -> READING
+        -> READING PASSAGE 1
+p  91: Test 4
+        -> Test 4
+        -> Questions 1-5
+p  92: Reading
+        -> Questions 6-10
+        -> Questions 11-13
+p  93: Test 4
+        -> Test 4
+        -> READING PASSAGE 2
+p  95: Test 4
+        -> Test 4
+        -> Questions 17-19
+p  96: Reading
+        -> Questions 20-26
+p  97: Test 4
+        -> Test 4
+        -> READING PASSAGE 3
+p  99: Test 4
+        -> Test 4
+p 100: Reading
+        -> Questions 28-30
+        -> Questions 31-36
+p 101: Test 4
+        -> Test 4
+        -> Questions 37-40
+p 102: Writing
+        -> WRITING
+        -> WRITING TASK 1
+p 103: Test 4
+        -> Test 4
+        -> WRITING TASK 2
+p 104: Speaking
+        -> SPEAKING
+        -> PART 1
+        -> PART 2
+        -> PART 3
+p 105: 100
+        -> READING
+        -> SECTION 1         Questions 1-13
+        -> Questions 1-8
+p 107: General Training: Reading and Writing Test A
+        -> Questions 9-13
+p 108: Reading
+        -> SECTION 2     Questions 14-26
+        -> Questions 14-19
+p 110: Reading
+        -> Questions 20-26
+p 112: Reading
+        -> SECTION 3         Questions 27-40
+        -> Questions 28-31
+p 115: General Training: Reading and Writing Test A
+        -> Questions 32-36
+p 116: Reading
+        -> Questions 37-40
+p 117: General Training: Reading and Writing Test A
+        -> WRITING
+        -> WRITING TASK 1
+p 118: Writing
+        -> WRITING TASK 2
+p 119: 114
+        -> READING
+        -> SECTION 1         Questions 1-13
+        -> Questions 1-4
+p 120: Reading
+        -> Questions 5-9
+p 121: General Training: Reading and Writing Test B
+        -> Questions 10-13
+p 123: General Training: Reading and Writing Test B
+        -> SECTION 2         Questions 14-27
+        -> Questions 14-17
+p 125: General Training: Reading and Writing Test B
+        -> Questions 20-27
+p 128: Reading
+        -> Questions 28-33
+p 129: General Training: Reading and Writing Test B
+        -> Questions 34-40
+p 130: Writing
+        -> WRITING
+        -> WRITING TASK 1
+p 131: General Training: Reading and Writing Test B
+        -> WRITING TASK 2
+p 132: 127
+        -> TEST 1
+        -> SECTION 1
+p 133: Test 1
+        -> Test 1
+        -> SECTION 2
+p 135: Test 1
+        -> Test 1
+        -> SECTION 3
+p 136: Tipescripts
+        -> SECTION 4
+p 137: Test 1
+        -> Test 1
+p 138: Tipescripts
+        -> TEST 2
+        -> SECTION 1
+p 139: Test 2
+        -> Test 2
+        -> SECTION 2
+p 140: Tipescripts
+        -> SECTION 3
+p 141: Test 2
+        -> Test 2
+p 143: Tapescripts
+        -> TEST 3
+        -> SECTION 1
+p 144: Test 3
+        -> Test 3
+p 145: Tapescripts
+        -> SECTION 3
+p 146: Test 3
+        -> Test 3
+p 147: Tapescripts
+        -> SECTION 4
+p 148: Test 3
+        -> Test 3
+p 149: Tapescripts
+        -> TEST 4
+        -> SECTION 1
+p 150: Test 4
+        -> Test 4
+        -> SECTION 2
+p 151: Tapescripts
+        -> SECTION 3
+p 152: Test 4
+        -> Test 4
+p 154: 149
+        -> Answer key
+        -> TEST 1
+        -> LISTENING
+p 155: Answer key
+        -> Answer key
+        -> Reading Passage 1, Questions 1-14
+        -> Reading Passage 2, Questions 15-28
+        -> Reading Passage 3, Questions 29-40
+p 156: Answer key
+        -> Answer key
+        -> TEST 2
+        -> LISTENING
+p 157: Answer key
+        -> Answer key
+        -> Reading Passage 1, Questions 1-13
+        -> Reading Passage 2, Questions 14-28
+p 158: Answer key
+        -> Answer key
+        -> TEST 3
+        -> LISTENING
+p 159: Answer key
+        -> Answer key
+        -> Reading Passage 1, Questions 1-12
+        -> Reading Passage 2, Questions 13—25
+        -> Reading Passage 3, Questions 26-40
+p 160: Answer key
+        -> Answer key
+        -> TEST 4
+        -> LISTENING
+p 161: Answer key
+        -> Answer key
+        -> Reading Passage 1, Questions 1-13
+        -> Reading Passage 2, Questions 14-27
+        -> Reading Passage 3, Questions 28-40
+p 162: Answer key
+        -> Answer key
+        -> READING
+p 163: Answer key
+        -> Answer key
+        -> READING
