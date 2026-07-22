@@ -270,20 +270,87 @@ def trainer_cell(max_seq: int, epochs: int, out_lora: str) -> dict:
 TRAIN = code("trainer_stats = trainer.train()", "print(trainer_stats)")
 
 
+def _gguf_export_lines(out_gguf: str) -> list[str]:
+    # Disk-safe GGUF (q4_k_m) export. Shared by the training notebooks' save
+    # cell AND the standalone conversion notebook.
+    return [
+        "# The GGUF path writes a merged fp16 model, then an F16 GGUF, then the",
+        "# q4_k_m — transiently ~2x the model size (a 7B needs ~30 GB). Writing",
+        "# those into /kaggle/working (~20 GB quota) overflows it and dies with",
+        "# 'OSError: Not enough free space'. So send every intermediate to /tmp",
+        "# (the container's larger scratch) and copy back ONLY the final ~4.7 GB",
+        "# quantised GGUF + Modelfile.",
+        "import os, glob, shutil",
+        "",
+        '_TMP = "/tmp/_gguf_export"',
+        "if os.path.isdir(_TMP):",
+        "    shutil.rmtree(_TMP)",
+        'model.save_pretrained_gguf(_TMP, tokenizer, quantization_method="q4_k_m")',
+        "",
+        "# Unsloth writes the GGUF into a sibling '<dir>_gguf/' folder. Copy only",
+        "# the quantised file — never the ~15 GB F16 intermediate, if it lingers.",
+        '_SRC = _TMP + "_gguf"',
+        f'_DST = "/kaggle/working/{out_gguf}_gguf"',
+        "os.makedirs(_DST, exist_ok=True)",
+        '_all = glob.glob(f"{_SRC}/*.gguf")',
+        '_keep = [p for p in _all if "q4_k_m" in os.path.basename(p).lower()] or _all',
+        '_keep += glob.glob(f"{_SRC}/Modelfile")',
+        "for _f in _keep:",
+        "    shutil.copy(_f, _DST)",
+        '    print("kept", os.path.basename(_f), f"({os.path.getsize(_f)/1024**3:.2f} GiB)")',
+        '_final = glob.glob(f"{_DST}/*.gguf")',
+        'assert _final, "no GGUF produced — check the conversion log above"',
+        'print("Final GGUF folder:", _DST, "->", [os.path.basename(p) for p in _final])',
+    ]
+
+
 def save_cell(out_lora: str, out_gguf: str) -> dict:
-    return code(
-        "# 1) LoRA adapter only (tiny, ~100-300 MB) — load on top of the base.",
+    return code(*([
+        "# 1) LoRA adapter only (tiny, ~100-300 MB) — load on top of the base later.",
         f'model.save_pretrained("{out_lora}")',
         f'tokenizer.save_pretrained("{out_lora}")',
         "",
-        "# 2) GGUF (q4_k_m) for llama.cpp / Ollama serving on CPU or small GPU.",
-        "#    Merges + quantises; needs several GB of /kaggle/working disk.",
-        f'model.save_pretrained_gguf("{out_gguf}", tokenizer, quantization_method="q4_k_m")',
+        "# 2) Quantised GGUF for llama.cpp / Ollama (disk-safe: intermediates -> /tmp).",
+    ] + _gguf_export_lines(out_gguf) + [
         "",
         "# 3) (optional) merged 16-bit HF weights for vLLM (~6 GB for 3B, ~14 GB for",
-        "#    7B) — uncomment",
-        "#    only if you have the disk / will push to the HF Hub.",
+        "#    7B) — uncomment only if you have the disk / will push to the HF Hub.",
         f'# model.save_pretrained_merged("{out_lora}-merged16", tokenizer, save_method="merged_16bit")',
+    ]))
+
+
+def load_adapter_cell(max_seq: int) -> dict:
+    return code(
+        "import os",
+        'os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"',
+        'os.environ["CUDA_VISIBLE_DEVICES"] = "0"',
+        "",
+        "import glob",
+        "from unsloth import FastLanguageModel",
+        "",
+        "# Find the trained LoRA adapter you attached as an input (Add Input ->",
+        "# Notebook Output -> the training run). We locate the folder that holds",
+        "# adapter_config.json anywhere under /kaggle/input.",
+        '_cfgs = glob.glob("/kaggle/input/**/adapter_config.json", recursive=True)',
+        "if not _cfgs:",
+        "    raise FileNotFoundError(",
+        "        \"No adapter found under /kaggle/input. Add the training run's \"",
+        '        "OUTPUT as an input: Add Input -> Notebook Output -> pick the run "',
+        '        "that saved the *-lora folder, then re-run.")',
+        "ADAPTER_DIR = os.path.dirname(_cfgs[0])",
+        'print("Using adapter:", ADAPTER_DIR)',
+        "",
+        f"MAX_SEQ_LEN = {max_seq}",
+        "# Point from_pretrained at the ADAPTER dir; Unsloth reads its base model",
+        "# from adapter_config.json, downloads it (needs Internet=On), and applies",
+        "# the trained LoRA. No get_peft_model here — the adapter is already trained.",
+        "model, tokenizer = FastLanguageModel.from_pretrained(",
+        "    model_name=ADAPTER_DIR,",
+        "    max_seq_length=MAX_SEQ_LEN,",
+        "    dtype=None,",
+        "    load_in_4bit=True,",
+        '    device_map={"": 0},',
+        ")",
     )
 
 
@@ -490,10 +557,68 @@ evaluator = notebook([
     ),
 ])
 
+# ---------------------------------------------------------------------------
+# Standalone GGUF-export notebook (no retrain) — for when a training run
+# finished (adapter saved) but the GGUF step ran out of /kaggle/working disk.
+
+conversion = notebook([
+    md(
+        "# IELTS — GGUF export from a trained adapter (Kaggle, disk-safe)",
+        "",
+        "Use this when a training run **finished** — the LoRA adapter saved — but",
+        "the GGUF step died with `OSError: Not enough free space`. Unsloth's merge",
+        "+ F16 intermediates need ~30 GB for a 7B, over the ~20 GB",
+        "`/kaggle/working` quota. This notebook **does not retrain**: it loads your",
+        "saved adapter, then runs the export with every intermediate redirected to",
+        "`/tmp`, copying only the final ~4.7 GB quantised GGUF back into",
+        "`/kaggle/working`.",
+        "",
+        "### Before you run",
+        "1. **Attach the trained adapter:** *Add Input → Notebook Output →* the run",
+        "   that saved `qwen2.5-7b-ielts-evaluator-lora` (your evaluator training",
+        "   run). It mounts under `/kaggle/input/…`; cell 2 finds it by searching",
+        "   for `adapter_config.json`, so any adapter works — not just the",
+        "   evaluator's.",
+        "2. **Accelerator = a single GPU T4**, **Internet = On** (the base model is",
+        "   downloaded to merge against). *P100 won't run Unsloth* — see the",
+        "   training notebooks for why.",
+        "3. Run All. The output folder `qwen2.5-7b-ielts-evaluator-gguf_gguf/` will",
+        "   hold `Qwen2.5-7B-Instruct.Q4_K_M.gguf` + a ready `Modelfile`.",
+        "",
+        "> If the adapter isn't in the previous run's output (e.g. the disk filled",
+        "> before it saved), fall back to re-running the evaluator notebook end to",
+        "> end — its save cell is now disk-safe too.",
+    ),
+    md("## 0. Install Unsloth"),
+    INSTALL,
+    md("## 1. Load the base + your trained adapter"),
+    load_adapter_cell(1024),
+    md("## 2. Export GGUF (intermediates → /tmp, final → working)"),
+    code(*_gguf_export_lines("qwen2.5-7b-ielts-evaluator-gguf")),
+    md(
+        "## 3. Serve it",
+        "",
+        "Download `qwen2.5-7b-ielts-evaluator-gguf_gguf/` from the output, then:",
+        "```",
+        "ollama create ielts-evaluator -f Modelfile",
+        "```",
+        "This is the **evaluator** (a separate model from the generator). Wiring it",
+        "into per-answer marking still needs the small backend addition described",
+        "in the evaluator notebook's section 6 (`EVALUATOR_SYSTEM` in",
+        "`app/llm/prompts.py`).",
+    ),
+])
+
 (HERE / "generator_qlora_kaggle.ipynb").write_text(
     json.dumps(generator, indent=1, ensure_ascii=False), encoding="utf-8"
 )
 (HERE / "evaluator_qlora_kaggle.ipynb").write_text(
     json.dumps(evaluator, indent=1, ensure_ascii=False), encoding="utf-8"
 )
-print("wrote generator_qlora_kaggle.ipynb and evaluator_qlora_kaggle.ipynb")
+(HERE / "gguf_export_kaggle.ipynb").write_text(
+    json.dumps(conversion, indent=1, ensure_ascii=False), encoding="utf-8"
+)
+print(
+    "wrote generator_qlora_kaggle.ipynb, evaluator_qlora_kaggle.ipynb, "
+    "and gguf_export_kaggle.ipynb"
+)
