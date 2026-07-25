@@ -16,9 +16,16 @@ def _practice_and_check(client, auth_headers, section: str) -> None:
     else:
         assert body["audio_script"]
 
+    # One right, one wrong — answers must suit the section's own key, because
+    # listening now marks each answer against it for real.
+    answers = (
+        {"1": "TRUE", "2": "FALSE"}
+        if section == "reading"
+        else {"1": "6:00", "2": "SMITH"}
+    )
     resp = client.post(
         f"/{section}/check",
-        json={"practice_id": practice_id, "answers": {"1": "TRUE", "2": "FALSE"}},
+        json={"practice_id": practice_id, "answers": answers},
         headers=auth_headers,
     )
     assert resp.status_code == 200

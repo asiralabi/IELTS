@@ -42,3 +42,6 @@ Thumbs.db
 
 # Logs / scratch
 *.log
+
+# Fine-tuned model weights downloaded from Kaggle (multi-GB, never in git)
+*.gguf

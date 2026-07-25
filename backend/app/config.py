@@ -19,6 +19,12 @@ class Settings(BaseSettings):
     llm_provider: str = "ollama"
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "qwen3:4b"
+    # Task-specific fine-tuned checkpoints, served by ollama alongside the
+    # general model. Each falls back to ollama_model when blank. These exist
+    # because a checkpoint trained only to generate Listening parts is worse
+    # than the general model at every other job in the app.
+    generator_model: str = ""
+    evaluator_model: str = ""
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-4-6"
     openai_api_key: str = ""
@@ -30,6 +36,10 @@ class Settings(BaseSettings):
     llm_max_tokens: int = 4096
     # Per-request timeout in seconds; local CPU inference can be very slow
     llm_timeout: float = 600.0
+    # The fine-tunes are local CPU models generating far more tokens than the
+    # general model ever does (a full listening part is ~2-3k tokens at ~8
+    # tok/s), so they need a budget well past the warm-pool fail-fast cap.
+    finetune_timeout: float = 900.0
 
     # Listening audio (edge-tts neural voices). Synthesis is lazy + cached.
     tts_enabled: bool = True

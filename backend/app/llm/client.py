@@ -126,9 +126,10 @@ async def shutdown_llm_http_client() -> None:
 
 
 class OllamaClient(LLMClient):
-    def __init__(self) -> None:
+    def __init__(self, model: str | None = None, timeout: float | None = None) -> None:
         self.base_url = settings.ollama_base_url.rstrip("/")
-        self.model = settings.ollama_model
+        self.model = model or settings.ollama_model
+        self.timeout = timeout
 
     async def complete(
         self,
@@ -156,8 +157,12 @@ class OllamaClient(LLMClient):
         if json_mode:
             payload["format"] = "json"
         # Fail fast for warm-pool paths: cap at min(llm_timeout, 180s) so a
-        # single stuck request can't hold the semaphore for the raw 600s.
-        per_call_timeout = min(settings.llm_timeout, 180.0)
+        # single stuck request can't hold the semaphore for the raw 600s. The
+        # fine-tunes opt out via an explicit timeout — they legitimately run
+        # for minutes, so the cap would abort every call.
+        per_call_timeout = (
+            self.timeout if self.timeout is not None else min(settings.llm_timeout, 180.0)
+        )
         client = _get_http_client()
         semaphore = _get_ollama_semaphore()
         async with semaphore:
@@ -226,22 +231,43 @@ class OpenAIClient(LLMClient):
         return (resp.choices[0].message.content or "").strip()
 
 
-_client: LLMClient | None = None
+_override: LLMClient | None = None
+_clients: dict[str | None, LLMClient] = {}
+
+# Task name -> the Settings field naming its fine-tuned checkpoint.
+_TASK_MODEL_SETTING = {
+    "generator": "generator_model",
+    "evaluator": "evaluator_model",
+}
 
 
-def get_llm_client() -> LLMClient:
-    global _client
-    if _client is None:
-        provider = settings.llm_provider
-        if provider == "anthropic":
-            _client = AnthropicClient()
-        elif provider == "openai":
-            _client = OpenAIClient()
-        else:
-            _client = OllamaClient()
-    return _client
+def _build_client(task: str | None) -> LLMClient:
+    # A configured fine-tune is always served locally by ollama regardless of
+    # the general provider — no hosted endpoint has our checkpoint.
+    setting = _TASK_MODEL_SETTING.get(task or "")
+    if setting and getattr(settings, setting):
+        return OllamaClient(getattr(settings, setting), timeout=settings.finetune_timeout)
+    provider = settings.llm_provider
+    if provider == "anthropic":
+        return AnthropicClient()
+    if provider == "openai":
+        return OpenAIClient()
+    return OllamaClient()
+
+
+def get_llm_client(task: str | None = None) -> LLMClient:
+    """Return the client for a task ("generator", "evaluator") or the general
+    model when task is None or has no fine-tuned checkpoint configured.
+    """
+    if _override is not None:
+        return _override
+    if task not in _clients:
+        _clients[task] = _build_client(task)
+    return _clients[task]
 
 
 def set_llm_client(client: LLMClient | None) -> None:
-    global _client
-    _client = client
+    """Override every task's client (tests). Pass None to restore routing."""
+    global _override
+    _override = client
+    _clients.clear()

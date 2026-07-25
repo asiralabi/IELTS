@@ -269,6 +269,26 @@ class MockLLMClient(LLMClient):
             return dict(LISTENING_PRACTICE)
         if "marking assistant" in system:
             return dict(CHECK_RESULT)
+        if "answer evaluator" in system:
+            # Judge for real off the prompt so the per-answer listening path is
+            # actually exercised rather than handed a canned verdict.
+            user = messages[-1]["content"] if messages else ""
+            fields = dict(
+                line.split(": ", 1) for line in user.splitlines() if ": " in line
+            )
+            official = fields.get("Official Answer", "").strip()
+            student = fields.get("Student Answer", "").strip()
+            correct = student.casefold() == official.casefold()
+            return {
+                "verdict": "correct" if correct else "incorrect",
+                "reason": (
+                    "Matches the official answer."
+                    if correct
+                    else f"The correct answer is '{official}'."
+                ),
+                "correct_answer": official,
+                "skill": "listening for specific detail",
+            }
         if "study coach" in system:
             return dict(FEEDBACK_PLAN)
         if "diagnostic analyst" in system:
