@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 
 from app.agents.answerability import canon, dangling_structure_error, qtype
 from app.llm.client import get_llm_client
@@ -74,6 +75,63 @@ def _check_word_limits(result: dict) -> None:
 
 _TFNG_TYPES = {canon("true_false_notgiven"), canon("yes_no_notgiven")}
 
+_ARTICLES = {"a", "an", "the"}
+
+
+def _span_tokens(text: str) -> list[str]:
+    """Words of `text` reduced to a comparable form: punctuation and casing
+    dropped, "per cent"/"%" folded to one spelling, leading article stripped
+    (the gap usually already supplies it).
+    """
+    lowered = str(text).lower().replace("per cent", "percent").replace("%", " percent ")
+    words = re.sub(r"[^a-z0-9]+", " ", lowered).split()
+    while words and words[0] in _ARTICLES:
+        words = words[1:]
+    return words
+
+
+def _loose_stem(word: str) -> str:
+    for suffix in ("ing", "ed", "es", "s"):
+        if len(word) > 4 and word.endswith(suffix):
+            return word[: -len(suffix)]
+    return word
+
+
+def _non_verbatim_answers(result: dict) -> list[str]:
+    """Gap-fill answers that appear nowhere in the passage.
+
+    Every completion type instructs the student to choose words FROM THE
+    PASSAGE, so an answer that isn't a span of it cannot be produced or marked.
+    The teacher's habitual failure is a paraphrase or a truncation — a passage
+    reading "gaining attention" keyed as "more attention", or "functionality
+    and community" keyed as "functionality community".
+    """
+    passage = _span_tokens(result.get("passage") or "")
+    if not passage:
+        return []
+    haystack = f" {' '.join(passage)} "
+    stemmed = f" {' '.join(_loose_stem(w) for w in passage)} "
+    answer_key = result.get("answer_key") or {}
+    missing = []
+    for q in result.get("questions") or []:
+        if not isinstance(q, dict) or qtype(q) not in _GAP_FILL_TYPES:
+            continue
+        # A question carrying its own word box is answered from the box.
+        if isinstance(q.get("options"), list) and q["options"]:
+            continue
+        answer = answer_key.get(str(q.get("number")))
+        if answer is None:
+            continue
+        for cand in (str(answer).split(";") if ";" in str(answer) else [str(answer)]):
+            words = _span_tokens(cand)
+            if not words:
+                continue
+            span = f" {' '.join(words)} "
+            span_stemmed = f" {' '.join(_loose_stem(w) for w in words)} "
+            if span not in haystack and span_stemmed not in stemmed:
+                missing.append(f"Q{q.get('number')}={cand.strip()!r}")
+    return missing
+
 
 def validate_practice(result: dict) -> str | None:
     """Reject a practice set a student could not fairly sit.
@@ -140,6 +198,20 @@ def validate_practice(result: dict) -> str | None:
     )
     if dangling:
         return dangling
+
+    # One stray paraphrase is teacher noise and costs a retry for little gain;
+    # two in the same set is a habit that would train the model to invent
+    # answers no student could find.
+    unfindable = _non_verbatim_answers(result)
+    if len(unfindable) >= 2:
+        return (
+            f"these gap-fill answers do not appear anywhere in the passage: "
+            f"{', '.join(unfindable)}. Completion answers must be copied "
+            "verbatim from the passage — the student is told to choose words "
+            "FROM THE PASSAGE, so a paraphrase or a shortened phrase is "
+            "unmarkable. Either reword the passage to contain the answer "
+            "exactly, or key each gap to the exact words already written there."
+        )
 
     tfng = [q for q in questions if qtype(q) in _TFNG_TYPES]
     if len(tfng) >= 4:
