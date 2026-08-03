@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 
 from app.llm.client import get_llm_client
 from app.llm.prompts import (
@@ -74,9 +75,25 @@ def _check_word_limits(result: dict) -> None:
 
 _TFNG_TYPES = {"true_false_notgiven", "yes_no_notgiven"}
 
+# Types the teacher writes as a printed block ("complete the flow chart below").
+# Nothing renders such a block, so the context has to live in the question text.
+_STRUCTURE_TYPES = {
+    "summary_completion",
+    "note_completion",
+    "flow_chart_completion",
+    "table_completion",
+}
+
 
 def _qtype(q: dict) -> str:
     return str(q.get("type") or "").lower().replace("-", "_").replace(" ", "_")
+
+
+def _visual_slots(visual: object) -> set[str]:
+    """Question numbers the `visual` object supplies a fillable cell for."""
+    if not visual:
+        return set()
+    return set(re.findall(r"__(\d+)__", json.dumps(visual, ensure_ascii=False)))
 
 
 def validate_practice(result: dict) -> str | None:
@@ -132,6 +149,25 @@ def validate_practice(result: dict) -> str | None:
                     f"all {len(block)} {name} answers are {answers.pop()!r}; spread the "
                     "correct choices across the options"
                 )
+
+    slots = _visual_slots(result.get("visual"))
+    for q in questions:
+        qtype = _qtype(q)
+        if qtype not in _STRUCTURE_TYPES:
+            continue
+        text = str(q.get("question") or "")
+        if "___" in text or (q.get("options") or []):
+            continue
+        if str(q.get("number")) in slots:
+            continue
+        return (
+            f"question {q.get('number')} ({qtype}) points at a summary/note/table/"
+            "flow chart that the student never sees — nothing renders one. Rewrite "
+            "it to carry its own context with the gap shown as ______, e.g. "
+            "\"NO MORE THAN TWO WORDS. Ore is crushed, then ______, then washed.\""
+            + (" Or emit a `visual` table with a matching __%s__ cell."
+               % q.get("number") if qtype == "table_completion" else "")
+        )
 
     tfng = [q for q in questions if _qtype(q) in _TFNG_TYPES]
     if len(tfng) >= 4:

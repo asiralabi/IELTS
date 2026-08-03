@@ -1013,7 +1013,8 @@ def _pin_teacher_client() -> None:
 
 
 async def _generate(session, spec: SectionSpec, n_tests: int, n_units: int,
-                    difficulty: str | None, concurrency: int = 1) -> list[dict]:
+                    difficulty: str | None, concurrency: int = 1,
+                    offset: int = 0) -> list[dict]:
     """Call the live teacher model, persist rows, and return their payloads."""
     _pin_teacher_client()
     if spec.name == "reading":
@@ -1022,18 +1023,23 @@ async def _generate(session, spec: SectionSpec, n_tests: int, n_units: int,
                 "--generate-tests is Listening-only: reading_trainer has no "
                 "create_full_test. Use --generate N to build practice sets."
             )
-        return await _generate_reading(session, n_units, difficulty, concurrency)
+        return await _generate_reading(session, n_units, difficulty, concurrency,
+                                       offset)
     return await _generate_listening(session, n_tests, n_units, difficulty, concurrency)
 
 
 async def _generate_reading(session, n_sets: int, difficulty: str | None,
-                            concurrency: int) -> list[dict]:
+                            concurrency: int, offset: int = 0) -> list[dict]:
     sem = asyncio.Semaphore(max(1, concurrency))
 
     async def _one(i: int) -> dict | None:
-        diff = difficulty or _DIFFS[i % len(_DIFFS)]
-        topic = _READING_TOPICS[i % len(_READING_TOPICS)]
-        qtypes = _READING_TYPE_MIXES[i % len(_READING_TYPE_MIXES)]
+        # `offset` continues the coprime walk where a previous run stopped, so
+        # resuming a partial run doesn't replay the same topic/mix/difficulty
+        # triples it already generated.
+        j = i + offset
+        diff = difficulty or _DIFFS[j % len(_DIFFS)]
+        topic = _READING_TOPICS[j % len(_READING_TOPICS)]
+        qtypes = _READING_TYPE_MIXES[j % len(_READING_TYPE_MIXES)]
         async with sem:
             print(f"  [teacher] reading set {i + 1}/{n_sets} "
                   f"({diff}, {topic}, {'+'.join(qtypes)}) ...", flush=True)
@@ -1136,7 +1142,7 @@ def run(args: argparse.Namespace) -> None:
         if args.generate_tests or args.generate:
             extra_payloads = asyncio.run(
                 _generate(session, spec, args.generate_tests, args.generate,
-                          args.difficulty, args.concurrency)
+                          args.difficulty, args.concurrency, args.generate_offset)
             )
 
         # --- Cambridge structured JSON ---
@@ -1220,6 +1226,10 @@ def main() -> None:
                          "(Listening: single Parts; Reading: practice sets)")
     ap.add_argument("--generate-tests", type=int, default=0,
                     help="generate N full 4-part Listening tests (Listening only)")
+    ap.add_argument("--generate-offset", type=int, default=0,
+                    help="skip the first N topic/type/difficulty triples "
+                         "(Reading); use it to resume a partial run without "
+                         "regenerating the same combinations")
     ap.add_argument("--concurrency", type=int, default=1,
                     help="units generated in parallel (default 1 = sequential); "
                          "e.g. 4 fires four teacher calls at once")
