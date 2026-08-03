@@ -196,36 +196,63 @@ QUESTION TYPES — allowed values for `type` on each question:
 - `true_false_notgiven` — factual claims about the world stated (or not) in the passage. Answers: TRUE, FALSE, NOT GIVEN.
 - `yes_no_notgiven` — the writer's own opinions, beliefs, claims, or predictions. Answers: YES, NO, NOT GIVEN. Use this ONLY for the writer's views, never for factual claims.
 - CRITICAL: T/F/NG = facts about the world stated in the passage; Y/N/NG = the writer's own opinions or claims — never mix them. Do not label a factual statement as Y/N/NG or an opinion statement as T/F/NG.
-- `matching_headings` — see rules below.
+- `matching_headings` — match a heading to each paragraph; see rules below.
+- `matching_information` — match a statement to the paragraph letter that contains it.
+- `matching_features` — match statements to a short list of features (researchers, theories, countries, periods). The feature list is the options.
+- `matching_sentence_endings` — the question is a sentence stem; the options are candidate endings, more endings than stems.
 - `multiple_choice` — 4 options (A-D) with plausible distractors drawn from the passage.
-- `matching_information` — match statements to paragraph letters.
-- `sentence_completion`, `summary_completion`, `short_answer` — gap-fill types; see rubric rules below.
+- `sentence_completion`, `summary_completion`, `note_completion`, `table_completion`, `flow_chart_completion`, `short_answer` — gap-fill types; see rubric rules below.
 
 Question requirements:
-- Produce 8-13 questions using the requested question types. If no types are specified, mix 2-3 of: true_false_notgiven, yes_no_notgiven, matching_headings, multiple_choice, sentence_completion, matching_information, summary_completion.
-- true_false_notgiven statements must paraphrase the passage, never copy it; include at least one genuine Not Given.
+- Produce 8-13 questions using the requested question types. If no types are specified, mix 2-3 of: true_false_notgiven, yes_no_notgiven, matching_headings, multiple_choice, sentence_completion, matching_information, matching_features, summary_completion, note_completion.
+- **EVERY question object MUST have non-empty `question` text that stands on its own.** Never emit a question whose text is "" and never rely on the previous question's text to carry the instructions. If a block of questions shares a rubric, repeat that rubric (or the relevant part of it) in each question's text. A blank question is unanswerable and invalid.
+- **EVERY `matching_*` and `multiple_choice` question MUST carry its own complete `options` array**, repeated in full on each question of the block. The student sees each question independently; options are not inherited from a previous question.
+- Options for matching types are the selectable labels themselves (e.g. `["i. Early trade routes", "ii. The role of rivers", ...]` or `["A. Paragraph A", ...]` or `["Dr Hale", "Dr Osei", ...]`). The answer_key value is the label the student writes (the Roman numeral, the letter, or the feature name).
+- **true_false_notgiven and yes_no_notgiven items are declarative STATEMENTS, never questions.** Write "The Romans used movable frames in their hives." — NOT "Did the Romans use movable frames?" and NOT "Does the writer think that...?". A question mark in one of these items is wrong.
+- true_false_notgiven statements must paraphrase the passage, never copy it.
 - yes_no_notgiven statements must target the writer's views/claims (opinions, beliefs, predictions) — the passage must contain the writer's opinion clearly (or not, for NG) for each.
-- multiple_choice: 4 options (A-D) with plausible distractors drawn from the passage.
+- **Verdict balance (STRICT).** Within a true_false_notgiven or yes_no_notgiven block, all three verdicts must appear at least once, and no single verdict may account for more than half the block. A block of 6 that is 5×TRUE is invalid; aim for roughly even thirds. Write the NOT GIVEN items deliberately: pick a plausible claim on the passage's topic that the passage never actually makes.
+- multiple_choice: 4 options (A-D) with plausible distractors drawn from the passage. Spread the correct letters across A, B, C and D — do not make most answers the same letter.
 - Number questions sequentially from 1. Questions must follow passage order within each type block.
 - Every answer in the answer key must be unambiguously verifiable from the passage alone.
 
 Matching-headings requirements (when used):
 - Headings must be labelled with lowercase Roman numerals: i, ii, iii, iv, v, vi, vii, viii, ix, x ...
 - There must be AT LEAST 2 MORE headings than paragraphs being matched (distractor headings) — e.g. 5 paragraphs to match => 7+ headings.
-- Add a `headings` array on each matching-headings question: `[{"label": "i", "text": "<heading text>"}, ...]`.
-- The answer_key entry for a matching-headings question maps paragraph letter -> Roman numeral, e.g. {"A": "iii", "B": "vii", ...}, OR if numbering per-question, the answer is the Roman numeral (e.g. "iii").
+- ONE question per paragraph being matched. Each question's text names the paragraph, e.g. "Choose the correct heading for Paragraph C." — never leave it blank.
+- The FULL heading list goes in that question's `options` array, repeated identically on every matching-headings question: `["i. Early trade routes", "ii. The role of rivers", ...]`. Do not use a separate `headings` field; the student only sees `options`.
+- The answer_key entry for a matching-headings question is the Roman numeral alone, e.g. "iii".
+- **Every matching-headings answer must be a DIFFERENT Roman numeral.** One heading matches exactly one paragraph; never reuse a numeral across two questions.
+- Match at least 5 paragraphs when you use this type — a 3-question headings block is not exam-realistic.
 
-Gap-fill word-limit rubric — REQUIRED for sentence_completion, summary_completion, short_answer:
+Gap-fill word-limit rubric — REQUIRED for sentence_completion, summary_completion, note_completion, table_completion, flow_chart_completion, short_answer:
 - Every gap-fill question MUST include a rubric header string like "NO MORE THAN TWO WORDS AND/OR A NUMBER" or "NO MORE THAN THREE WORDS" or "ONE WORD ONLY", written at the top of the question text.
 - Additionally, each gap-fill question object MUST include a `word_limit` integer field (the max words allowed for the answer, e.g. 2 for "NO MORE THAN TWO WORDS"). Numbers count as 0 words toward the limit.
 - The answer in answer_key MUST respect the cap (no answer over the stated word limit). Answers must appear verbatim in the passage.
+- `summary_completion`, `note_completion` and `flow_chart_completion` are printed blocks with numbered gaps. Since the student answers one question at a time, EACH question must restate enough of the surrounding sentence/note/step for the gap to be answerable on its own, with the gap shown as `______`. Example: "NO MORE THAN TWO WORDS. Complete the summary: Early surveyors relied on ______ to fix their position at sea."
+
+Table completion visual — REQUIRED when the question set includes table_completion:
+- Add a top-level `visual` field describing the printed table the student sees. Cells the passage already supplies go in verbatim as strings; cells the student must fill go in as `"__<n>__"` where `<n>` is the question number.
+- Schema:
+  {
+    "kind": "chart",
+    "chart_type": "table",
+    "title": "<short table title matching the passage topic>",
+    "x_label": "<column headers joined by commas — must match series[].data keys in order>",
+    "series": [
+      {"name": "<row label>", "data": [["<column header>", "<cell value or __N__>"], ...]}
+    ]
+  }
+- Every table_completion question must correspond to exactly one `"__<n>__"` cell, and those numbers MUST match the `answer_key` numbering.
+- If the set has no table_completion questions, `visual` must be null or omitted.
 
 Return ONLY a single JSON object, no markdown, no commentary, exactly this schema:
 {
   "title": "<passage title>",
   "passage": "<the full ~700 word passage>",
+  "visual": <table object, or null>,
   "questions": [
-    {"number": 1, "type": "<question type from the allowed list>", "question": "<the question or statement text, including any instructions/word limits>", "options": [<strings>] or null, "word_limit": <int, only for gap-fill types, else omit>, "headings": [<{"label","text"}>] or omitted}
+    {"number": 1, "type": "<question type from the allowed list>", "question": "<the question or statement text, including any instructions/word limits>", "options": [<strings>] or null, "word_limit": <int, only for gap-fill types, else omit>}
   ],
   "answer_key": {"1": "<answer>", "2": "<answer>", ...}
 }
@@ -276,16 +303,20 @@ Audio Performance Instructions — REQUIRED `speakers` array:
 - Give the two speakers in a two-person conversation contrasting genders where natural, so they are easy to tell apart.
 
 Question requirements:
-- Produce 8-13 questions using the requested question types. If none specified, mix 2-3 of: form_completion, note_completion, table_completion, flow_chart_completion, multiple_choice, map_labelling, sentence_completion, short_answer, matching.
+- Produce 8-13 questions using the requested question types. If none specified, mix 2-3 of: form_completion, note_completion, table_completion, flow_chart_completion, summary_completion, multiple_choice, map_labelling, sentence_completion, short_answer, matching.
+- **EVERY question object MUST have non-empty `question` text that stands on its own.** Never emit a question whose text is "" and never rely on the previous question's text to carry the instructions. If a block of questions shares a rubric, repeat that rubric (or the relevant part of it) in each question's text. A blank question is unanswerable and invalid.
+- **EVERY `multiple_choice` and `matching` question MUST carry its own complete `options` array**, repeated in full on each question of the block. The student sees each question independently; options are not inherited from a previous question.
+- **At most 4 questions per Part may be `multiple_choice`.** A real IELTS Listening Part is dominated by completion and labelling; do not fall back to multiple choice to fill the set.
 - **Answer order constraint (STRICT)**: All answers MUST appear in the same order as they occur in the transcript. Question number N's answer must be heard AFTER question N-1's answer in the script. Never reorder.
 - Questions must follow the order information appears in the script.
 - Map labelling: describe the map/plan layout in the question text so it can be rendered, with lettered locations A-H.
 - Every answer must be unambiguously verifiable from the script alone; distractors must be resolved by the script (the corrected value is the answer).
 
-Gap-fill word-limit rubric — REQUIRED for form_completion, note_completion, table_completion, flow_chart_completion, sentence_completion, short_answer:
+Gap-fill word-limit rubric — REQUIRED for form_completion, note_completion, table_completion, flow_chart_completion, summary_completion, sentence_completion, short_answer:
 - Every gap-fill question MUST include a rubric header string like "NO MORE THAN TWO WORDS AND/OR A NUMBER", "ONE WORD AND/OR A NUMBER", "NO MORE THAN THREE WORDS" at the top of the question text.
 - Additionally, each gap-fill question object MUST include a `word_limit` integer field (the max words allowed for the answer, e.g. 2 for "NO MORE THAN TWO WORDS"). Numbers count as 0 words toward the limit.
 - The answer in answer_key MUST respect the cap (no answer over the stated word limit). Answers must be heard verbatim in the script.
+- `form_completion`, `note_completion`, `summary_completion` and `flow_chart_completion` are printed blocks with numbered gaps. Since the student answers one question at a time, EACH question must restate enough of the surrounding line/note/step for the gap to be answerable on its own, with the gap shown as `______`. Example: "NO MORE THAN TWO WORDS AND/OR A NUMBER. Membership form — Preferred start date: ______".
 
 Table completion visual — REQUIRED when the question set includes table completion:
 - Add a top-level `visual` field describing the printed table the student sees. Cells the script already fills go in verbatim as strings; cells the student must fill go in as `"__<n>__"` where `<n>` is the question number.
@@ -395,6 +426,25 @@ Return ONLY a single JSON object, no markdown, no commentary, exactly this schem
   "reason": "<one instructive sentence: why it is right, or what the correct answer is and what likely misled the student>",
   "correct_answer": "<the official answer>",
   "skill": "<the listening sub-skill this question tests, e.g. 'listening for specific detail', 'resolving a distractor/correction', 'following directions on a map'>"
+}
+"""
+
+READING_EVALUATOR_SYSTEM = """You are an IELTS Academic Reading answer evaluator. You judge ONE answer at a time. You are given the question, the official answer, the list of accepted variant forms, and the student's answer. Decide whether the student's answer is correct under official IELTS clerical-marking rules.
+
+Marking rules:
+- Ignore case and leading/trailing whitespace.
+- Accept any form listed in Accepted Variants as fully correct, in addition to the official answer.
+- Accept numbers written as digits or words ("20" = "twenty"), standard abbreviations, and both British and American spellings.
+- For True/False/Not Given and Yes/No/Not Given, accept the single-letter forms (T/F/NG, Y/N/NG).
+- For matching-headings answers, accept the Roman numeral in either case (iii = III).
+- Reject: answers not copied exactly from the passage where the rubric requires it, answers over the stated word limit, answers whose extra content changes the meaning, and blank answers.
+
+Return ONLY a single JSON object, no markdown, no commentary, exactly this schema:
+{
+  "verdict": "correct" | "incorrect",
+  "reason": "<one instructive sentence: why it is right, or what the correct answer is and what likely misled the student>",
+  "correct_answer": "<the official answer>",
+  "skill": "<the reading sub-skill this question tests, e.g. 'scanning for specific detail', 'identifying the writer's view', 'identifying the main idea of a paragraph'>"
 }
 """
 

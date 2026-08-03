@@ -35,7 +35,8 @@ _PART_SPECS: dict[int, dict[str, str]] = {
         "figure": (
             "Build the set around a form_completion or table_completion block "
             "so a TABLE figure is shown (include the `visual` table object). "
-            "You may add 1-2 multiple_choice questions."
+            "Fill the rest with short_answer or sentence_completion. Use AT "
+            "MOST 2 multiple_choice questions."
         ),
     },
     2: {
@@ -47,9 +48,9 @@ _PART_SPECS: dict[int, dict[str, str]] = {
         "figure": (
             "Include a map_labelling block with 5-6 lettered locations A-F on a "
             "simple plan, so a MAP figure is shown (include the `visual` map "
-            "object). Fill the remaining questions with multiple_choice or "
-            "short completion. map_labelling answers are LETTERS, with no "
-            "`options` array."
+            "object). Fill the remaining questions with sentence_completion or "
+            "matching, plus AT MOST 2 multiple_choice. map_labelling answers "
+            "are LETTERS, with no `options` array."
         ),
     },
     3: {
@@ -59,8 +60,9 @@ _PART_SPECS: dict[int, dict[str, str]] = {
             "Label each distinct speaker."
         ),
         "figure": (
-            "Use multiple_choice and matching question types. No figure is "
-            "needed — set `visual` to null."
+            "Use a matching block, a flow_chart_completion block tracing the "
+            "stages of the project the speakers discuss, and AT MOST 4 "
+            "multiple_choice. No figure is needed — set `visual` to null."
         ),
     },
     4: {
@@ -69,9 +71,9 @@ _PART_SPECS: dict[int, dict[str, str]] = {
             "research or general-interest topic. Label turns 'LECTURER:'."
         ),
         "figure": (
-            "Use note_completion and sentence_completion (a set of lecture "
-            "notes with numbered gaps). No figure is needed — set `visual` to "
-            "null."
+            "Use note_completion, summary_completion and sentence_completion "
+            "(lecture notes with numbered gaps). Do NOT use multiple_choice. "
+            "No figure is needed — set `visual` to null."
         ),
     },
 }
@@ -94,6 +96,45 @@ _LISTENING_BAND_TABLE: list[tuple[int, float]] = [
     (6, 3.0),
     (4, 2.5),
 ]
+
+
+def validate_part(result: dict) -> str | None:
+    """Reject a part a student could not actually sit.
+
+    Passed as the `validate` hook on complete_json so a broken set costs one
+    corrective retry instead of reaching the student. The teacher's usual
+    failure is emitting a block's shared rubric on its first question and
+    leaving the rest with `"question": ""`, which renders as a blank prompt.
+    """
+    questions = result.get("questions") or []
+    answer_key = result.get("answer_key") or {}
+    if not questions or not answer_key:
+        return "questions and answer_key must both be non-empty"
+
+    numbers = []
+    mc: list[dict] = []
+    for q in questions:
+        if not isinstance(q, dict):
+            return "every entry in questions must be an object"
+        if not str(q.get("question") or "").strip():
+            return f"question {q.get('number')} has empty question text"
+        numbers.append(str(q.get("number")))
+        if str(q.get("type") or "").lower().replace("-", "_").replace(" ", "_") == "multiple_choice":
+            mc.append(q)
+    if set(numbers) != set(map(str, answer_key)):
+        return "question numbers and answer_key keys must match exactly"
+
+    for q in mc:
+        if not isinstance(q.get("options"), list) or not q["options"]:
+            return f"multiple_choice question {q.get('number')} is missing its options array"
+    if len(mc) >= 3:
+        answers = {str(answer_key.get(str(q.get("number")))).strip().upper() for q in mc}
+        if len(answers) == 1:
+            return (
+                f"all {len(mc)} multiple_choice answers are {answers.pop()!r}; "
+                "spread the correct choices across the options"
+            )
+    return None
 
 
 async def create_practice(
@@ -128,6 +169,7 @@ async def create_practice(
         LISTENING_TRAINER_SYSTEM,
         [{"role": "user", "content": "\n".join(parts)}],
         required_keys=("title", "audio_script", "questions", "answer_key"),
+        validate=validate_part,
         # A full part is a ~1.7-3.1k-token JSON object, but LLM_MAX_TOKENS is
         # 2048 locally — that truncates mid-JSON on the longer half of the
         # range, and each retry costs another ~5 min. The ~2.9k prompt plus
@@ -353,6 +395,7 @@ async def create_part(
         LISTENING_TRAINER_SYSTEM,
         [{"role": "user", "content": "\n".join(parts)}],
         required_keys=("title", "audio_script", "questions", "answer_key"),
+        validate=validate_part,
         # A full part is a ~1.7-3.1k-token JSON object, but LLM_MAX_TOKENS is
         # 2048 locally — that truncates mid-JSON on the longer half of the
         # range, and each retry costs another ~5 min. The ~2.9k prompt plus

@@ -72,6 +72,86 @@ def _check_word_limits(result: dict) -> None:
                 )
 
 
+_TFNG_TYPES = {"true_false_notgiven", "yes_no_notgiven"}
+
+
+def _qtype(q: dict) -> str:
+    return str(q.get("type") or "").lower().replace("-", "_").replace(" ", "_")
+
+
+def validate_practice(result: dict) -> str | None:
+    """Reject a practice set a student could not fairly sit.
+
+    Returned as the `validate` hook on complete_json, so a broken set costs one
+    corrective retry instead of reaching the student — or, during dataset
+    export, becoming a training target that teaches the pathology.
+    """
+    questions = result.get("questions") or []
+    answer_key = result.get("answer_key") or {}
+    if not questions or not answer_key:
+        return "questions and answer_key must both be non-empty"
+
+    numbers = []
+    for q in questions:
+        if not isinstance(q, dict):
+            return "every entry in questions must be an object"
+        if not str(q.get("question") or "").strip():
+            return f"question {q.get('number')} has empty question text"
+        numbers.append(str(q.get("number")))
+    if set(numbers) != set(map(str, answer_key)):
+        return "question numbers and answer_key keys must match exactly"
+
+    by_type: dict[str, list[dict]] = {}
+    for q in questions:
+        by_type.setdefault(_qtype(q), []).append(q)
+
+    headings = by_type.get("matching_headings") or []
+    if headings:
+        answers = [str(answer_key.get(str(q.get("number")))) for q in headings]
+        if len(set(answers)) != len(answers):
+            return "each matching_headings answer must be a different heading"
+        for q in headings:
+            opts = q.get("options")
+            if not isinstance(opts, list) or len(opts) < len(headings) + 2:
+                return (
+                    f"every matching_headings question needs an options list of at "
+                    f"least {len(headings) + 2} headings ({len(headings)} paragraphs "
+                    "+ 2 distractors)"
+                )
+
+    for name in ("multiple_choice", "matching_information", "matching_features",
+                 "matching_sentence_endings"):
+        block = by_type.get(name) or []
+        for q in block:
+            if not isinstance(q.get("options"), list) or not q["options"]:
+                return f"{name} question {q.get('number')} is missing its options array"
+        if len(block) >= 3:
+            answers = {str(answer_key.get(str(q.get("number")))).strip().upper() for q in block}
+            if len(answers) == 1:
+                return (
+                    f"all {len(block)} {name} answers are {answers.pop()!r}; spread the "
+                    "correct choices across the options"
+                )
+
+    tfng = [q for q in questions if _qtype(q) in _TFNG_TYPES]
+    if len(tfng) >= 4:
+        verdicts = {str(answer_key.get(str(q.get("number")))).strip().upper() for q in tfng}
+        if len(verdicts) == 1:
+            return (
+                f"all {len(tfng)} true/false/not-given answers are "
+                f"{verdicts.pop()!r}; a real block mixes the verdicts"
+            )
+        # The teacher reliably writes only verifiable statements unless pushed.
+        # A block with no NOT GIVEN never trains the skill the type exists for.
+        if not verdicts & {"NOT GIVEN", "NOTGIVEN", "NG"}:
+            return (
+                f"none of the {len(tfng)} true/false/not-given answers is NOT GIVEN; "
+                "rewrite at least one statement so it makes a plausible claim the "
+                "passage never actually states"
+            )
+    return None
+
+
 async def create_practice(
     question_types: list[str] | None = None,
     difficulty: str | None = None,
@@ -99,10 +179,17 @@ async def create_practice(
             + context
         )
 
-    result = await get_llm_client().complete_json(
+    result = await get_llm_client("generator").complete_json(
         READING_TRAINER_SYSTEM,
         [{"role": "user", "content": "\n".join(parts)}],
         required_keys=("title", "passage", "questions", "answer_key"),
+        validate=validate_practice,
+        # A ~1200-word passage plus 8-13 questions carrying full options lists
+        # is a 3.5-5k-token JSON object; LLM_MAX_TOKENS is 2048 locally. A
+        # truncation is expensive twice over — the corrective retry replays the
+        # truncated text as context, so it has even less room than the first
+        # attempt. Buy the headroom.
+        max_tokens=6144,
     )
 
     passage = str(result.get("passage") or "")
