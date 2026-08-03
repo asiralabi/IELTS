@@ -2,6 +2,7 @@ import asyncio
 import logging
 import re
 
+from app.agents.answerability import dangling_structure_error
 from app.agents.reading_trainer import (
     _check_word_limits as _check_word_limits,
 )
@@ -123,6 +124,13 @@ def validate_part(result: dict) -> str | None:
             mc.append(q)
     if set(numbers) != set(map(str, answer_key)):
         return "question numbers and answer_key keys must match exactly"
+
+    dangling = dangling_structure_error(
+        questions, result.get("visual"),
+        "Membership form — Preferred start date: ______",
+    )
+    if dangling:
+        return dangling
 
     for q in mc:
         if not isinstance(q.get("options"), list) or not q["options"]:
