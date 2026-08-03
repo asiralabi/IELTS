@@ -799,7 +799,7 @@ COMBINED = SectionCfg(
         "since the backend sends the same system prompt per section.",
         "",
         "`MAX_SEQ_LEN` is **8192**, set by the longest record across both corpora",
-        "(listening tops out at 6343 tokens; reading at 4558). The data cell",
+        "(listening tops out at 6343 tokens; reading at 5067). The data cell",
         "hard-fails if anything would actually be truncated.",
         "",
         "### Why one model instead of one per section",
