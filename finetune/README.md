@@ -104,13 +104,28 @@ rather than echo the prompt.
 
 ## Step 3 — serve and point the backend at your models
 
-Serve each GGUF via Ollama, then set the per-task vars in `backend/.env`:
+Build each GGUF into an Ollama model using the tracked Modelfiles, then set the
+per-task vars in `backend/.env`:
+
+```powershell
+ollama create ielts-generator -f finetune/Modelfile_generator
+ollama create ielts-evaluator -f finetune/Modelfile_evaluator
+```
 
 ```env
 LLM_PROVIDER=ollama
 GENERATOR_MODEL=ielts-generator
 EVALUATOR_MODEL=ielts-evaluator
 ```
+
+> Use the Modelfiles rather than Unsloth's exported one. Unsloth ships
+> `PARAMETER temperature 1.5` and no `num_ctx`, which is wrong twice over here:
+> the generator's output is a 5-6k-token JSON object that silently truncates at
+> Ollama's default context, and an evaluator at 1.5 gives the same student
+> answer a different verdict on each run. The tracked files set `num_ctx` to the
+> notebook's `MAX_SEQ_LEN` and drop temperature to 0.4 (generator) / 0.1
+> (marking). They also drop Unsloth's stock `SYSTEM "You are Qwen…"` line — the
+> backend always sends its own system prompt.
 
 Both are routed by `get_llm_client(task)` in `app/llm/client.py` and fall back
 to the general model when blank. A configured fine-tune always routes to a
