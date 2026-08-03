@@ -1,7 +1,7 @@
 import json
 import logging
 
-from app.agents.answerability import dangling_structure_error
+from app.agents.answerability import canon, dangling_structure_error, qtype
 from app.llm.client import get_llm_client
 from app.llm.prompts import (
     ANSWER_CHECKER_SYSTEM,
@@ -19,7 +19,7 @@ _MIN_PASSAGE_WORDS = 550
 
 # Gap-fill question types that carry a word_limit rubric. If the LLM omits
 # word_limit or produces an answer that exceeds it, we log — never fail.
-_GAP_FILL_TYPES = {
+_GAP_FILL_TYPES = {canon(t) for t in (
     "sentence_completion",
     "summary_completion",
     "short_answer",
@@ -27,7 +27,7 @@ _GAP_FILL_TYPES = {
     "table_completion",
     "form_completion",
     "flow_chart_completion",
-}
+)}
 
 
 def _answer_word_count(answer: str) -> int:
@@ -46,8 +46,7 @@ def _check_word_limits(result: dict) -> None:
     for q in result.get("questions") or []:
         if not isinstance(q, dict):
             continue
-        qtype = str(q.get("type") or "").lower().replace("-", "_").replace(" ", "_")
-        if qtype not in _GAP_FILL_TYPES:
+        if qtype(q) not in _GAP_FILL_TYPES:
             continue
         limit = q.get("word_limit")
         try:
@@ -73,11 +72,7 @@ def _check_word_limits(result: dict) -> None:
                 )
 
 
-_TFNG_TYPES = {"true_false_notgiven", "yes_no_notgiven"}
-
-
-def _qtype(q: dict) -> str:
-    return str(q.get("type") or "").lower().replace("-", "_").replace(" ", "_")
+_TFNG_TYPES = {canon("true_false_notgiven"), canon("yes_no_notgiven")}
 
 
 def validate_practice(result: dict) -> str | None:
@@ -98,15 +93,20 @@ def validate_practice(result: dict) -> str | None:
             return "every entry in questions must be an object"
         if not str(q.get("question") or "").strip():
             return f"question {q.get('number')} has empty question text"
+        if not qtype(q):
+            return (
+                f"question {q.get('number')} has no `type`; every question must "
+                "declare one of the allowed types so it renders and marks correctly"
+            )
         numbers.append(str(q.get("number")))
     if set(numbers) != set(map(str, answer_key)):
         return "question numbers and answer_key keys must match exactly"
 
     by_type: dict[str, list[dict]] = {}
     for q in questions:
-        by_type.setdefault(_qtype(q), []).append(q)
+        by_type.setdefault(qtype(q), []).append(q)
 
-    headings = by_type.get("matching_headings") or []
+    headings = by_type.get(canon("matching_headings")) or []
     if headings:
         answers = [str(answer_key.get(str(q.get("number")))) for q in headings]
         if len(set(answers)) != len(answers):
@@ -122,7 +122,7 @@ def validate_practice(result: dict) -> str | None:
 
     for name in ("multiple_choice", "matching_information", "matching_features",
                  "matching_sentence_endings"):
-        block = by_type.get(name) or []
+        block = by_type.get(canon(name)) or []
         for q in block:
             if not isinstance(q.get("options"), list) or not q["options"]:
                 return f"{name} question {q.get('number')} is missing its options array"
@@ -141,7 +141,7 @@ def validate_practice(result: dict) -> str | None:
     if dangling:
         return dangling
 
-    tfng = [q for q in questions if _qtype(q) in _TFNG_TYPES]
+    tfng = [q for q in questions if qtype(q) in _TFNG_TYPES]
     if len(tfng) >= 4:
         verdicts = {str(answer_key.get(str(q.get("number")))).strip().upper() for q in tfng}
         if len(verdicts) == 1:

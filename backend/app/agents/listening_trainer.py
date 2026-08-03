@@ -2,7 +2,7 @@ import asyncio
 import logging
 import re
 
-from app.agents.answerability import dangling_structure_error
+from app.agents.answerability import canon, dangling_structure_error, qtype
 from app.agents.reading_trainer import (
     _check_word_limits as _check_word_limits,
 )
@@ -120,7 +120,7 @@ def validate_part(result: dict) -> str | None:
         if not str(q.get("question") or "").strip():
             return f"question {q.get('number')} has empty question text"
         numbers.append(str(q.get("number")))
-        if str(q.get("type") or "").lower().replace("-", "_").replace(" ", "_") == "multiple_choice":
+        if qtype(q) == canon("multiple_choice"):
             mc.append(q)
     if set(numbers) != set(map(str, answer_key)):
         return "question numbers and answer_key keys must match exactly"

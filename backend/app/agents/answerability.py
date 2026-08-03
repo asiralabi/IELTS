@@ -9,24 +9,35 @@ to one standard.
 import json
 import re
 
+def canon(name: str) -> str:
+    """Canonical key for a question type.
+
+    The system prompts declare snake_case but the teacher also emits display
+    forms like "True/False/Not Given", so anything short of stripping every
+    non-alphanumeric leaves those unmatched — and an unmatched type silently
+    skips the checks written for it.
+    """
+    return re.sub(r"[^a-z0-9]", "", str(name or "").lower())
+
+
+def qtype(q: dict) -> str:
+    return canon(q.get("type"))
+
+
 # Completion types the teacher writes as a printed block ("complete the notes
 # below"). Nothing in the frontend renders such a block — `question-list.tsx`
 # shows only question text plus options — so the context has to be inline.
-STRUCTURE_TYPES = {
+STRUCTURE_TYPES = {canon(t) for t in (
     "summary_completion",
     "note_completion",
     "flow_chart_completion",
     "table_completion",
     "form_completion",
-}
+)}
 
 # A gap the student writes into: underscores, or the dotted leader a real exam
 # paper prints. Three dots are an ellipsis, so a leader needs four.
 _GAP_MARKER = re.compile(r"__+|\.{4,}")
-
-
-def qtype(q: dict) -> str:
-    return str(q.get("type") or "").lower().replace("-", "_").replace(" ", "_")
 
 
 def visual_slots(visual: object) -> set[str]:
@@ -57,7 +68,7 @@ def dangling_structure_error(questions: list, visual: object, source: str) -> st
         if is_self_contained(str(q.get("question") or "")):
             continue
         return (
-            f"question {q.get('number')} ({qtype(q)}) points at a summary/note/"
+            f"question {q.get('number')} ({q.get('type')}) points at a summary/note/"
             "table/flow chart that the student never sees — nothing renders one. "
             "Rewrite it to carry its own context with the gap shown as ______, "
             f"e.g. \"NO MORE THAN TWO WORDS. {source}\". Or emit a `visual` table "
