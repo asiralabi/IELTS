@@ -1,9 +1,14 @@
 """Shared answerability checks for generated practice sets.
 
-Both trainers pass these through `complete_json(validate=...)`, and
-`tools/build_dataset.py` reuses the same trainer validators when exporting, so
-a set that reaches a student and a set that becomes a training target are held
-to one standard.
+Both trainers pass these through `complete_json(validate=...)`, so a set that
+reaches a student is held to this standard.
+
+Export is only half-aligned: `build_dataset._is_answerable` runs the full
+`reading_trainer.validate_practice`, but listening keeps a weaker inline check
+rather than calling `validate_part`. That is deliberate — the listening
+checkpoint was trained against the dataset the looser filter produced, so
+tightening it now would silently desync the committed jsonl from the model.
+Revisit when listening is next retrained.
 """
 
 import json
