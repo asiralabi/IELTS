@@ -108,8 +108,8 @@ Build each GGUF into an Ollama model using the tracked Modelfiles, then set the
 per-task vars in `backend/.env`:
 
 ```powershell
-ollama create ielts-generator -f finetune/Modelfile_generator
-ollama create ielts-evaluator -f finetune/Modelfile_evaluator
+ollama create ielts-generator -f finetune/Modelfile.generator
+ollama create ielts-evaluator -f finetune/Modelfile.evaluator
 ```
 
 ```env
