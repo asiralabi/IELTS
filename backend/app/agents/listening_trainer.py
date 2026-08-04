@@ -2,7 +2,12 @@ import asyncio
 import logging
 import re
 
-from app.agents.answerability import canon, dangling_structure_error, qtype
+from app.agents.answerability import (
+    canon,
+    cross_section_error,
+    dangling_structure_error,
+    qtype,
+)
 from app.agents.reading_trainer import (
     _check_word_limits as _check_word_limits,
 )
@@ -107,6 +112,10 @@ def validate_part(result: dict) -> str | None:
     failure is emitting a block's shared rubric on its first question and
     leaving the rest with `"question": ""`, which renders as a blank prompt.
     """
+    cross_section = cross_section_error(result, "listening")
+    if cross_section:
+        return cross_section
+
     questions = result.get("questions") or []
     answer_key = result.get("answer_key") or {}
     if not questions or not answer_key:

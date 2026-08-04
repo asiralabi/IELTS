@@ -3,12 +3,12 @@
 Both trainers pass these through `complete_json(validate=...)`, so a set that
 reaches a student is held to this standard.
 
-Export is only half-aligned: `build_dataset._is_answerable` runs the full
-`reading_trainer.validate_practice`, but listening keeps a weaker inline check
-rather than calling `validate_part`. That is deliberate — the listening
-checkpoint was trained against the dataset the looser filter produced, so
-tightening it now would silently desync the committed jsonl from the model.
-Revisit when listening is next retrained.
+Export is aligned with generation: `build_dataset._is_answerable` runs each
+section's own validator, so a set the runtime would have retried never becomes
+a training target either. Listening ran on a weaker inline check until the
+multi-task retrain, because the shipped single-task checkpoint had been trained
+against what that looser filter produced and tightening it mid-life would have
+desynced the committed jsonl from the model.
 """
 
 import json
@@ -43,6 +43,76 @@ STRUCTURE_TYPES = {canon(t) for t in (
 # A gap the student writes into: underscores, or the dotted leader a real exam
 # paper prints. Three dots are an ellipsis, so a leader needs four.
 _GAP_MARKER = re.compile(r"__+|\.{4,}")
+
+
+_WORD_TO_INT = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+}
+
+
+def parse_word_limit(value: object) -> int | None:
+    """Integer word cap from a `word_limit` field.
+
+    Both contracts declare it an int, but the teacher often answers with the
+    rubric sentence instead ('NO MORE THAN TWO WORDS AND/OR A NUMBER'). A bare
+    int() on that raises, and the caller that swallows the error then skips the
+    cap check entirely — so read the phrasing rather than trusting the type.
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return int(value)
+    text = str(value).strip().lower()
+    if not text:
+        return None
+    digits = re.search(r"\d+", text)
+    if digits:
+        return int(digits.group())
+    for word, n in _WORD_TO_INT.items():
+        if re.search(rf"\b{word}\b", text):
+            return n
+    return None
+
+
+# Top-level keys that belong to exactly one section's contract. A multi-task
+# fine-tune is trained on both schemas from one adapter, so the failure to
+# catch is a Reading set that grows an `audio_script` — or a Listening set that
+# answers with a `passage`. Either is unservable: the wrong page renders it.
+_SECTION_KEYS = {
+    "reading": {"passage"},
+    "listening": {
+        "blueprint", "audio_script", "speakers",
+        "accepted_variants", "answer_positions",
+    },
+}
+
+
+def cross_section_error(result: dict, section: str) -> str | None:
+    """Reject a set that answers in the other section's schema."""
+    foreign = sorted(
+        key
+        for other, keys in _SECTION_KEYS.items()
+        if other != section
+        for key in keys
+        if result.get(key)
+    )
+    if foreign:
+        return (
+            f"this is an IELTS {section.title()} set but it carries "
+            f"{', '.join(foreign)} — those belong to a different section's "
+            f"contract. Return only the keys the {section.title()} schema "
+            "declares."
+        )
+    # Reading has no map renderer; only Listening's map_labelling uses one.
+    if section == "reading":
+        visual = result.get("visual")
+        if isinstance(visual, dict) and str(visual.get("kind", "")).lower() == "map":
+            return (
+                "`visual` is a map, which the Reading page cannot render. A "
+                "Reading visual must be a table object or null."
+            )
+    return None
 
 
 def visual_slots(visual: object) -> set[str]:

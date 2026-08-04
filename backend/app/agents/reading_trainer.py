@@ -2,7 +2,13 @@ import json
 import logging
 import re
 
-from app.agents.answerability import canon, dangling_structure_error, qtype
+from app.agents.answerability import (
+    canon,
+    cross_section_error,
+    dangling_structure_error,
+    parse_word_limit,
+    qtype,
+)
 from app.llm.client import get_llm_client
 from app.llm.prompts import (
     ANSWER_CHECKER_SYSTEM,
@@ -49,11 +55,7 @@ def _check_word_limits(result: dict) -> None:
             continue
         if qtype(q) not in _GAP_FILL_TYPES:
             continue
-        limit = q.get("word_limit")
-        try:
-            limit = int(limit) if limit is not None else None
-        except (TypeError, ValueError):
-            limit = None
+        limit = parse_word_limit(q.get("word_limit"))
         if limit is None:
             logger.warning(
                 "reading_trainer: gap-fill question %s missing word_limit",
@@ -140,6 +142,10 @@ def validate_practice(result: dict) -> str | None:
     corrective retry instead of reaching the student — or, during dataset
     export, becoming a training target that teaches the pathology.
     """
+    cross_section = cross_section_error(result, "reading")
+    if cross_section:
+        return cross_section
+
     questions = result.get("questions") or []
     answer_key = result.get("answer_key") or {}
     if not questions or not answer_key:
