@@ -32,7 +32,7 @@ class RefreshRequest(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    message: str
+    message: str = Field(min_length=1)
     session_id: int | None = None
 
 

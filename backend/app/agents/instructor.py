@@ -6,6 +6,26 @@ from app.llm.prompts import INSTRUCTOR_SYSTEM
 from app.models import ChatMessage, ChatSession, User
 from app.rag.retriever import retrieve_context
 
+# Below this, treat the turn as a follow-up rather than a new question. Real
+# follow-ups are short ("more examples", "why?", "and for task 1?").
+_ELLIPTICAL_WORDS = 8
+
+
+def _retrieval_query(history: list[ChatMessage], message: str) -> str:
+    """The text to embed when retrieving reference material for this turn.
+
+    A follow-up carries no topic of its own, so embedding it alone retrieves
+    arbitrary chunks — and the system prompt tells the model to lean on
+    whatever comes back. Fold in the previous user turn so the query keeps the
+    subject the student is actually asking about.
+    """
+    if len(message.split()) >= _ELLIPTICAL_WORDS:
+        return message
+    prior = [m.content for m in history if m.role == "user"]
+    if not prior:
+        return message
+    return f"{prior[-1]}\n{message}"
+
 
 async def chat(db: Session, user: User, message: str, session_id: int | None) -> dict:
     session: ChatSession | None = None
@@ -28,7 +48,7 @@ async def chat(db: Session, user: User, message: str, session_id: int | None) ->
     )
     history.reverse()
 
-    context = retrieve_context(message)
+    context = retrieve_context(_retrieval_query(history, message))
     system = INSTRUCTOR_SYSTEM.format(
         context=context or "No reference material retrieved."
     )
