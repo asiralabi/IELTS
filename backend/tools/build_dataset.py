@@ -55,7 +55,8 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.agents import reading_trainer  # noqa: E402
+from app.agents import listening_trainer, reading_trainer  # noqa: E402
+from app.agents.answerability import parse_word_limit  # noqa: E402
 from app.database import SessionLocal, init_db  # noqa: E402
 from app.llm.prompts import (  # noqa: E402
     EVALUATOR_SYSTEM,
@@ -101,9 +102,6 @@ class SectionSpec:
     gap_fill_skill: str
     default_skill: str
     skill_by_type: dict[str, str] = field(default_factory=dict)
-    # Reading's contract declares `word_limit` as an integer; Listening's SFT
-    # targets carry the rubric sentence instead.
-    numeric_word_limit: bool = False
     # Why a synthesised wrong answer is wrong. Section-specific because the
     # source of the error differs — a listener mishears the recording, a reader
     # miscopies the passage.
@@ -156,7 +154,6 @@ SECTIONS: dict[str, SectionSpec] = {
         },
         gap_fill_skill="scanning for specific detail (exact wording from the passage)",
         default_skill="reading comprehension",
-        numeric_word_limit=True,
         distractor_reason="a distractor option the passage rules out",
         number_reason="a nearby number in the passage that the question does not ask for",
         misspelling_reason="a misspelling of a word that appears in the passage",
@@ -210,15 +207,58 @@ def _canon_type(value: object) -> str:
 
 _GAP_FILL_CANON = {_canon_type(t) for t in _GAP_FILL}
 
-# Canonical spelling of each Reading type, as declared by READING_TRAINER_SYSTEM.
-_READING_CONTRACT_TYPES = {
-    _canon_type(t): t
-    for t in (
-        "true_false_notgiven", "yes_no_notgiven", "matching_headings",
-        "matching_information", "multiple_choice", "sentence_completion",
-        "summary_completion", "short_answer",
-    )
+# Canonical spelling of every question type each section's system prompt
+# declares. The teacher freely mixes the contract's snake_case with display
+# forms ("form completion", "map/plan labelling"), and a target carrying both
+# teaches the model that either is acceptable — which pushes the cost onto
+# every consumer, who must then canonicalise on read.
+_CONTRACT_TYPES: dict[str, dict[str, str]] = {
+    "reading": {
+        _canon_type(t): t
+        for t in (
+            "true_false_notgiven", "yes_no_notgiven", "matching_headings",
+            "matching_information", "matching_features",
+            "matching_sentence_endings", "multiple_choice",
+            "sentence_completion", "summary_completion", "note_completion",
+            "table_completion", "flow_chart_completion", "short_answer",
+        )
+    },
+    "listening": {
+        _canon_type(t): t
+        for t in (
+            "form_completion", "note_completion", "table_completion",
+            "flow_chart_completion", "summary_completion", "multiple_choice",
+            "map_labelling", "sentence_completion", "short_answer", "matching",
+        )
+    },
 }
+
+# Display forms that survive punctuation-stripping as a distinct key, so the
+# contract table alone cannot match them ("map/plan labelling" collapses to
+# "mapplanlabelling", never "maplabelling").
+_TYPE_ALIASES = {
+    "mapplanlabelling": "map_labelling",
+    "planlabelling": "map_labelling",
+}
+
+
+def _canonical_type(value: object, spec: SectionSpec) -> str:
+    """The contract spelling of a question type, for this section."""
+    table = _CONTRACT_TYPES.get(spec.name, {})
+    key = _canon_type(value)
+    if key in table:
+        return table[key]
+    aliased = _canon_type(_TYPE_ALIASES.get(key, ""))
+    if aliased in table:
+        return table[aliased]
+    return _norm_type(value)
+
+
+def _canonicalize_types(target: dict, spec: SectionSpec) -> None:
+    """Rewrite every question's `type` to its section's contract spelling."""
+    for q in target.get("questions") or []:
+        if isinstance(q, dict) and q.get("type") is not None:
+            q["type"] = _canonical_type(q.get("type"), spec)
 
 
 def _skill_for(qtype: str, spec: SectionSpec) -> str:
@@ -530,7 +570,7 @@ def _reading_user_message(part: dict, difficulty: str) -> str:
     # the model must emit.
     qtypes: list[str] = []
     for t in _question_types(part.get("questions") or []):
-        canon = _READING_CONTRACT_TYPES.get(_canon_type(t), t)
+        canon = _canonical_type(t, SECTIONS["reading"])
         if canon not in qtypes:
             qtypes.append(canon)
     if qtypes:
@@ -545,12 +585,6 @@ def _reading_user_message(part: dict, difficulty: str) -> str:
     return "\n".join(lines)
 
 
-_WORD_TO_INT = {
-    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
-    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
-}
-
-
 def _answer_word_count(answer: object) -> int:
     """Words in an answer, treating pure numbers as 0 (IELTS rubric: numbers
     don't count toward the word cap). Mirrors reading_trainer._answer_word_count
@@ -559,36 +593,7 @@ def _answer_word_count(answer: object) -> int:
     return sum(0 if t.replace(",", "").replace(".", "").isdigit() else 1 for t in tokens)
 
 
-def _parse_word_limit(value: object) -> int | None:
-    """Integer word cap from a word_limit field. Handles ints, numeric strings,
-    and IELTS phrasings ('ONE WORD', 'NO MORE THAN TWO WORDS AND/OR A NUMBER',
-    '5 words'). The '/ A NUMBER' clause doesn't add to the count. None if no cap
-    can be read."""
-    if value is None:
-        return None
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, (int, float)):
-        return int(value)
-    text = str(value).strip().lower()
-    if not text:
-        return None
-    m = re.search(r"\d+", text)
-    if m:
-        return int(m.group())
-    for word, n in _WORD_TO_INT.items():
-        if re.search(rf"\b{word}\b", text):
-            return n
-    return None
-
-
-def _canonical_word_limit(n: int) -> str:
-    word = {1: "ONE", 2: "TWO", 3: "THREE", 4: "FOUR", 5: "FIVE"}.get(n, str(n))
-    unit = "WORD" if n == 1 else "WORDS"
-    return f"NO MORE THAN {word} {unit} AND/OR A NUMBER"
-
-
-def _reconcile_word_limits(target: dict, spec: SectionSpec) -> None:
+def _reconcile_word_limits(target: dict) -> None:
     """Bump each gap-fill question's word_limit up to fit its answer so the SFT
     target never contradicts itself. The teacher routinely states 'ONE WORD'
     then supplies a two- or three-word answer; training on that teaches the
@@ -606,24 +611,21 @@ def _reconcile_word_limits(target: dict, spec: SectionSpec) -> None:
         needed = max(
             (_answer_word_count(c) for c in str(answer).split(";")), default=0
         )
-        limit = _parse_word_limit(q.get("word_limit"))
+        limit = parse_word_limit(q.get("word_limit"))
         if limit is None:
             # Gap-fill must carry a cap; the teacher sometimes omits it or
             # phrases it unparseably. Default to the answer's length (min 1).
-            q["word_limit"] = _render_word_limit(max(1, needed), spec)
+            q["word_limit"] = max(1, needed)
             _CLEAN_STATS["reconciled"] += 1
         elif needed > limit:
-            q["word_limit"] = _render_word_limit(needed, spec)
+            q["word_limit"] = needed
             _CLEAN_STATS["reconciled"] += 1
-        elif spec.numeric_word_limit and not isinstance(q.get("word_limit"), int):
-            # Reading's contract types word_limit as an int and the runtime
-            # checker calls int() on it directly; normalise a consistent but
-            # string-typed cap rather than teaching the model the wrong type.
+        elif not isinstance(q.get("word_limit"), int):
+            # Both contracts declare word_limit an int and the shared runtime
+            # check calls int() on it directly — a rubric sentence here raises
+            # ValueError, which that check swallows, silently skipping the cap.
             q["word_limit"] = limit
-
-
-def _render_word_limit(n: int, spec: SectionSpec) -> int | str:
-    return n if spec.numeric_word_limit else _canonical_word_limit(n)
+            _CLEAN_STATS["reconciled"] += 1
 
 
 def _generator_target(part: dict, difficulty: str, complete_only: bool,
@@ -646,34 +648,24 @@ def _generator_target(part: dict, difficulty: str, complete_only: bool,
         if words < spec.min_body_words:
             _CLEAN_STATS["below_min_words"] += 1
             return None
-    _reconcile_word_limits(target, spec)
+    _reconcile_word_limits(target)
+    _canonicalize_types(target, spec)
     return target
 
 
 def _is_answerable(target: dict, spec: SectionSpec) -> bool:
     """Reject whole units a student could not actually sit.
 
-    The teacher sometimes emits a shared rubric on the first question of a
-    block and leaves the rest with `"question": ""`, or numbers questions that
-    the answer key never answers. Both render as a blank prompt in the UI, and
-    training on them teaches the student model to reproduce them. Reading rows
-    stored before `reading_trainer.validate_practice` existed also carry
-    degenerate answer keys (every multiple-choice answer 'A', a heading numeral
-    reused across paragraphs); the same rule that now gates generation gates
-    the export.
+    Each section is held to the validator that already gates its generation, so
+    a set the runtime would have sent back for a corrective retry never becomes
+    a training target either. Rows predating those validators are exactly the
+    ones this drops: blank question text under a block's shared rubric, answer
+    keys that don't line up with the question numbers, every multiple-choice
+    answer 'A', and completion items pointing at a table nothing renders.
     """
     if spec.name == "reading":
         return reading_trainer.validate_practice(target) is None
-    questions = target.get("questions") or []
-    answer_key = target.get("answer_key") or {}
-    numbers = set()
-    for q in questions:
-        if not isinstance(q, dict):
-            return False
-        if not str(q.get("question") or "").strip():
-            return False
-        numbers.add(str(q.get("number")))
-    return numbers == set(map(str, answer_key))
+    return listening_trainer.validate_part(target) is None
 
 
 def _reading_target(part: dict) -> dict | None:
