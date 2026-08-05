@@ -1,7 +1,7 @@
-import json
 import logging
 import re
 
+from app.agents._marking import mark_answers
 from app.agents.answerability import (
     canon,
     cross_section_error,
@@ -11,8 +11,8 @@ from app.agents.answerability import (
 )
 from app.llm.client import get_llm_client
 from app.llm.prompts import (
-    ANSWER_CHECKER_SYSTEM,
     PASSAGE_EXPANDER_SYSTEM,
+    READING_EVALUATOR_SYSTEM,
     READING_TRAINER_SYSTEM,
 )
 from app.rag.retriever import retrieve_context
@@ -35,6 +35,25 @@ _GAP_FILL_TYPES = {canon(t) for t in (
     "form_completion",
     "flow_chart_completion",
 )}
+
+# Academic Reading is marked on its own conversion table — it is harder than
+# Listening at the same raw score (band 7.5 needs 33 here against 32 there).
+_READING_BAND_TABLE: list[tuple[int, float]] = [
+    (39, 9.0),
+    (37, 8.5),
+    (35, 8.0),
+    (33, 7.5),
+    (30, 7.0),
+    (27, 6.5),
+    (23, 6.0),
+    (19, 5.5),
+    (15, 5.0),
+    (13, 4.5),
+    (10, 4.0),
+    (8, 3.5),
+    (6, 3.0),
+    (4, 2.5),
+]
 
 
 def _answer_word_count(answer: str) -> int:
@@ -316,20 +335,7 @@ async def _expand_passage(passage: str, title: str) -> str | None:
 
 
 async def check_answers(practice: dict, answers: dict) -> dict:
-    payload = {
-        "title": practice.get("title"),
-        "questions": practice.get("questions", []),
-        "answer_key": practice.get("answer_key", {}),
-        "student_answers": {str(k): v for k, v in answers.items()},
-    }
-    if practice.get("passage"):
-        payload["passage"] = practice["passage"]
-    if practice.get("audio_script"):
-        payload["audio_script"] = practice["audio_script"]
-    if practice.get("accepted_variants"):
-        payload["accepted_variants"] = practice["accepted_variants"]
-    return await get_llm_client().complete_json(
-        ANSWER_CHECKER_SYSTEM,
-        [{"role": "user", "content": json.dumps(payload, ensure_ascii=False)}],
-        required_keys=("score", "total", "results"),
+    """Mark a Reading passage answer-by-answer with the fine-tuned evaluator."""
+    return await mark_answers(
+        practice, answers, READING_EVALUATOR_SYSTEM, _READING_BAND_TABLE
     )

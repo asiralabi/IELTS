@@ -122,28 +122,6 @@ LISTENING_PRACTICE = {
     "answer_key": {"1": "6:00", "2": "BRAITHWAITE"},
 }
 
-CHECK_RESULT = {
-    "score": 1,
-    "total": 2,
-    "band_estimate": 5.5,
-    "results": [
-        {
-            "number": 1,
-            "correct": True,
-            "student_answer": "TRUE",
-            "correct_answer": "TRUE",
-            "explanation": "Stated in the first sentence.",
-        },
-        {
-            "number": 2,
-            "correct": False,
-            "student_answer": "FALSE",
-            "correct_answer": "NOT GIVEN",
-            "explanation": "The passage never mentions Portugal.",
-        },
-    ],
-}
-
 FEEDBACK_PLAN = {
     "summary": "Currently around Band 6; grammar is the main bottleneck.",
     "priorities": ["grammatical range", "TFNG paraphrase recognition"],
@@ -267,11 +245,9 @@ class MockLLMClient(LLMClient):
             return dict(READING_PRACTICE)
         if "Listening test writer" in system:
             return dict(LISTENING_PRACTICE)
-        if "marking assistant" in system:
-            return dict(CHECK_RESULT)
         if "answer evaluator" in system:
-            # Judge for real off the prompt so the per-answer listening path is
-            # actually exercised rather than handed a canned verdict.
+            # Judge for real off the prompt so both sections' per-answer
+            # marking is actually exercised rather than handed a canned verdict.
             user = messages[-1]["content"] if messages else ""
             fields = dict(
                 line.split(": ", 1) for line in user.splitlines() if ": " in line
@@ -287,7 +263,11 @@ class MockLLMClient(LLMClient):
                     else f"The correct answer is '{official}'."
                 ),
                 "correct_answer": official,
-                "skill": "listening for specific detail",
+                "skill": (
+                    "scanning for specific detail"
+                    if "Reading" in system
+                    else "listening for specific detail"
+                ),
             }
         if "study coach" in system:
             return dict(FEEDBACK_PLAN)

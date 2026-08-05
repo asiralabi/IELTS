@@ -2,6 +2,7 @@ import asyncio
 import logging
 import re
 
+from app.agents._marking import band_from_40, mark_answers, safe_int
 from app.agents.answerability import (
     canon,
     cross_section_error,
@@ -448,149 +449,11 @@ async def create_full_test(difficulty: str | None = None) -> dict:
     }
 
 
-def _safe_int(value: object, default: int = 0) -> int:
-    try:
-        return int(str(value))
-    except (TypeError, ValueError):
-        return default
-
-
-def _listening_band_from_40(correct: int, total: int = 40) -> float:
-    """Convert a raw score to an IELTS Listening band using the standard
-    40-question conversion table (scaling shorter/partial sets to /40)."""
-    if total <= 0:
-        return 0.0
-    scaled = round(correct * 40 / total)
-    for threshold, band in _LISTENING_BAND_TABLE:
-        if scaled >= threshold:
-            return band
-    return 2.0 if scaled >= 2 else 0.0
-
-
-_PUNCT_RE = re.compile(r"[^\w\s]")
-
-
-def _norm(text: object) -> str:
-    """Casefold, strip punctuation and collapse whitespace, so a clerical
-    match ignores exactly what IELTS markers ignore."""
-    return " ".join(_PUNCT_RE.sub(" ", str(text or "").casefold()).split())
-
-
-async def _evaluate_one(
-    number: str, question: dict, official: str, variants: list[str], student: str
-) -> dict:
-    """Judge one answer with the fine-tuned evaluator. The user message must
-    stay byte-identical in shape to tools/build_dataset.py `_evaluator_records`
-    or the checkpoint sees a prompt it was never trained on.
-    """
-    qtext = str(question.get("question") or f"Question {number}").strip()
-    user = (
-        f"Question: {qtext}\n"
-        f"Official Answer: {official}\n"
-        f"Accepted Variants: {', '.join(variants) if variants else 'none'}\n"
-        f"Student Answer: {student if student else '(blank)'}"
-    )
-    try:
-        judged = await get_llm_client("evaluator").complete_json(
-            EVALUATOR_SYSTEM,
-            [{"role": "user", "content": user}],
-            required_keys=("verdict", "reason"),
-            # Marking must be reproducible, and the longest verdict in the
-            # training set is 239 tokens — the 4096 default would let a
-            # non-stopping generation run for 20+ minutes on CPU.
-            temperature=0.0,
-            max_tokens=320,
-        )
-    except Exception:
-        # One unusable verdict must not void the other 39 answers. The
-        # pre-pass already found no clerical match, so incorrect is the
-        # honest fallback.
-        logger.warning("evaluator failed on question %s; marking incorrect", number)
-        return {
-            "correct": False,
-            "reason": f"Could not be marked automatically. The correct answer is '{official}'.",
-        }
-    return {
-        "correct": str(judged.get("verdict") or "").strip().lower() == "correct",
-        "reason": str(judged.get("reason") or "").strip(),
-        "skill": str(judged.get("skill") or "").strip(),
-    }
-
-
 async def check_answers(practice: dict, answers: dict) -> dict:
-    """Mark a Listening part answer-by-answer with the fine-tuned evaluator.
-
-    Blank, exact and listed-variant answers are settled locally: on CPU each
-    evaluator call costs seconds, so routing all 40 through the model would
-    make marking a test take longer than sitting it.
-    """
-    questions = {
-        str(q.get("number")): q
-        for q in (practice.get("questions") or [])
-        if isinstance(q, dict)
-    }
-    variants_map = practice.get("accepted_variants")
-    if not isinstance(variants_map, dict):
-        variants_map = {}
-    student_answers = {str(k): v for k, v in (answers or {}).items()}
-
-    rows: dict[str, dict] = {}
-    pending: list[tuple[str, str, list[str], str]] = []
-
-    for raw_num, official_raw in (practice.get("answer_key") or {}).items():
-        num = str(raw_num)
-        official = str(official_raw or "").strip()
-        student = str(student_answers.get(num) or "").strip()
-        variants = [
-            str(v).strip() for v in (variants_map.get(num) or []) if str(v).strip()
-        ]
-        row = {
-            "number": _safe_int(num),
-            "student_answer": student,
-            "correct_answer": official,
-        }
-        if not student:
-            rows[num] = {
-                **row,
-                "correct": False,
-                "explanation": f"No answer given. The correct answer is '{official}'.",
-            }
-        elif _norm(student) == _norm(official) or _norm(student) in {
-            _norm(v) for v in variants
-        }:
-            rows[num] = {
-                **row,
-                "correct": True,
-                "explanation": "Matches the official answer under IELTS marking.",
-            }
-        else:
-            pending.append((num, official, variants, student))
-
-    if pending:
-        judged = await asyncio.gather(
-            *(
-                _evaluate_one(num, questions.get(num) or {}, official, variants, student)
-                for num, official, variants, student in pending
-            )
-        )
-        for (num, official, _variants, student), verdict in zip(pending, judged):
-            rows[num] = {
-                "number": _safe_int(num),
-                "student_answer": student,
-                "correct_answer": official,
-                "correct": verdict["correct"],
-                "explanation": verdict["reason"],
-                **({"skill": verdict["skill"]} if verdict.get("skill") else {}),
-            }
-
-    results = [rows[k] for k in sorted(rows, key=_safe_int)]
-    score = sum(1 for r in results if r["correct"])
-    return {
-        "score": score,
-        "total": len(results),
-        "band_estimate": _listening_band_from_40(score, len(results)),
-        "results": results,
-    }
+    """Mark a Listening part answer-by-answer with the fine-tuned evaluator."""
+    return await mark_answers(
+        practice, answers, EVALUATOR_SYSTEM, _LISTENING_BAND_TABLE
+    )
 
 
 async def check_full_test(test_payload: dict, answers: dict) -> dict:
@@ -612,8 +475,8 @@ async def check_full_test(test_payload: dict, answers: dict) -> dict:
     for part, outcome in zip(parts, outcomes):
         rows = outcome.get("results") or []
         merged_results.extend(rows)
-        score = _safe_int(outcome.get("score"))
-        part_total = _safe_int(
+        score = safe_int(outcome.get("score"))
+        part_total = safe_int(
             outcome.get("total"), len(part.get("questions") or [])
         )
         total_correct += score
@@ -628,11 +491,13 @@ async def check_full_test(test_payload: dict, answers: dict) -> dict:
             }
         )
 
-    merged_results.sort(key=lambda r: _safe_int(r.get("number")))
+    merged_results.sort(key=lambda r: safe_int(r.get("number")))
     return {
         "score": total_correct,
         "total": total_questions,
-        "band_estimate": _listening_band_from_40(total_correct, total_questions),
+        "band_estimate": band_from_40(
+            total_correct, total_questions, _LISTENING_BAND_TABLE
+        ),
         "parts": part_summaries,
         "results": merged_results,
     }

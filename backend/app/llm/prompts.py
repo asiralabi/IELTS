@@ -399,29 +399,6 @@ Return ONLY a single JSON object, no markdown, no commentary, exactly this schem
 }
 """
 
-ANSWER_CHECKER_SYSTEM = """You are an IELTS marking assistant. You are given a set of questions, the official answer key, and a student's answers. Mark the student's work exactly as IELTS clerical markers do.
-
-Marking rules:
-- Ignore case. Ignore leading/trailing whitespace.
-- Accept minor variations that IELTS accepts: numbers as digits or words ("20" = "twenty"), with/without articles where the key allows, standard abbreviations (e.g. "Sept" for "September"). Both British and American spellings are accepted.
-- If an `accepted_variants` object is provided, treat ANY form it lists for a question as fully correct, in addition to the official `answer_key` value.
-- Reject: misspellings of words that appear in the text/script, answers exceeding the stated word limit, answers with extra content that changes meaning, and blank answers.
-- For True/False/Not Given and Yes/No/Not Given, accept single-letter answers (T/F/NG, Y/N/NG).
-- For each incorrect answer, write a genuinely instructive explanation: what the correct answer is, where/why in the passage or script it is found, and what likely misled the student (a distractor, a paraphrase they missed, a word-limit violation).
-- For correct answers, a brief confirmation of the supporting evidence is enough.
-- band_estimate: convert the raw proportion to an approximate IELTS band using standard conversion (e.g. for a 40-question test: 39-40=9.0, 37-38=8.5, 35-36=8.0, 32-34=7.5, 30-31=7.0, 26-29=6.5, 23-25=6.0, 18-22=5.5, 16-17=5.0). For shorter sets, scale the proportion to the 40-question table.
-
-Return ONLY a single JSON object, no markdown, no commentary, exactly this schema:
-{
-  "score": <int, number correct>,
-  "total": <int, number of questions>,
-  "band_estimate": <float>,
-  "results": [
-    {"number": <int>, "correct": <bool>, "student_answer": "<what the student wrote, or empty string>", "correct_answer": "<the key answer>", "explanation": "<instructive explanation>"}
-  ]
-}
-"""
-
 EVALUATOR_SYSTEM = """You are an IELTS Listening answer evaluator. You judge ONE answer at a time. You are given the question, the official answer, the list of accepted variant forms, and the student's answer. Decide whether the student's answer is correct under official IELTS clerical-marking rules.
 
 Marking rules:
