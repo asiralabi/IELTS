@@ -168,22 +168,24 @@ async def create_practice(
     if topic:
         parts.append(f"Topic: {topic}.")
 
-    query = "IELTS Listening script " + (topic or "") + " " + (
-        " ".join(question_types) if question_types else "form completion note completion map labelling multiple choice"
-    )
-    # top_k=1: same reasoning as reading — extra chunks cost input eval time
-    # on CPU without a matching quality gain.
-    context = retrieve_context(query.strip(), top_k=1)
-    if context:
-        parts.append(
-            "\nReal Cambridge IELTS Listening exemplar — match this style, "
-            "conversational register, question type mix, and answer-key format. "
-            "Do NOT copy its phrasing, scenarios, or specific answers; use it "
-            "as stylistic reference only.\n\n"
-            + context
+    client = get_llm_client("generator")
+    if not client.is_finetune:
+        query = "IELTS Listening script " + (topic or "") + " " + (
+            " ".join(question_types) if question_types else "form completion note completion map labelling multiple choice"
         )
+        # top_k=1: same reasoning as reading — extra chunks cost input eval time
+        # on CPU without a matching quality gain.
+        context = retrieve_context(query.strip(), top_k=1)
+        if context:
+            parts.append(
+                "\nReal Cambridge IELTS Listening exemplar — match this style, "
+                "conversational register, question type mix, and answer-key format. "
+                "Do NOT copy its phrasing, scenarios, or specific answers; use it "
+                "as stylistic reference only.\n\n"
+                + context
+            )
 
-    result = await get_llm_client("generator").complete_json(
+    result = await client.complete_json(
         LISTENING_TRAINER_SYSTEM,
         [{"role": "user", "content": "\n".join(parts)}],
         required_keys=("title", "audio_script", "questions", "answer_key"),
@@ -399,17 +401,19 @@ async def create_part(
     if topic:
         parts.append(f"Topic: {topic}.")
 
-    query = f"IELTS Listening Part {part_number} script " + (topic or "")
-    context = retrieve_context(query.strip(), top_k=1)
-    if context:
-        parts.append(
-            "\nReal Cambridge IELTS Listening exemplar — match this style, "
-            "register, and answer-key format. Do NOT copy its phrasing, "
-            "scenario, or answers; use it as stylistic reference only.\n\n"
-            + context
-        )
+    client = get_llm_client("generator")
+    if not client.is_finetune:
+        query = f"IELTS Listening Part {part_number} script " + (topic or "")
+        context = retrieve_context(query.strip(), top_k=1)
+        if context:
+            parts.append(
+                "\nReal Cambridge IELTS Listening exemplar — match this style, "
+                "register, and answer-key format. Do NOT copy its phrasing, "
+                "scenario, or answers; use it as stylistic reference only.\n\n"
+                + context
+            )
 
-    result = await get_llm_client("generator").complete_json(
+    result = await client.complete_json(
         LISTENING_TRAINER_SYSTEM,
         [{"role": "user", "content": "\n".join(parts)}],
         required_keys=("title", "audio_script", "questions", "answer_key"),

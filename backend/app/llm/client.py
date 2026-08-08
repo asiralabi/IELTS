@@ -30,6 +30,10 @@ def _extract_json(text: str) -> dict[str, Any]:
 
 
 class LLMClient(ABC):
+    # True only for a client serving one of our own checkpoints. Callers use it
+    # to send the prompt shape that checkpoint was trained on.
+    is_finetune = False
+
     @abstractmethod
     async def complete(
         self,
@@ -126,10 +130,12 @@ async def shutdown_llm_http_client() -> None:
 
 
 class OllamaClient(LLMClient):
-    def __init__(self, model: str | None = None, timeout: float | None = None) -> None:
+    def __init__(self, model: str | None = None, timeout: float | None = None,
+                 is_finetune: bool = False) -> None:
         self.base_url = settings.ollama_base_url.rstrip("/")
         self.model = model or settings.ollama_model
         self.timeout = timeout
+        self.is_finetune = is_finetune
 
     async def complete(
         self,
@@ -246,7 +252,11 @@ def _build_client(task: str | None) -> LLMClient:
     # the general provider — no hosted endpoint has our checkpoint.
     setting = _TASK_MODEL_SETTING.get(task or "")
     if setting and getattr(settings, setting):
-        return OllamaClient(getattr(settings, setting), timeout=settings.finetune_timeout)
+        return OllamaClient(
+            getattr(settings, setting),
+            timeout=settings.finetune_timeout,
+            is_finetune=True,
+        )
     provider = settings.llm_provider
     if provider == "anthropic":
         return AnthropicClient()

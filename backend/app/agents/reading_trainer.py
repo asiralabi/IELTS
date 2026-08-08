@@ -270,21 +270,28 @@ async def create_practice(
     if topic:
         parts.append(f"Topic: {topic}.")
 
-    query = "IELTS Academic Reading passage " + (topic or "") + " " + (
-        " ".join(question_types) if question_types else "True False Not Given matching headings"
-    )
-    # top_k=1 keeps the exemplar tight — extra chunks cost ~800 input tokens
-    # each on a CPU-bound model without visibly improving output style.
-    context = retrieve_context(query.strip(), top_k=1)
-    if context:
-        parts.append(
-            "\nReal Cambridge IELTS Reading exemplar — match this style, tone, "
-            "structure and question difficulty. Do NOT copy its phrasing, "
-            "topic, or specific facts; use it as stylistic reference only.\n\n"
-            + context
+    client = get_llm_client("generator")
+    # The SFT user turn is topic/difficulty/types only, so grounding a
+    # fine-tune puts it off-distribution: it read the exemplar as content to
+    # continue and emitted the exemplar's own questions against its new
+    # passage. The checkpoint was distilled from grounded teacher output, so
+    # the Cambridge style is already in the weights.
+    if not client.is_finetune:
+        query = "IELTS Academic Reading passage " + (topic or "") + " " + (
+            " ".join(question_types) if question_types else "True False Not Given matching headings"
         )
+        # top_k=1 keeps the exemplar tight — extra chunks cost ~800 input tokens
+        # each on a CPU-bound model without visibly improving output style.
+        context = retrieve_context(query.strip(), top_k=1)
+        if context:
+            parts.append(
+                "\nReal Cambridge IELTS Reading exemplar — match this style, tone, "
+                "structure and question difficulty. Do NOT copy its phrasing, "
+                "topic, or specific facts; use it as stylistic reference only.\n\n"
+                + context
+            )
 
-    result = await get_llm_client("generator").complete_json(
+    result = await client.complete_json(
         READING_TRAINER_SYSTEM,
         [{"role": "user", "content": "\n".join(parts)}],
         required_keys=("title", "passage", "questions", "answer_key"),
