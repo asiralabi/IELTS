@@ -193,7 +193,17 @@ def validate_practice(result: dict) -> str | None:
     if headings:
         answers = [str(answer_key.get(str(q.get("number")))) for q in headings]
         if len(set(answers)) != len(answers):
-            return "each matching_headings answer must be a different heading"
+            # A reading set is too long to echo back into the corrective retry,
+            # so this string is the only handle the model has on what to change.
+            repeated = sorted({a for a in answers if answers.count(a) > 1})
+            clashing = ", ".join(
+                str(q.get("number")) for q, a in zip(headings, answers) if a in repeated
+            )
+            return (
+                "each matching_headings answer must be a different heading, but "
+                f"questions {clashing} reuse {', '.join(repeated)} — reassign so "
+                "every paragraph gets its own heading"
+            )
         for q in headings:
             opts = q.get("options")
             if not isinstance(opts, list) or len(opts) < len(headings) + 2:

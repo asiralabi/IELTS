@@ -12,6 +12,14 @@ from app.config import settings
 _THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL)
 _FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL)
 
+# Echoing a failed reply back lets the model see what it got wrong, which is what
+# fixes the "echoed the input" and "null-valued key" cases. But a generated exam
+# is ~2-3k tokens on top of a ~3.2k-token prompt and a 4096-token generation
+# budget, which overruns the 8192-token window of our local checkpoints — and
+# Ollama silently drops part of the conversation to make it fit rather than
+# failing. Past this size the correction message alone carries the feedback.
+_MAX_ECHOED_REPLY_CHARS = 2000
+
 
 def _strip_think(text: str) -> str:
     return _THINK_RE.sub("", text).strip()
@@ -71,9 +79,21 @@ class LLMClient(ABC):
         try:
             return parse(raw)
         except (ValueError, json.JSONDecodeError) as first_error:
+            if isinstance(first_error, json.JSONDecodeError):
+                # The local checkpoints break JSON one way: they ramble past any
+                # length they were trained on and get cut off at num_predict, so
+                # the object never closes. Quoting the decoder's column number
+                # gives the model nothing to act on; asking for less prose does.
+                complaint = (
+                    "Your previous reply was not valid JSON — it ran on and was "
+                    "cut off before the object closed. Write a shorter one: keep "
+                    "every required key, but no repeated or padded text."
+                )
+            else:
+                complaint = f"Your previous reply was not acceptable ({first_error})."
             correction = (
-                f"Your previous reply was not acceptable ({first_error}). "
-                "Return ONLY a single valid JSON object matching the schema "
+                complaint
+                + " Return ONLY a single valid JSON object matching the schema "
                 "in the system prompt"
             )
             if required_keys:
@@ -81,10 +101,10 @@ class LLMClient(ABC):
                     ", with non-null values for the keys: "
                     + ", ".join(required_keys)
                 )
-            retry_messages = messages + [
-                {"role": "assistant", "content": raw},
-                {"role": "user", "content": correction + "."},
-            ]
+            retry_messages = list(messages)
+            if len(raw) <= _MAX_ECHOED_REPLY_CHARS:
+                retry_messages.append({"role": "assistant", "content": raw})
+            retry_messages.append({"role": "user", "content": correction + "."})
             raw = await self.complete(system, retry_messages, json_mode=True, **kw)
             try:
                 return parse(raw)

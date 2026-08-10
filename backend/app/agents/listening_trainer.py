@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import random
 import re
 
 from app.agents._marking import band_from_40, mark_answers, safe_int
@@ -45,6 +46,7 @@ _PART_SPECS: dict[int, dict[str, str]] = {
             "Fill the rest with short_answer or sentence_completion. Use AT "
             "MOST 2 multiple_choice questions."
         ),
+        "types": "form_completion, short_answer, multiple_choice",
     },
     2: {
         "format": (
@@ -59,6 +61,7 @@ _PART_SPECS: dict[int, dict[str, str]] = {
             "matching, plus AT MOST 2 multiple_choice. map_labelling answers "
             "are LETTERS, with no `options` array."
         ),
+        "types": "map_labelling, multiple_choice, short_answer",
     },
     3: {
         "format": (
@@ -71,6 +74,7 @@ _PART_SPECS: dict[int, dict[str, str]] = {
             "stages of the project the speakers discuss, and AT MOST 4 "
             "multiple_choice. No figure is needed — set `visual` to null."
         ),
+        "types": "multiple_choice, matching",
     },
     4: {
         "format": (
@@ -82,8 +86,37 @@ _PART_SPECS: dict[int, dict[str, str]] = {
             "(lecture notes with numbered gaps). Do NOT use multiple_choice. "
             "No figure is needed — set `visual` to null."
         ),
+        "types": "note_completion, sentence_completion",
     },
 }
+
+
+def _finetune_user_message(
+    section: int,
+    difficulty: str | None,
+    topic: str | None,
+    question_types: list[str] | None = None,
+) -> str:
+    """The user turn shape every listening generator SFT record carries.
+
+    Mirrors build_dataset._listening_user_message. Measured against the
+    checkpoint: sent this shape it closed the JSON on 6 of 6 samples, peaking at
+    2319 output tokens; sent the prose prompt below it looped on a ~78-token
+    cycle 1 time in 4 and ran to the 4096-token cap with the object still open.
+    The per-part `types` stand in for the `figure` instruction — the corpus
+    encodes each part's figure through its question types, and never mentions a
+    figure at all.
+    """
+    return "\n".join([
+        "Generate a Listening Test.",
+        f"Section: Part {section}",
+        f"Difficulty: {difficulty or 'Medium'}",
+        f"Topic: {topic or 'unspecified'}",
+        "Question Types: "
+        + (", ".join(question_types) if question_types else _PART_SPECS[section]["types"]),
+        "Target Duration: 7 minutes",
+    ])
+
 
 # Standard Cambridge IELTS (Academic) Listening raw-score → band conversion,
 # expressed as (minimum correct out of 40, band). Checked top-down.
@@ -160,16 +193,25 @@ async def create_practice(
     difficulty: str | None = None,
     topic: str | None = None,
 ) -> dict:
-    parts = ["Generate an IELTS Listening practice set."]
-    if question_types:
-        parts.append("Question types: " + ", ".join(question_types) + ".")
-    if difficulty:
-        parts.append(f"Difficulty: {difficulty}.")
-    if topic:
-        parts.append(f"Topic: {topic}.")
-
     client = get_llm_client("generator")
-    if not client.is_finetune:
+    if client.is_finetune:
+        # Every corpus record is one numbered part, so the fine-tune needs a
+        # section. Spread across all four or the warm pool fills with Part 1
+        # transactional conversations.
+        parts = [
+            _finetune_user_message(
+                random.randint(1, 4), difficulty, topic, question_types
+            )
+        ]
+    else:
+        parts = ["Generate an IELTS Listening practice set."]
+        if question_types:
+            parts.append("Question types: " + ", ".join(question_types) + ".")
+        if difficulty:
+            parts.append(f"Difficulty: {difficulty}.")
+        if topic:
+            parts.append(f"Topic: {topic}.")
+
         query = "IELTS Listening script " + (topic or "") + " " + (
             " ".join(question_types) if question_types else "form completion note completion map labelling multiple choice"
         )
@@ -384,6 +426,23 @@ def _normalize_map_visual(result: dict) -> None:
     visual["paths"] = clean_paths
 
 
+def _validate_full_test_part(result: dict) -> str | None:
+    """validate_part, plus the count a full test depends on.
+
+    _renumber assigns global numbers positionally as `offset + i + 1`, so a part
+    that comes back with nine questions leaves a hole at the seam and one with
+    eleven overlaps the next part. The fine-tune is asked in its training shape,
+    which states no count, and returned eight questions on 1 of 6 samples.
+    """
+    problem = validate_part(result)
+    if problem:
+        return problem
+    count = len(result.get("questions") or [])
+    if count != 10:
+        return f"a full-test part needs exactly 10 questions, not {count}"
+    return None
+
+
 async def create_part(
     part_number: int,
     difficulty: str | None = None,
@@ -391,18 +450,20 @@ async def create_part(
 ) -> dict:
     """Generate ONE part of a full test (10 questions), globally renumbered."""
     spec = _PART_SPECS[part_number]
-    parts = [
-        f"Generate ONE part of an IELTS Listening test. {spec['format']}",
-        "Produce EXACTLY 10 questions, numbered 1 to 10.",
-        spec["figure"],
-    ]
-    if difficulty:
-        parts.append(f"Difficulty: {difficulty}.")
-    if topic:
-        parts.append(f"Topic: {topic}.")
-
     client = get_llm_client("generator")
-    if not client.is_finetune:
+    if client.is_finetune:
+        parts = [_finetune_user_message(part_number, difficulty, topic)]
+    else:
+        parts = [
+            f"Generate ONE part of an IELTS Listening test. {spec['format']}",
+            "Produce EXACTLY 10 questions, numbered 1 to 10.",
+            spec["figure"],
+        ]
+        if difficulty:
+            parts.append(f"Difficulty: {difficulty}.")
+        if topic:
+            parts.append(f"Topic: {topic}.")
+
         query = f"IELTS Listening Part {part_number} script " + (topic or "")
         context = retrieve_context(query.strip(), top_k=1)
         if context:
@@ -417,7 +478,7 @@ async def create_part(
         LISTENING_TRAINER_SYSTEM,
         [{"role": "user", "content": "\n".join(parts)}],
         required_keys=("title", "audio_script", "questions", "answer_key"),
-        validate=validate_part,
+        validate=_validate_full_test_part,
         # A full part is a ~1.7-3.1k-token JSON object, but LLM_MAX_TOKENS is
         # 2048 locally — that truncates mid-JSON on the longer half of the
         # range, and each retry costs another ~5 min. The ~2.9k prompt plus

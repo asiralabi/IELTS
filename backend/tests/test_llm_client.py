@@ -99,10 +99,46 @@ async def test_validator_rejection_triggers_retry_with_problem_message():
     assert "band_score must be numeric" in client.calls[1][-1]["content"]
 
 
+async def test_oversized_reply_is_not_echoed_into_the_retry():
+    """A truncated exam JSON plus the prompt it came from overruns the local
+    checkpoints' 8192-token window, and Ollama trims the conversation silently
+    rather than erroring — so the retry would be answered without its schema."""
+    truncated = '{"title": "x", "audio_script": "' + "word " * 2000
+    good = json.dumps({"title": "x", "audio_script": "y"})
+    client = ScriptedClient([truncated, good])
+
+    result = await client.complete_json(
+        "sys",
+        [{"role": "user", "content": "generate"}],
+        required_keys=("title", "audio_script"),
+    )
+    assert result["audio_script"] == "y"
+    retry = client.calls[1]
+    assert [m["role"] for m in retry] == ["user", "user"]
+    assert truncated not in retry[-1]["content"]
+
+
 async def test_invalid_json_then_valid():
     client = ScriptedClient(["not json at all", '{"score": 1}'])
     result = await client.complete_json("sys", [], required_keys=("score",))
     assert result == {"score": 1}
+
+
+async def test_cutoff_reply_is_told_to_be_shorter():
+    """A reply cut off at num_predict is the local checkpoints' only JSON
+    failure, and the decoder's column number is useless as feedback."""
+    # Shaped like a real cut-off exam: earlier questions closed, the last one
+    # severed mid-string, so _extract_json slices to that inner '}'.
+    cutoff = (
+        '{"title": "x", "questions": [{"number": 1, "type": "form_completion"}, '
+        '{"number": 2, "question": "the caller says'
+    )
+    client = ScriptedClient([cutoff, '{"title": "x", "questions": []}'])
+
+    await client.complete_json("sys", [], required_keys=("title",))
+    correction = client.calls[1][-1]["content"]
+    assert "shorter" in correction
+    assert "delimiter" not in correction
 
 
 async def test_two_bad_replies_raise_value_error():

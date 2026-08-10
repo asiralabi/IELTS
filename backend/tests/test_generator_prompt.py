@@ -95,3 +95,80 @@ def test_general_model_keeps_its_grounding(capture, name):
     asyncio.run(CALLS[name]())
 
     assert GROUNDING_MARKER in client.user_turns[0]
+
+
+LISTENING_CALLS = ["listening_practice", "listening_part"]
+
+# Wording only build_dataset._listening_user_message produces.
+CORPUS_SHAPE = ("Generate a Listening Test.", "Section: Part ", "Target Duration: 7 minutes")
+# Wording the corpus never contains, which sent the checkpoint off-distribution.
+PROSE_SHAPE = ("EXACTLY 10 questions", "TABLE figure")
+
+
+@pytest.mark.parametrize("name", LISTENING_CALLS, ids=LISTENING_CALLS)
+def test_finetune_gets_the_corpus_listening_shape(capture, name):
+    """Listening's exporter was never brought in line with the runtime the way
+    reading's was. Sent the runtime's prose prompt the checkpoint looped on a
+    ~78-token cycle and ran to the token cap on 1 of 4 samples; sent this shape
+    it closed the JSON on 6 of 6."""
+    client = capture(is_finetune=True)
+    asyncio.run(CALLS[name]())
+
+    turn = client.user_turns[0]
+    for fragment in CORPUS_SHAPE:
+        assert fragment in turn
+    for fragment in PROSE_SHAPE:
+        assert fragment not in turn
+
+
+@pytest.mark.parametrize("name", LISTENING_CALLS, ids=LISTENING_CALLS)
+def test_general_model_keeps_the_prose_listening_prompt(capture, name):
+    """The hosted teacher was never trained on the corpus shape — its prompt
+    carries the per-part register and figure instructions instead."""
+    client = capture(is_finetune=False)
+    asyncio.run(CALLS[name]())
+
+    assert "Generate a Listening Test." not in client.user_turns[0]
+
+
+def _part(question_count: int) -> dict:
+    return {
+        "title": "Joining a Sports Centre",
+        "audio_script": "AGENT: Good morning. " * 10,
+        "questions": [
+            {"number": n, "type": "sentence_completion", "question": f"Gap {n} is ..."}
+            for n in range(1, question_count + 1)
+        ],
+        "answer_key": {str(n): "Monday" for n in range(1, question_count + 1)},
+    }
+
+
+def test_full_test_part_requires_ten_questions():
+    """_renumber numbers positionally from a fixed offset, so a short part
+    leaves a hole at the seam between parts and a long one overlaps the next.
+    The fine-tune's training shape states no count, so nothing else pins it."""
+    assert listening_trainer._validate_full_test_part(_part(10)) is None
+    assert "not 8" in listening_trainer._validate_full_test_part(_part(8))
+    assert "not 11" in listening_trainer._validate_full_test_part(_part(11))
+    # create_practice is a standalone set — it must not inherit the count rule.
+    assert listening_trainer.validate_part(_part(8)) is None
+
+
+def test_duplicate_heading_message_names_the_clash():
+    """A reading set exceeds the size complete_json will echo back, so the
+    validator's own string is all the retry gets. Told only that headings must
+    differ, the checkpoint repeated the same duplicate twice in a row and the
+    generation failed; the numbers and the reused heading give it a handle."""
+    result = {
+        "title": "t",
+        "passage": "p",
+        "questions": [
+            {"number": n, "type": "matching_headings", "question": f"Paragraph {n}",
+             "options": ["i", "ii", "iii", "iv", "v"]}
+            for n in range(1, 4)
+        ],
+        "answer_key": {"1": "iv", "2": "ii", "3": "iv"},
+    }
+    problem = reading_trainer.validate_practice(result)
+    assert "questions 1, 3" in problem
+    assert "iv" in problem
