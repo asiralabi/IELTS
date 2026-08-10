@@ -227,3 +227,31 @@ def test_multiple_choice_answer_must_be_one_of_its_options():
     problem = listening_trainer.validate_part(_keyed({"1": "2"}, question))
     assert "not one of its options" in problem
     assert "Water pollution only" in problem
+
+
+MAP_Q = [{"number": 1, "type": "map_labelling",
+          "question": "What is the location marked as point C?"}]
+MAP_VISUAL = {"kind": "map", "title": "Campus", "features": [{"label": "C", "x": 2, "y": 3}]}
+
+
+def test_map_labelling_without_a_map_is_rejected():
+    """dangling_structure_error lets anything ending in '?' through, which is
+    how two corpus records shipped a map question with no map — one keys the
+    answer 'C', the letter its own text quotes. A position cannot be read off a
+    drawing the student never sees, so there is no self-contained form."""
+    problem = listening_trainer.validate_part(_keyed({"1": "Library"}, MAP_Q))
+    assert "carries no map" in problem
+    assert listening_trainer.validate_part(
+        {**_keyed({"1": "Library"}, MAP_Q), "visual": MAP_VISUAL}
+    ) is None
+
+
+def test_a_table_visual_does_not_satisfy_a_map_question():
+    """The Listening contract allows either kind, so presence alone is not
+    enough — only a map renders lettered positions."""
+    table = {"kind": "chart", "chart_type": "table", "title": "t",
+             "series": [{"name": "r", "data": [["c", "__1__"]]}]}
+    problem = listening_trainer.validate_part(
+        {**_keyed({"1": "Library"}, MAP_Q), "visual": table}
+    )
+    assert "carries no map" in problem

@@ -8,6 +8,7 @@ from app.agents.answerability import (
     canon,
     cross_section_error,
     dangling_structure_error,
+    missing_map_error,
     qtype,
 )
 from app.agents.reading_trainer import (
@@ -187,6 +188,10 @@ def validate_part(result: dict) -> str | None:
     )
     if dangling:
         return dangling
+
+    mapless = missing_map_error(questions, result.get("visual"))
+    if mapless:
+        return mapless
 
     refusals = [
         f"Q{num}={str(ans).strip()!r}"

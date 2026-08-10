@@ -40,6 +40,11 @@ STRUCTURE_TYPES = {canon(t) for t in (
     "form_completion",
 )}
 
+# Labelling types the figure DEFINES rather than merely illustrates. A
+# completion item can inline its own gap and survive without the block it
+# names; these cannot, because the answer is a position on the drawing.
+MAP_TYPES = {canon(t) for t in ("map_labelling", "plan_labelling")}
+
 # A gap the student writes into: underscores, or the dotted leader a real exam
 # paper prints. Three dots are an ellipsis, so a leader needs four.
 _GAP_MARKER = re.compile(r"__+|\.{4,}")
@@ -130,6 +135,29 @@ def is_self_contained(text: str) -> bool:
     student can still answer it from the passage or script alone.
     """
     return bool(_GAP_MARKER.search(text)) or text.rstrip().endswith("?")
+
+
+def missing_map_error(questions: list, visual: object) -> str | None:
+    """Reject map/plan labelling with no map to label.
+
+    `dangling_structure_error` lets a question off if it ends in '?', which is
+    right for a completion item mistyped as one but wrong here: "What is the
+    location marked as point C?" is circular without the drawing, and the
+    corpus keys it 'C'. So there is no escape hatch.
+    """
+    if isinstance(visual, dict) and str(visual.get("kind", "")).lower() == "map":
+        return None
+    numbers = [str(q.get("number")) for q in questions
+               if isinstance(q, dict) and qtype(q) in MAP_TYPES]
+    if not numbers:
+        return None
+    return (
+        f"question(s) {', '.join(numbers)} ask the student to label a map or "
+        "plan, but `visual` carries no map — there is nothing to read a "
+        "position off, so they cannot be answered. Emit a map `visual` whose "
+        "lettered features are the ones the questions ask about, or use a "
+        "question type that needs no drawing."
+    )
 
 
 def dangling_structure_error(questions: list, visual: object, source: str) -> str | None:
