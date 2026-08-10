@@ -219,7 +219,9 @@ class AnthropicClient(LLMClient):
     def __init__(self) -> None:
         import anthropic
 
-        self.client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+        self.client = anthropic.AsyncAnthropic(
+            api_key=settings.anthropic_api_key, timeout=settings.llm_timeout
+        )
         self.model = settings.anthropic_model
 
     async def complete(
@@ -246,7 +248,10 @@ class OpenAIClient(LLMClient):
     def __init__(self) -> None:
         import openai
 
-        kwargs: dict[str, Any] = {"api_key": settings.openai_api_key}
+        kwargs: dict[str, Any] = {
+            "api_key": settings.openai_api_key,
+            "timeout": settings.llm_timeout,
+        }
         if settings.openai_base_url:
             kwargs["base_url"] = settings.openai_base_url
         self.client = openai.AsyncOpenAI(**kwargs)

@@ -4,7 +4,8 @@ import json
 
 import pytest
 
-from app.llm.client import LLMClient, _extract_json
+from app.config import settings
+from app.llm.client import AnthropicClient, LLMClient, OpenAIClient, _extract_json
 
 
 class ScriptedClient(LLMClient):
@@ -192,3 +193,35 @@ async def test_a_twice_rejected_set_reports_the_validator_not_a_json_error():
 async def test_no_required_keys_accepts_any_object():
     client = ScriptedClient(['{"anything": "goes"}'])
     assert await client.complete_json("sys", []) == {"anything": "goes"}
+
+
+class TestHostedClientTimeouts:
+    """Without an explicit timeout these inherit the SDK default of 600s, retried
+    twice — half an hour before a stuck call gives up. The fine-tune route reaches
+    them anyway: _expand_script and _expand_passage ask get_llm_client() for the
+    general model, and swallow every exception, so the wait is also invisible.
+    """
+
+    @staticmethod
+    def _recorder(recorded: dict):
+        def factory(**kwargs):
+            recorded.update(kwargs)
+            return object()
+
+        return factory
+
+    def test_openai_client_passes_the_configured_timeout(self, monkeypatch):
+        import openai
+
+        recorded: dict = {}
+        monkeypatch.setattr(openai, "AsyncOpenAI", self._recorder(recorded))
+        OpenAIClient()
+        assert recorded["timeout"] == settings.llm_timeout
+
+    def test_anthropic_client_passes_the_configured_timeout(self, monkeypatch):
+        import anthropic
+
+        recorded: dict = {}
+        monkeypatch.setattr(anthropic, "AsyncAnthropic", self._recorder(recorded))
+        AnthropicClient()
+        assert recorded["timeout"] == settings.llm_timeout
