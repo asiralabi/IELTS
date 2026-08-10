@@ -79,6 +79,7 @@ class LLMClient(ABC):
         try:
             return parse(raw)
         except (ValueError, json.JSONDecodeError) as first_error:
+            echoed = len(raw) <= _MAX_ECHOED_REPLY_CHARS
             if isinstance(first_error, json.JSONDecodeError):
                 # The local checkpoints break JSON one way: they ramble past any
                 # length they were trained on and get cut off at num_predict, so
@@ -91,6 +92,15 @@ class LLMClient(ABC):
                 )
             else:
                 complaint = f"Your previous reply was not acceptable ({first_error})."
+                if not echoed:
+                    # A validator names the offending question numbers, which
+                    # only helps if the reply is there to edit. No generated
+                    # exam ever fits the echo budget, so without this the model
+                    # is told to "reassign question 4" against nothing.
+                    complaint += (
+                        " That reply is not shown above and cannot be edited —"
+                        " write a completely new one that avoids the problem."
+                    )
             correction = (
                 complaint
                 + " Return ONLY a single valid JSON object matching the schema "
@@ -102,7 +112,7 @@ class LLMClient(ABC):
                     + ", ".join(required_keys)
                 )
             retry_messages = list(messages)
-            if len(raw) <= _MAX_ECHOED_REPLY_CHARS:
+            if echoed:
                 retry_messages.append({"role": "assistant", "content": raw})
             retry_messages.append({"role": "user", "content": correction + "."})
             raw = await self.complete(system, retry_messages, json_mode=True, **kw)

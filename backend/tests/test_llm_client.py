@@ -118,6 +118,34 @@ async def test_oversized_reply_is_not_echoed_into_the_retry():
     assert truncated not in retry[-1]["content"]
 
 
+async def test_unechoed_validator_failure_asks_for_a_new_reply_not_an_edit():
+    """No generated exam fits the echo budget — the shortest reply in either
+    corpus is 5052 chars against a 2000 cap. So a validator message naming
+    question numbers would otherwise tell the model to edit nothing."""
+    bad = json.dumps({"passage": "word " * 2000, "questions": []})
+    good = json.dumps({"passage": "p", "questions": [1]})
+    client = ScriptedClient([bad, good])
+
+    result = await client.complete_json(
+        "sys",
+        [{"role": "user", "content": "generate"}],
+        required_keys=("passage", "questions"),
+        validate=lambda o: "questions 3, 4 reuse heading i" if not o["questions"] else None,
+    )
+    assert result["questions"] == [1]
+    correction = client.calls[1][-1]["content"]
+    assert "questions 3, 4 reuse heading i" in correction
+    assert "cannot be edited" in correction
+
+
+async def test_an_echoed_reply_is_left_to_be_edited():
+    """The complaint only disowns the previous reply when it is absent; a short
+    one is right there in the conversation and pointing at it is the fix."""
+    client = ScriptedClient([json.dumps({"score": None}), json.dumps({"score": 1})])
+    await client.complete_json("sys", [], required_keys=("score",))
+    assert "cannot be edited" not in client.calls[1][-1]["content"]
+
+
 async def test_invalid_json_then_valid():
     client = ScriptedClient(["not json at all", '{"score": 1}'])
     result = await client.complete_json("sys", [], required_keys=("score",))
