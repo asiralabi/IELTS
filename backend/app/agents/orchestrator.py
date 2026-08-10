@@ -11,6 +11,7 @@ from app.agents import (
     speaking_examiner,
     writing_examiner,
 )
+from app.llm.client import gather_llm
 from app.models import MockExam, User
 
 
@@ -29,9 +30,19 @@ async def build_mock_exam(user_target_band: float | None) -> dict:
     # Real IELTS Speaking Part 1 runs 10-15 questions across ~3 topic frames.
     # We ask for a clustered payload (3 topics × 4 questions = 12) — the
     # prompt schema returns `question` as an array of {topic, questions[]}.
-    listening, reading, task1, task2, part1, part2, part3 = await asyncio.gather(
-        listening_trainer.create_practice(difficulty=difficulty),
-        reading_trainer.create_practice(difficulty=difficulty),
+    # The two section generators share one fine-tune, so they are nested rather
+    # than spread across the gather: run side by side they would only queue on
+    # each other, and each retry deepens the queue the next call has to wait
+    # out. The five question_generator calls go to the hosted provider and do
+    # overlap, so they stay flat and cover the serial half.
+    sections, task1, task2, part1, part2, part3 = await asyncio.gather(
+        gather_llm(
+            "generator",
+            [
+                listening_trainer.create_practice(difficulty=difficulty),
+                reading_trainer.create_practice(difficulty=difficulty),
+            ],
+        ),
         question_generator.generate("writing", "Task 1", difficulty),
         question_generator.generate("writing", "Task 2 essay", difficulty),
         question_generator.generate(
@@ -40,6 +51,7 @@ async def build_mock_exam(user_target_band: float | None) -> dict:
         question_generator.generate("speaking", "Part 2 cue card", difficulty),
         question_generator.generate("speaking", "Part 3 discussion questions", difficulty),
     )
+    listening, reading = sections
     return {
         "listening": listening,
         "reading": reading,

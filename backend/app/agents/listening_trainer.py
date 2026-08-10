@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import random
 import re
@@ -12,7 +11,7 @@ from app.agents.answerability import (
     qtype,
     word_limit_error,
 )
-from app.llm.client import get_llm_client
+from app.llm.client import gather_llm, get_llm_client
 from app.llm.prompts import (
     EVALUATOR_SYSTEM,
     LISTENING_TRAINER_SYSTEM,
@@ -542,16 +541,13 @@ async def create_part(
 
 async def create_full_test(difficulty: str | None = None) -> dict:
     """Assemble a complete 4-part / 40-question IELTS Listening test."""
-    p1, p2, p3, p4 = await asyncio.gather(
-        create_part(1, difficulty),
-        create_part(2, difficulty),
-        create_part(3, difficulty),
-        create_part(4, difficulty),
+    parts = await gather_llm(
+        "generator", [create_part(n, difficulty) for n in (1, 2, 3, 4)]
     )
     return {
         "title": "IELTS Listening Practice Test",
         "kind": "full_listening_test",
-        "parts": [p1, p2, p3, p4],
+        "parts": parts,
     }
 
 
@@ -563,7 +559,7 @@ async def check_answers(practice: dict, answers: dict) -> dict:
 
 
 async def check_full_test(test_payload: dict, answers: dict) -> dict:
-    """Mark all 40 answers by checking each part in parallel, then aggregate."""
+    """Mark all 40 answers part by part, then aggregate."""
     parts = test_payload.get("parts") or []
     str_answers = {str(k): v for k, v in (answers or {}).items()}
 
@@ -572,7 +568,7 @@ async def check_full_test(test_payload: dict, answers: dict) -> dict:
         qnums = {str(q.get("number")) for q in part.get("questions") or []}
         part_answers = {k: v for k, v in str_answers.items() if k in qnums}
         coros.append(check_answers(part, part_answers))
-    outcomes = await asyncio.gather(*coros)
+    outcomes = await gather_llm("evaluator", coros)
 
     merged_results: list[dict] = []
     part_summaries: list[dict] = []

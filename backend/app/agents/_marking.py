@@ -7,11 +7,10 @@ apart — a checkpoint fed an untrained shape degrades silently rather than
 failing, so there is nothing to alert on.
 """
 
-import asyncio
 import logging
 import re
 
-from app.llm.client import get_llm_client
+from app.llm.client import gather_llm, get_llm_client
 
 logger = logging.getLogger(__name__)
 
@@ -183,8 +182,9 @@ async def mark_answers(
             pending.append((num, official, variants, student))
 
     if pending:
-        judged = await asyncio.gather(
-            *(
+        judged = await gather_llm(
+            "evaluator",
+            [
                 _evaluate_one(
                     evaluator_system,
                     num,
@@ -194,7 +194,7 @@ async def mark_answers(
                     student,
                 )
                 for num, official, variants, student in pending
-            )
+            ],
         )
         for (num, official, _variants, student), verdict in zip(pending, judged):
             rows[num] = {

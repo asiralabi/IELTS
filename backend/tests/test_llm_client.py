@@ -1,11 +1,20 @@
 """complete_json: extraction, required-keys enforcement and corrective retry."""
 
+import asyncio
 import json
 
 import pytest
 
 from app.config import settings
-from app.llm.client import AnthropicClient, LLMClient, OpenAIClient, _extract_json
+from app.llm import client as client_module
+from app.llm.client import (
+    AnthropicClient,
+    LLMClient,
+    OllamaClient,
+    OpenAIClient,
+    _extract_json,
+    gather_llm,
+)
 
 
 class ScriptedClient(LLMClient):
@@ -193,6 +202,112 @@ async def test_a_twice_rejected_set_reports_the_validator_not_a_json_error():
 async def test_no_required_keys_accepts_any_object():
     client = ScriptedClient(['{"anything": "goes"}'])
     assert await client.complete_json("sys", []) == {"anything": "goes"}
+
+
+class CountingClient(LLMClient):
+    """Records the highest number of calls ever in flight at once."""
+
+    def __init__(self, serialised: bool) -> None:
+        self.serialised = serialised
+        self.active = 0
+        self.peak = 0
+
+    async def complete(self, system, messages, json_mode=False, temperature=None,
+                       max_tokens=None) -> str:
+        self.active += 1
+        self.peak = max(self.peak, self.active)
+        await asyncio.sleep(0)  # a real gather would interleave here
+        self.active -= 1
+        return messages[0]["content"]
+
+
+class TestGatherLlm:
+    """Gathering calls that all land on one ollama instance buys no wall time —
+    they run one at a time regardless — and parks the rest in a queue that now
+    counts against their own timeouts, turning a slow batch into a failing one.
+    """
+
+    @staticmethod
+    def _calls(client: LLMClient) -> list:
+        return [
+            client.complete("sys", [{"role": "user", "content": str(i)}])
+            for i in range(4)
+        ]
+
+    async def test_a_serialised_client_runs_one_call_at_a_time(self, monkeypatch):
+        client = CountingClient(serialised=True)
+        monkeypatch.setattr(client_module, "_override", client)
+        assert await gather_llm(None, self._calls(client)) == ["0", "1", "2", "3"]
+        assert client.peak == 1
+
+    async def test_a_hosted_client_still_runs_them_together(self, monkeypatch):
+        client = CountingClient(serialised=False)
+        monkeypatch.setattr(client_module, "_override", client)
+        assert await gather_llm(None, self._calls(client)) == ["0", "1", "2", "3"]
+        assert client.peak == 4
+
+    async def test_a_failure_partway_through_leaves_no_orphaned_calls(self, monkeypatch):
+        """A set rejected twice raises, which is routine right now — the calls
+        queued behind it must not resurface as "coroutine was never awaited" on
+        top of the real error. A closed coroutine has dropped its frame.
+        """
+        client = CountingClient(serialised=True)
+        monkeypatch.setattr(client_module, "_override", client)
+
+        async def boom():
+            raise ValueError("rejected on retry")
+
+        ran = client.complete("sys", [{"role": "user", "content": "first"}])
+        never_reached = client.complete("sys", [{"role": "user", "content": "last"}])
+        with pytest.raises(ValueError, match="rejected on retry"):
+            await gather_llm(None, [ran, boom(), never_reached])
+
+        assert client.peak == 1
+        assert never_reached.cr_frame is None
+
+    def test_only_the_ollama_client_declares_itself_serialised(self):
+        assert OllamaClient.serialised is True
+        assert OpenAIClient.serialised is False
+        assert AnthropicClient.serialised is False
+
+
+async def test_the_ollama_budget_covers_time_spent_queued(monkeypatch):
+    """Timing only the POST made the budget fiction: waiting for the semaphore
+    was free, so a caller that asked for 3s could sit behind a 15-minute
+    fine-tune call and come back having never 'exceeded' its cap.
+    """
+
+    class Response:
+        def raise_for_status(self) -> None: ...
+
+        def json(self) -> dict:
+            return {"message": {"content": "done"}}
+
+    class SlowOllama:
+        async def post(self, *args, **kwargs):
+            await asyncio.sleep(0.5)
+            return Response()
+
+    monkeypatch.setattr(client_module, "_ollama_semaphore", None)
+    monkeypatch.setattr(client_module, "_get_http_client", SlowOllama)
+
+    async def timed(client: OllamaClient):
+        started = asyncio.get_running_loop().time()
+        try:
+            return await client.complete("sys", [{"role": "user", "content": "x"}]), 0.0
+        except TimeoutError as exc:
+            return exc, asyncio.get_running_loop().time() - started
+
+    (held, _), (failure, elapsed) = await asyncio.gather(
+        timed(OllamaClient("m", timeout=5.0)),
+        timed(OllamaClient("m", timeout=0.1)),
+    )
+    assert held == "done"
+    assert isinstance(failure, TimeoutError)
+    # The point: it gives up on its own budget rather than at 0.5s, when the
+    # call ahead of it finally let go of the semaphore.
+    assert elapsed < 0.4
+    assert "queued" in str(failure)
 
 
 class TestHostedClientTimeouts:

@@ -2,7 +2,7 @@ import asyncio
 import json
 import re
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Coroutine, Iterable, Sequence
 from typing import Any
 
 import httpx
@@ -41,6 +41,9 @@ class LLMClient(ABC):
     # True only for a client serving one of our own checkpoints. Callers use it
     # to send the prompt shape that checkpoint was trained on.
     is_finetune = False
+    # True when every call funnels through one model instance, so concurrent
+    # callers queue instead of overlapping. `gather_llm` reads it.
+    serialised = False
 
     @abstractmethod
     async def complete(
@@ -165,6 +168,8 @@ async def shutdown_llm_http_client() -> None:
 
 
 class OllamaClient(LLMClient):
+    serialised = True
+
     def __init__(self, model: str | None = None, timeout: float | None = None,
                  is_finetune: bool = False) -> None:
         self.base_url = settings.ollama_base_url.rstrip("/")
@@ -206,12 +211,32 @@ class OllamaClient(LLMClient):
         )
         client = _get_http_client()
         semaphore = _get_ollama_semaphore()
-        async with semaphore:
-            resp = await client.post(
-                f"{self.base_url}/api/chat", json=payload, timeout=per_call_timeout
-            )
-            resp.raise_for_status()
-            data = resp.json()
+        # The budget has to cover the queue as well as the generation. Timing
+        # only the POST made it fiction: waiting for the semaphore was free, so
+        # a caller that asked for 180s could sit behind two 900s fine-tune calls
+        # and come back half an hour later, having never exceeded its "cap".
+        loop = asyncio.get_running_loop()
+        start = loop.time()
+        acquired_at: float | None = None
+        try:
+            async with asyncio.timeout(per_call_timeout):
+                async with semaphore:
+                    acquired_at = loop.time()
+                    resp = await client.post(
+                        f"{self.base_url}/api/chat", json=payload, timeout=per_call_timeout
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
+        except TimeoutError as exc:
+            elapsed = loop.time() - start
+            queued = elapsed if acquired_at is None else acquired_at - start
+            # Separating the two halves matters: "the model is slow" and "you
+            # were behind three other callers" need completely different fixes.
+            raise TimeoutError(
+                f"{self.model} exceeded its {per_call_timeout:.0f}s budget after "
+                f"{elapsed:.0f}s, {queued:.0f}s of it queued — ollama serves one "
+                "model at a time, so concurrent callers wait their turn"
+            ) from exc
         return _strip_think(data["message"]["content"])
 
 
@@ -321,3 +346,31 @@ def set_llm_client(client: LLMClient | None) -> None:
     global _override
     _override = client
     _clients.clear()
+
+
+async def gather_llm(
+    task: str | None, coros: Iterable[Coroutine[Any, Any, Any]]
+) -> list[Any]:
+    """Run LLM calls concurrently only where the serving model actually is.
+
+    Gathering N calls that all land on one ollama instance buys no wall time —
+    they were going to run one at a time regardless — and it parks N-1 of them
+    in a queue that counts against their own timeouts, turning a slow batch into
+    a failing one. Hosted providers are genuinely concurrent and want the
+    gather. Which of the two serves a task is a runtime setting, so no call site
+    can hard-code either shape.
+    """
+    if not get_llm_client(task).serialised:
+        return list(await asyncio.gather(*coros))
+    queue = list(coros)
+    results: list[Any] = []
+    try:
+        for coro in queue:
+            results.append(await coro)
+    finally:
+        # A set rejected twice raises, and generation failures are routine — so
+        # close the calls that never ran rather than let them surface later as
+        # "coroutine was never awaited" on top of the real error.
+        for skipped in queue[len(results) + 1 :]:
+            skipped.close()
+    return results
