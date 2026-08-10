@@ -175,6 +175,20 @@ async def test_two_bad_replies_raise_value_error():
         await client.complete_json("sys", [], required_keys=("score",))
 
 
+async def test_a_twice_rejected_set_reports_the_validator_not_a_json_error():
+    """A live listening failure read 'LLM failed to return valid JSON' followed
+    by 500 chars of audio script; the actual cause — two answers keyed 'not
+    provided' — was only visible in the chained __cause__."""
+    passage = json.dumps({"passage": "word " * 200})
+    client = ScriptedClient([passage, passage])
+
+    with pytest.raises(ValueError, match="rejected on retry: two answers say"):
+        await client.complete_json(
+            "sys", [], required_keys=("passage",),
+            validate=lambda o: "two answers say the script does not answer it",
+        )
+
+
 async def test_no_required_keys_accepts_any_object():
     client = ScriptedClient(['{"anything": "goes"}'])
     assert await client.complete_json("sys", []) == {"anything": "goes"}

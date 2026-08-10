@@ -118,8 +118,13 @@ class LLMClient(ABC):
             raw = await self.complete(system, retry_messages, json_mode=True, **kw)
             try:
                 return parse(raw)
-            except (ValueError, json.JSONDecodeError) as exc:
+            except json.JSONDecodeError as exc:
                 raise ValueError(f"LLM failed to return valid JSON: {raw[:500]!r}") from exc
+            except ValueError as exc:
+                # Well-formed JSON a validator turned down. Quoting the reply
+                # buries the reason under 500 chars of passage; the validator's
+                # own complaint IS the reason, so lead with it.
+                raise ValueError(f"LLM reply rejected on retry: {exc}") from exc
 
 
 # Module-level singleton — creating a new httpx.AsyncClient per request
