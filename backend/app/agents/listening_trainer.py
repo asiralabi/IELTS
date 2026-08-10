@@ -28,6 +28,19 @@ logger = logging.getLogger(__name__)
 # short-generation without triggering an expansion pass on borderline outputs.
 _MIN_SCRIPT_WORDS = 1000
 
+# An answer key that says the script does not answer the question. The model is
+# declining, not answering, so the student can never be marked correct — and
+# these train it to decline again. Reading is not given this check: 'NOT GIVEN'
+# is a real verdict there, and its corpus carries 1 of these against
+# Listening's 14.
+_REFUSAL_ANSWER = re.compile(
+    r"^(not\s+(provided|given|specified|mentioned|stated|available|applicable"
+    r"|determined|answerable|clear|known|found|present|included)"
+    r"|n/?a|none|unknown|unspecified|no\s+answer"
+    r"|cannot\s+be\s+determined|not\s+enough\s+information)\.?$",
+    re.IGNORECASE,
+)
+
 _BLANK_RE = re.compile(r"^__(\d+)__$")
 
 # Each real IELTS Listening test has four parts of ten questions each, with a
@@ -175,9 +188,32 @@ def validate_part(result: dict) -> str | None:
     if dangling:
         return dangling
 
+    refusals = [
+        f"Q{num}={str(ans).strip()!r}"
+        for num, ans in answer_key.items()
+        if _REFUSAL_ANSWER.match(str(ans).strip())
+    ]
+    if refusals:
+        return (
+            f"these answers say the script does not answer the question: "
+            f"{', '.join(sorted(refusals))}. Every question must be answerable "
+            "from the audio script. Either add the missing detail to the script "
+            "or replace the question with one the script already answers."
+        )
+
     for q in mc:
-        if not isinstance(q.get("options"), list) or not q["options"]:
+        opts = q.get("options")
+        if not isinstance(opts, list) or not opts:
             return f"multiple_choice question {q.get('number')} is missing its options array"
+        answer = str(answer_key.get(str(q.get("number"))) or "").strip()
+        letters = {chr(ord("A") + i).lower() for i in range(len(opts))}
+        if canon(answer) not in {canon(o) for o in opts} | letters:
+            return (
+                f"the answer to multiple_choice question {q.get('number')} is "
+                f"{answer!r}, which is not one of its options "
+                f"({', '.join(repr(str(o)) for o in opts)}). Key it to the exact "
+                "text of the correct option — a position number cannot be marked."
+            )
     if len(mc) >= 3:
         answers = {str(answer_key.get(str(q.get("number")))).strip().upper() for q in mc}
         if len(answers) == 1:

@@ -172,3 +172,58 @@ def test_duplicate_heading_message_names_the_clash():
     problem = reading_trainer.validate_practice(result)
     assert "questions 1, 3" in problem
     assert "iv" in problem
+
+
+def _keyed(answers: dict, questions: list[dict] | None = None) -> dict:
+    return {
+        "title": "Joining a Sports Centre",
+        "audio_script": "AGENT: Good morning. " * 10,
+        "questions": questions or [
+            {"number": n, "type": "short_answer", "question": f"Question {n}?"}
+            for n in answers
+        ],
+        "answer_key": answers,
+    }
+
+
+@pytest.mark.parametrize(
+    "answer",
+    ["not provided", "Not mentioned", "Not specified", "NOT GIVEN", "None",
+     "No answer", "n/a", "unknown", "cannot be determined"],
+)
+def test_refusal_answers_are_rejected(answer):
+    """A key that says the script does not answer the question is the model
+    declining, not answering: the student can never be marked correct. The live
+    set that first passed generation keyed 3 of 10 answers this way, and 13 of
+    the 212 committed corpus records carry one."""
+    problem = listening_trainer.validate_part(_keyed({"1": answer, "2": "Monday"}))
+    assert problem is not None
+    assert "does not answer the question" in problem
+    assert f"Q1='{answer}'" in problem
+
+
+def test_real_answers_that_merely_look_like_refusals_are_kept():
+    """The rule matches a whole answer only. 'None of the above' is a real
+    option, and a number or a phrase containing 'none' is a real answer."""
+    for answer in ["None of the above", "no answer sheet", "9 unknown species"]:
+        assert listening_trainer.validate_part(_keyed({"1": answer})) is None
+
+
+def test_multiple_choice_answer_must_be_one_of_its_options():
+    """mark_answers compares strings, so an answer keyed by position ('2') or
+    carried over from another question can never be marked correct. Three
+    corpus records do this, one of them across nine questions."""
+    options = ["Air pollution only", "Water pollution only", "Both"]
+    question = [{"number": 1, "type": "multiple_choice",
+                 "question": "What does the speaker discuss?", "options": options}]
+
+    assert listening_trainer.validate_part(
+        _keyed({"1": "Water pollution only"}, question)
+    ) is None
+    # A letter is accepted: it is what the frontend submits, and one corpus
+    # record keys this way.
+    assert listening_trainer.validate_part(_keyed({"1": "B"}, question)) is None
+
+    problem = listening_trainer.validate_part(_keyed({"1": "2"}, question))
+    assert "not one of its options" in problem
+    assert "Water pollution only" in problem
