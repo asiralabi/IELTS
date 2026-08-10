@@ -10,9 +10,7 @@ from app.agents.answerability import (
     dangling_structure_error,
     missing_map_error,
     qtype,
-)
-from app.agents.reading_trainer import (
-    _check_word_limits as _check_word_limits,
+    word_limit_error,
 )
 from app.llm.client import get_llm_client
 from app.llm.prompts import (
@@ -193,6 +191,10 @@ def validate_part(result: dict) -> str | None:
     if mapless:
         return mapless
 
+    over_limit = word_limit_error(result)
+    if over_limit:
+        return over_limit
+
     refusals = [
         f"Q{num}={str(ans).strip()!r}"
         for num, ans in answer_key.items()
@@ -287,7 +289,6 @@ async def create_practice(
             result["audio_script"] = expanded
 
     _normalize_map_visual(result)
-    _check_word_limits(result)
     return result
 
 
@@ -536,7 +537,6 @@ async def create_part(
     _renumber(result, (part_number - 1) * 10)
     _normalize_map_visual(result)
     result["part"] = part_number
-    _check_word_limits(result)
     return result
 
 

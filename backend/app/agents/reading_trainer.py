@@ -1,13 +1,13 @@
-import logging
 import re
 
 from app.agents._marking import mark_answers
 from app.agents.answerability import (
+    GAP_FILL_TYPES,
     canon,
     cross_section_error,
     dangling_structure_error,
-    parse_word_limit,
     qtype,
+    word_limit_error,
 )
 from app.llm.client import get_llm_client
 from app.llm.prompts import (
@@ -17,24 +17,11 @@ from app.llm.prompts import (
 )
 from app.rag.retriever import retrieve_context
 
-logger = logging.getLogger(__name__)
-
 # Real IELTS passages are 650-900 words. qwen3:4b tends to short-generate;
 # anything under this floor triggers an expansion pass so students still get
 # exam-realistic length.
 _MIN_PASSAGE_WORDS = 550
 
-# Gap-fill question types that carry a word_limit rubric. If the LLM omits
-# word_limit or produces an answer that exceeds it, we log — never fail.
-_GAP_FILL_TYPES = {canon(t) for t in (
-    "sentence_completion",
-    "summary_completion",
-    "short_answer",
-    "note_completion",
-    "table_completion",
-    "form_completion",
-    "flow_chart_completion",
-)}
 
 # Academic Reading is marked on its own conversion table — it is harder than
 # Listening at the same raw score (band 7.5 needs 33 here against 32 there).
@@ -54,44 +41,6 @@ _READING_BAND_TABLE: list[tuple[int, float]] = [
     (6, 3.0),
     (4, 2.5),
 ]
-
-
-def _answer_word_count(answer: str) -> int:
-    """Count words in an answer, treating pure numbers as 0 words (per the
-    IELTS rubric: numbers do not count toward the word cap).
-    """
-    tokens = [t for t in str(answer).strip().split() if t]
-    return sum(0 if t.replace(",", "").replace(".", "").isdigit() else 1 for t in tokens)
-
-
-def _check_word_limits(result: dict) -> None:
-    """Log a warning for any answer that exceeds its question's word_limit.
-    Does not raise — the practice set is still usable if the cap is off by one.
-    """
-    answer_key = result.get("answer_key") or {}
-    for q in result.get("questions") or []:
-        if not isinstance(q, dict):
-            continue
-        if qtype(q) not in _GAP_FILL_TYPES:
-            continue
-        limit = parse_word_limit(q.get("word_limit"))
-        if limit is None:
-            logger.warning(
-                "reading_trainer: gap-fill question %s missing word_limit",
-                q.get("number"),
-            )
-            continue
-        answer = answer_key.get(str(q.get("number")))
-        if answer is None:
-            continue
-        # Handle multi-answer strings (LLM sometimes returns "a; b")
-        candidates = str(answer).split(";") if ";" in str(answer) else [str(answer)]
-        for cand in candidates:
-            if _answer_word_count(cand) > limit:
-                logger.warning(
-                    "reading_trainer: answer %r for Q%s exceeds word_limit=%d",
-                    cand, q.get("number"), limit,
-                )
 
 
 _TFNG_TYPES = {canon("true_false_notgiven"), canon("yes_no_notgiven")}
@@ -135,7 +84,7 @@ def _non_verbatim_answers(result: dict) -> list[str]:
     answer_key = result.get("answer_key") or {}
     missing = []
     for q in result.get("questions") or []:
-        if not isinstance(q, dict) or qtype(q) not in _GAP_FILL_TYPES:
+        if not isinstance(q, dict) or qtype(q) not in GAP_FILL_TYPES:
             continue
         # A question carrying its own word box is answered from the box.
         if isinstance(q.get("options"), list) and q["options"]:
@@ -243,6 +192,10 @@ def validate_practice(result: dict) -> str | None:
     if dangling:
         return dangling
 
+    over_limit = word_limit_error(result)
+    if over_limit:
+        return over_limit
+
     # One stray paraphrase is teacher noise and costs a retry for little gain;
     # two in the same set is a habit that would train the model to invent
     # answers no student could find.
@@ -329,7 +282,6 @@ async def create_practice(
         if expanded and len(expanded.split()) > len(passage.split()):
             result["passage"] = expanded
 
-    _check_word_limits(result)
     return result
 
 

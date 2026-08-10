@@ -79,7 +79,7 @@ _CLEAN_STATS = {
 }
 
 # Gap-fill families share one sub-skill; keep in sync with the app's
-# reading_trainer._GAP_FILL_TYPES so training labels match runtime behaviour.
+# answerability.GAP_FILL_TYPES so training labels match runtime behaviour.
 _GAP_FILL = {
     "form_completion",
     "note_completion",

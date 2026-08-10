@@ -47,7 +47,18 @@ MAP_TYPES = {canon(t) for t in ("map_labelling", "plan_labelling")}
 
 # A gap the student writes into: underscores, or the dotted leader a real exam
 # paper prints. Three dots are an ellipsis, so a leader needs four.
-_GAP_MARKER = re.compile(r"__+|\.{4,}")
+GAP_MARKER = re.compile(r"__+|\.{4,}")
+
+# Types whose answer the student types into a gap, so a word cap applies.
+GAP_FILL_TYPES = {canon(t) for t in (
+    "sentence_completion",
+    "summary_completion",
+    "short_answer",
+    "note_completion",
+    "table_completion",
+    "form_completion",
+    "flow_chart_completion",
+)}
 
 
 _WORD_TO_INT = {
@@ -134,7 +145,63 @@ def is_self_contained(text: str) -> bool:
     Greeks add to the alphabet?") — mistyped as a completion type, but the
     student can still answer it from the passage or script alone.
     """
-    return bool(_GAP_MARKER.search(text)) or text.rstrip().endswith("?")
+    return bool(GAP_MARKER.search(text)) or text.rstrip().endswith("?")
+
+
+def answer_word_count(answer: object) -> int:
+    """Words in an answer, treating pure numbers as 0 — the IELTS rubric does
+    not count a number toward the word cap."""
+    tokens = [t for t in str(answer).strip().split() if t]
+    return sum(0 if t.replace(",", "").replace(".", "").isdigit() else 1 for t in tokens)
+
+
+# The teacher habitually states "ONE WORD" then keys a two- or three-word
+# answer, and build_dataset._reconcile_word_limits forgives exactly that by
+# raising the cap. Measured on raw pre-reconciliation output, an overrun of 1-2
+# words covers 35.3% of listening units and 9.6% of reading ones, so rejecting
+# it would cost a regeneration for what is only clumsy phrasing. Beyond that
+# margin the answer has stopped being a gap filling at all.
+_WORD_LIMIT_SLACK = 2
+
+
+def word_limit_error(result: dict) -> str | None:
+    """Reject an answer key the student is forbidden to write.
+
+    `word_limit` is shown as the rubric, so an answer longer than it can never
+    be entered: the student obeys "NO MORE THAN TWO WORDS" and is marked wrong
+    no matter what they know. A live set keyed Q1 as an entire blank form
+    template against word_limit=2 and only produced a log line, because this
+    check used to warn instead of failing.
+    """
+    answer_key = result.get("answer_key") or {}
+    problems: list[str] = []
+    for q in result.get("questions") or []:
+        if not isinstance(q, dict) or qtype(q) not in GAP_FILL_TYPES:
+            continue
+        answer = answer_key.get(str(q.get("number")))
+        if answer is None:
+            continue
+        text = str(answer)
+        number = q.get("number")
+        # An answer containing the gap is the blank itself, not a filling for
+        # it — unmarkable at any cap, and absent from 583 raw teacher units.
+        if GAP_MARKER.search(text):
+            problems.append(f"Q{number} answers with the blank itself")
+            continue
+        limit = parse_word_limit(q.get("word_limit"))
+        if limit is None:
+            continue
+        longest = max((answer_word_count(c) for c in text.split(";")), default=0)
+        if longest > limit + _WORD_LIMIT_SLACK:
+            problems.append(f"Q{number} keys {longest} words against word_limit={limit}")
+    if not problems:
+        return None
+    return (
+        "the answer key breaks the word limit the student is shown: "
+        + "; ".join(problems)
+        + ". Shorten each of those answers to fit its own word_limit, or raise "
+        "that question's word_limit to the number of words its answer needs."
+    )
 
 
 def missing_map_error(questions: list, visual: object) -> str | None:

@@ -251,6 +251,61 @@ def test_multiple_choice_answer_must_be_one_of_its_options():
     assert "Water pollution only" in problem
 
 
+def _gapfill(number: int, limit: int) -> dict:
+    return {"number": number, "type": "sentence_completion",
+            "question": f"Item {number} costs ______ per month.", "word_limit": limit}
+
+
+def test_an_answer_longer_than_its_own_rubric_is_rejected():
+    """word_limit is printed to the student as the rubric, so an answer that
+    breaks it can never be entered — they obey 'NO MORE THAN TWO WORDS' and are
+    marked wrong however much they know. This used to be a log line only."""
+    problem = listening_trainer.validate_part(
+        _keyed({"1": "one two three four five"}, [_gapfill(1, 2)])
+    )
+    assert "Q1 keys 5 words against word_limit=2" in problem
+
+
+def test_a_one_or_two_word_overrun_is_forgiven():
+    """build_dataset._reconcile_word_limits already treats this as teacher
+    noise and just raises the cap. On raw pre-reconciliation output it is 35.3%
+    of listening units and 9.6% of reading ones, so rejecting it would buy a
+    5-15 min regeneration for nothing but clumsy phrasing."""
+    assert listening_trainer.validate_part(
+        _keyed({"1": "the main sports hall"}, [_gapfill(1, 2)])
+    ) is None
+
+
+def test_an_answer_that_is_itself_the_blank_is_rejected_at_any_cap():
+    """The live set keyed Q1 as the form it was supposed to fill in. No word
+    cap catches that — here the cap is generous and the answer still cannot be
+    marked. 0 of 583 raw teacher units do this, so there is no cost."""
+    problem = listening_trainer.validate_part(
+        _keyed({"1": "Membership Type: ______"}, [_gapfill(1, 9)])
+    )
+    assert "Q1 answers with the blank itself" in problem
+
+
+def test_reading_enforces_the_word_limit_too():
+    """The two sections run separate validators, so wiring one proves nothing
+    about the other."""
+    problem = reading_trainer.validate_practice({
+        "title": "t",
+        "passage": "The centre opens at nine in the morning. " * 30,
+        "questions": [_gapfill(1, 2)],
+        "answer_key": {"1": "one two three four five"},
+    })
+    assert "Q1 keys 5 words against word_limit=2" in problem
+
+
+def test_a_number_does_not_count_toward_the_cap():
+    """The IELTS rubric excludes figures, so '£35 per month' is 3 words against
+    a 2-word cap, not 4 — inside the slack, and correctly kept."""
+    assert listening_trainer.validate_part(
+        _keyed({"1": "35 per month"}, [_gapfill(1, 1)])
+    ) is None
+
+
 MAP_Q = [{"number": 1, "type": "map_labelling",
           "question": "What is the location marked as point C?"}]
 MAP_VISUAL = {"kind": "map", "title": "Campus", "features": [{"label": "C", "x": 2, "y": 3}]}
