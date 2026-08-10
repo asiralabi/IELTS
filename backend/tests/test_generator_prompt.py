@@ -172,6 +172,28 @@ def test_duplicate_heading_message_names_the_clash():
     problem = reading_trainer.validate_practice(result)
     assert "questions 1, 3" in problem
     assert "iv" in problem
+    # Naming what is still free turns "reassign" into a choice it can make.
+    assert "still unused: i, iii, v" in problem
+
+
+def test_too_few_headings_is_reported_before_the_duplicates_it_forces():
+    """Two live generations in a row failed on duplicates, retrying into the
+    same clash. With fewer headings than paragraphs distinctness is impossible,
+    so 'reassign' asks for something no retry can deliver — the missing
+    headings have to be the complaint."""
+    result = {
+        "title": "t",
+        "passage": "p",
+        "questions": [
+            {"number": n, "type": "matching_headings", "question": f"Paragraph {n}",
+             "options": ["i", "ii"]}
+            for n in range(1, 5)
+        ],
+        "answer_key": {"1": "i", "2": "ii", "3": "i", "4": "ii"},
+    }
+    problem = reading_trainer.validate_practice(result)
+    assert "at least 6 headings" in problem
+    assert "reassign" not in problem
 
 
 def _keyed(answers: dict, questions: list[dict] | None = None) -> dict:
