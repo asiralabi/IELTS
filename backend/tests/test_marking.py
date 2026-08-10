@@ -11,7 +11,12 @@ from pathlib import Path
 
 import pytest
 
-from app.agents._marking import band_from_40, evaluator_user_turn
+from app.agents._marking import (
+    band_from_40,
+    evaluator_user_turn,
+    mark_answers,
+    resolve_choice,
+)
 from app.agents.listening_trainer import _LISTENING_BAND_TABLE
 from app.agents.reading_trainer import _READING_BAND_TABLE
 from app.llm.prompts import EVALUATOR_SYSTEM, READING_EVALUATOR_SYSTEM
@@ -76,6 +81,89 @@ def test_blank_and_missing_variants_use_the_trained_sentinels():
 
 def test_missing_question_text_falls_back_to_the_number():
     assert evaluator_user_turn("7", {}, OFFICIAL, [], "x").startswith("Question: Question 7\n")
+
+
+CHOICE_Q = {
+    "number": 1,
+    "type": "multiple_choice",
+    "question": "What is the name of the restaurant?",
+    "options": ["Subway", "Coffee shop", "University Restaurant"],
+}
+
+
+async def _mark(official, student):
+    """Mark one multiple_choice answer.
+
+    A correct click must be settled by the clerical pre-pass, never handed to
+    the evaluator: on CPU that costs seconds per answer, and the evaluator is
+    given no options to resolve a letter with.
+    """
+    return await mark_answers(
+        {"questions": [CHOICE_Q], "answer_key": {"1": official}},
+        {"1": student},
+        EVALUATOR_SYSTEM,
+        _LISTENING_BAND_TABLE,
+    )
+
+
+@pytest.mark.parametrize(
+    "official, student",
+    [
+        # The listening convention: key names the option text, student clicks C.
+        ("University Restaurant", "C"),
+        # The reading convention: key names the letter.
+        ("C", "C"),
+        # Both letters, and a key that spells out what the student clicked.
+        ("C", "University Restaurant"),
+    ],
+    ids=["text-keyed", "letter-keyed", "inverted"],
+)
+async def test_correct_choice_is_marked_correct_under_either_convention(official, student):
+    """The frontend sends the option letter, so a text-keyed answer never
+    matched: 829 of 845 listening multiple_choice questions are text-keyed, and
+    the evaluator's trained user turn carries no options to resolve it with."""
+    result = await _mark(official, student)
+    assert result["score"] == 1
+    row = result["results"][0]
+    assert row["correct"] is True
+    # Settled clerically rather than sent to the evaluator.
+    assert row["explanation"] == "Matches the official answer under IELTS marking."
+    # The student is shown the option, never the bare letter.
+    assert row["correct_answer"] == "University Restaurant"
+
+
+async def test_wrong_choice_is_still_wrong():
+    result = await _mark("University Restaurant", "A")
+    assert result["score"] == 0
+    assert result["results"][0]["student_answer"] == "Subway"
+
+
+async def test_a_distractor_listed_as_a_variant_does_not_mark_a_wrong_click_correct():
+    """The teacher fills accepted_variants with the other options on 9 corpus
+    questions. Resolving the student's letter to option text would make those
+    match, so a listed question ignores variants entirely — its answer space is
+    closed, and the frontend renders it as buttons."""
+    result = await mark_answers(
+        {
+            "questions": [CHOICE_Q],
+            "answer_key": {"1": "University Restaurant"},
+            "accepted_variants": {"1": ["Subway"]},
+        },
+        {"1": "A"},
+        EVALUATOR_SYSTEM,
+        _LISTENING_BAND_TABLE,
+    )
+    assert result["score"] == 0
+
+
+def test_resolve_choice_leaves_non_choice_answers_alone():
+    """Gap-fill answers have no options, and a single letter is a real answer
+    for map_labelling — which carries no options array either."""
+    assert resolve_choice({}, "B") == "B"
+    assert resolve_choice({"options": []}, "B") == "B"
+    assert resolve_choice(CHOICE_Q, "Subway") == "Subway"
+    # Out of range: three options, so D denotes nothing.
+    assert resolve_choice(CHOICE_Q, "D") == "D"
 
 
 def test_reading_is_marked_harder_than_listening_at_the_same_raw_score():

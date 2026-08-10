@@ -43,6 +43,29 @@ def band_from_40(correct: int, total: int, table: list[tuple[int, float]]) -> fl
     return 2.0 if scaled >= 2 else 0.0
 
 
+def resolve_choice(question: dict, answer: str) -> str:
+    """The option text an answer denotes, for a question that lists options.
+
+    The frontend submits the option LETTER — question-list.tsx labels options
+    A, B, C by position and sends that label. Generated answer keys mostly name
+    the option TEXT instead: 829 of 845 listening multiple_choice questions do,
+    against 175 of 231 reading ones keyed by letter. Comparing the two raw forms
+    marks a correct choice wrong, and the evaluator cannot rescue it because the
+    user turn it was trained on carries no options list — it sees only
+    "Student Answer: B" against "Official Answer: University Restaurant".
+
+    Resolving both sides settles either convention locally, and keeps the letter
+    out of the reason string the student reads.
+    """
+    options = question.get("options")
+    if not isinstance(options, list) or not options:
+        return answer
+    label = str(answer).strip().upper().rstrip(".)")
+    if len(label) == 1 and "A" <= label < chr(ord("A") + len(options)):
+        return str(options[ord(label) - ord("A")])
+    return answer
+
+
 def evaluator_user_turn(
     number: str, question: dict, official: str, variants: list[str], student: str
 ) -> str:
@@ -124,11 +147,19 @@ async def mark_answers(
 
     for raw_num, official_raw in (practice.get("answer_key") or {}).items():
         num = str(raw_num)
-        official = str(official_raw or "").strip()
-        student = str(student_answers.get(num) or "").strip()
+        question = questions.get(num) or {}
+        official = resolve_choice(question, str(official_raw or "").strip())
+        student = resolve_choice(question, str(student_answers.get(num) or "").strip())
         variants = [
             str(v).strip() for v in (variants_map.get(num) or []) if str(v).strip()
         ]
+        if isinstance(question.get("options"), list) and question["options"]:
+            # A listed question has a closed answer space — the frontend renders
+            # options as buttons, so nothing outside them can ever be submitted
+            # and a variant is unreachable by construction. The teacher routinely
+            # fills the array with the DISTRACTORS instead (9 corpus questions,
+            # one listing all three), which would mark a wrong click correct.
+            variants = []
         row = {
             "number": safe_int(num),
             "student_answer": student,
