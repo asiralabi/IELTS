@@ -43,6 +43,12 @@ _READING_BAND_TABLE: list[tuple[int, float]] = [
 ]
 
 
+# READING_TRAINER_SYSTEM asks for "at least 5 paragraphs", but the teacher that
+# wrote the corpus never obeyed it: 26 of the 54 committed headings sets carry
+# exactly 3, so enforcing the prompt's own number would reject 11.5% of the data
+# the checkpoint was trained on. 3 is the floor the corpus actually observes.
+_MIN_HEADINGS_BLOCK = 3
+
 _TFNG_TYPES = {canon("true_false_notgiven"), canon("yes_no_notgiven")}
 
 _ARTICLES = {"a", "an", "the"}
@@ -140,6 +146,17 @@ def validate_practice(result: dict) -> str | None:
 
     headings = by_type.get(canon("matching_headings")) or []
     if headings:
+        # A one-question block satisfies both checks below for free — it needs
+        # only 3 options and is a bijection by construction — so size has to be
+        # asked for first or an under-produced block ships looking valid.
+        if len(headings) < _MIN_HEADINGS_BLOCK:
+            return (
+                f"this set has only {len(headings)} matching_headings question(s); "
+                f"write at least {_MIN_HEADINGS_BLOCK}, one for each lettered "
+                "paragraph of the passage, each offering the same full list of "
+                "headings — or drop matching_headings and use another question "
+                "type throughout"
+            )
         # Ask for the headings before asking for distinct answers. With a short
         # list, distinctness is not merely unmet but unreachable, and "reassign
         # so every paragraph gets its own heading" then demands the impossible

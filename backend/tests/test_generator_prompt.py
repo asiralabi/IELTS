@@ -196,6 +196,46 @@ def test_too_few_headings_is_reported_before_the_duplicates_it_forces():
     assert "reassign" not in problem
 
 
+def test_single_question_headings_block_is_rejected():
+    """The multi-task checkpoint's real headings failure is under-production,
+    not duplication: three live generations in a row emitted a set of 8 with a
+    single matching_headings question keyed 'i'. That block passes both other
+    rules for free — one question needs only 3 options and is a bijection by
+    construction — so without a size floor an unrealistic set ships as valid."""
+    result = {
+        "title": "t",
+        "passage": "p",
+        "questions": [
+            {"number": 1, "type": "matching_headings", "question": "Paragraph A",
+             "options": ["i", "ii", "iii", "iv", "v"]},
+        ],
+        "answer_key": {"1": "i"},
+    }
+    problem = reading_trainer.validate_practice(result)
+    assert "only 1 matching_headings question" in problem
+    assert "at least 3" in problem
+    # The block is a valid bijection, so neither existing rule has anything to
+    # say — the complaint must be the missing paragraphs.
+    assert "reassign" not in problem
+
+
+def test_three_question_headings_block_is_accepted():
+    """The floor is 3, not the 5 READING_TRAINER_SYSTEM asks for: 26 of the 54
+    committed headings sets carry exactly 3, so a stricter rule would reject
+    11.5% of the corpus the checkpoint was trained on."""
+    result = {
+        "title": "t",
+        "passage": "p",
+        "questions": [
+            {"number": n, "type": "matching_headings", "question": f"Paragraph {n}",
+             "options": ["i", "ii", "iii", "iv", "v"]}
+            for n in range(1, 4)
+        ],
+        "answer_key": {"1": "i", "2": "iii", "3": "v"},
+    }
+    assert reading_trainer.validate_practice(result) is None
+
+
 def _keyed(answers: dict, questions: list[dict] | None = None) -> dict:
     return {
         "title": "Joining a Sports Centre",
