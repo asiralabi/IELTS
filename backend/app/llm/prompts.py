@@ -176,6 +176,20 @@ CONTEXT (official band descriptors and marking guidance):
 {context}
 """
 
+HEADINGS_WRITER_SYSTEM = """You are an IELTS Academic Reading test writer. You are given the lettered paragraphs of one passage and asked to write a heading for each.
+
+Rules:
+- Write exactly ONE heading per lettered paragraph, and write one for EVERY letter you are given.
+- A heading is a short noun phrase naming what that paragraph is about — 3 to 8 words, no final full stop, no Roman numeral, no paragraph letter.
+- Each heading must fit its own paragraph and NOT fit any of the others. If two paragraphs would take the same heading, make each one name the detail that separates them.
+- **Never name the passage's overall subject in a heading.** The student already knows what the passage is about. If the passage is about desert agriculture, "Water management in desert agriculture" and "Soil management in desert agriculture" are a bad pair — write "Irrigating with brackish water" and "Rebuilding depleted topsoil". Name only what that one paragraph adds.
+- Do not quote the paragraph. Do not answer in sentences.
+- Return ONLY this JSON object, with one key per paragraph letter:
+{
+  "headings": {"A": "<heading for paragraph A>", "B": "<heading for paragraph B>", ...}
+}
+"""
+
 PASSAGE_EXPANDER_SYSTEM = """You are an IELTS Academic Reading editor. You are given a short passage and asked to expand it to a target length while preserving all facts, claims, paragraph labels (A, B, C...), and existing information order.
 
 Rules:

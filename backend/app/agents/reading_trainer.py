@@ -1,4 +1,7 @@
+import json
+import random
 import re
+from functools import partial
 
 from app.agents._marking import mark_answers
 from app.agents.answerability import (
@@ -11,6 +14,7 @@ from app.agents.answerability import (
 )
 from app.llm.client import get_llm_client
 from app.llm.prompts import (
+    HEADINGS_WRITER_SYSTEM,
     PASSAGE_EXPANDER_SYSTEM,
     READING_EVALUATOR_SYSTEM,
     READING_TRAINER_SYSTEM,
@@ -48,6 +52,23 @@ _READING_BAND_TABLE: list[tuple[int, float]] = [
 # exactly 3, so enforcing the prompt's own number would reject 11.5% of the data
 # the checkpoint was trained on. 3 is the floor the corpus actually observes.
 _MIN_HEADINGS_BLOCK = 3
+
+# Every offered heading was written for a real paragraph, so the distractors are
+# simply the headings of the paragraphs left unkeyed. Two is the corpus shape:
+# its blocks run (3 paragraphs, 5 headings) through (7, 9).
+_HEADINGS_DISTRACTORS = 2
+# Without a cap a 9-paragraph passage becomes a 9-question headings block, which
+# would crowd out every other type in a set of 8-13.
+_MAX_HEADINGS_BLOCK = 5
+_ROMAN = ("i", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix", "x", "xi", "xii")
+# "A." / "**B**" / "Paragraph C:". Punctuation after the letter is required, so a
+# paragraph that merely opens "A new study..." is not mistaken for a label.
+_PARAGRAPH_LABEL = re.compile(r"^\**\s*(?:Paragraph\s+)?([A-Z])\s*[.):]\s*\**\s*")
+# The model sometimes numbers the heading it was asked to write bare, and the
+# numeral it picks is not the one the shuffle assigns. Only the numeral form is
+# stripped: a leading capital is left alone because "E. coli in water supplies"
+# is a heading, not a label.
+_HEADING_PREFIX = re.compile(r"^\s*[ivx]+\s*[.)]\s+", re.IGNORECASE)
 
 _TFNG_TYPES = {canon("true_false_notgiven"), canon("yes_no_notgiven")}
 
@@ -109,12 +130,16 @@ def _non_verbatim_answers(result: dict) -> list[str]:
     return missing
 
 
-def validate_practice(result: dict) -> str | None:
+def validate_practice(result: dict, *, judge_headings: bool = True) -> str | None:
     """Reject a practice set a student could not fairly sit.
 
     Returned as the `validate` hook on complete_json, so a broken set costs one
     corrective retry instead of reaching the student — or, during dataset
     export, becoming a training target that teaches the pathology.
+
+    `judge_headings=False` is for the one caller that rebuilds the block in code
+    afterwards: the model's own headings are discarded, so a retry spent
+    complaining about them buys nothing. Every other caller judges them.
     """
     cross_section = cross_section_error(result, "reading")
     if cross_section:
@@ -145,7 +170,7 @@ def validate_practice(result: dict) -> str | None:
         by_type.setdefault(qtype(q), []).append(q)
 
     headings = by_type.get(canon("matching_headings")) or []
-    if headings:
+    if headings and judge_headings:
         # A one-question block satisfies both checks below for free — it needs
         # only 3 options and is a bijection by construction — so size has to be
         # asked for first or an under-produced block ships looking valid.
@@ -246,6 +271,175 @@ def validate_practice(result: dict) -> str | None:
     return None
 
 
+def _paragraph_bodies(passage: str) -> list[str]:
+    """The passage's paragraphs, with any A./B. label they already carry removed.
+
+    Labels win over blank lines when the passage carries a run of them starting
+    at A, because that is the author's own paragraph division; 74% of the
+    headings corpus letters its paragraphs and the checkpoint did so in 3 of 3
+    live generations. Otherwise every non-empty line is a paragraph.
+    """
+    lines = [ln.strip() for ln in passage.splitlines() if ln.strip()]
+    marked = [(i, m) for i, ln in enumerate(lines) if (m := _PARAGRAPH_LABEL.match(ln))]
+    letters = [m.group(1) for _, m in marked]
+    if len(letters) < _MIN_HEADINGS_BLOCK or letters != [chr(65 + i) for i in range(len(letters))]:
+        return lines
+    starts = [i for i, _ in marked] + [len(lines)]
+    return [
+        " ".join([_PARAGRAPH_LABEL.sub("", lines[starts[k]])] + lines[starts[k] + 1:starts[k + 1]])
+        for k in range(len(marked))
+    ]
+
+
+def _headings_questions(keyed: list[str], headings: dict[str, str]) -> list[dict]:
+    """The block itself, assembled from a heading-per-paragraph mapping.
+
+    Which paragraph a heading was written for is the answer, so the key is a
+    property of the assembly rather than something anyone had to work out.
+    """
+    spare = [letter for letter in headings if letter not in keyed]
+    random.shuffle(spare)
+    offered = keyed + spare[:_HEADINGS_DISTRACTORS]
+    random.shuffle(offered)
+    labelled = {letter: f"{_ROMAN[i]}. {headings[letter]}"
+                for i, letter in enumerate(offered)}
+    options = [labelled[letter] for letter in offered]
+    return [
+        {
+            "number": 0,
+            "type": "matching_headings",
+            "question": f"Choose the correct heading for Paragraph {letter}.",
+            # The frontend renders no `headings` field, so the full list has to
+            # ride on every question. A fresh copy per question — a shared list
+            # would serialise fine but alias if anything downstream edits one.
+            "options": list(options),
+            # The whole option, not the bare numeral the system prompt asks the
+            # model for. question-list.tsx labels options A, B, C by position and
+            # submits that letter, which _marking.resolve_choice turns back into
+            # the option text; a numeral-only key never equals it, so every
+            # headings question would fall through to the evaluator to be judged
+            # as "iii. Soil erosion" against "iii".
+            "_answer": labelled[letter],
+        }
+        for letter in keyed
+    ]
+
+
+async def _write_headings(letters: list[str], bodies: list[str]) -> dict[str, str] | None:
+    """Ask the model only to summarise — the half of the task it is good at.
+
+    Measured on 8 gold sets, this checkpoint agrees with the teacher's heading
+    key 53% of the time, so anything that asks it to *match* ships a confident
+    wrong answer. Writing a heading for a paragraph it can see is a different
+    task, and the answer key falls out of the request rather than the reply.
+
+    The reply is a few hundred characters, so unlike a whole practice set it
+    fits under the echo cap — a corrective retry can actually see what it wrote.
+    """
+    numbered = "\n\n".join(f"{letter}. {body}" for letter, body in zip(letters, bodies))
+
+    def check(reply: dict) -> str | None:
+        written = reply.get("headings")
+        if not isinstance(written, dict):
+            return "`headings` must be an object with one paragraph letter per key"
+        blank = [x for x in letters if not str(written.get(x) or "").strip()]
+        if blank:
+            return (
+                f"no heading was written for paragraph {', '.join(blank)}; write "
+                "one for every letter in the passage"
+            )
+        # Compared after the numeral is stripped, since that is the form the
+        # student reads: "i. Water reuse" and "ii. Water reuse" are two labels
+        # for one heading, and would put the same text twice on screen.
+        texts = [_HEADING_PREFIX.sub("", str(written[x]).strip()).lower() for x in letters]
+        if len(set(texts)) != len(texts):
+            return (
+                "two paragraphs were given the same heading; each heading must "
+                "name what makes its own paragraph different from the others"
+            )
+        return None
+
+    try:
+        reply = await get_llm_client("generator").complete_json(
+            HEADINGS_WRITER_SYSTEM,
+            [{"role": "user", "content":
+              f"Write a heading for each of these {len(letters)} paragraphs.\n\n{numbered}"}],
+            required_keys=("headings",),
+            validate=check,
+            max_tokens=1024,
+        )
+    except Exception:
+        return None
+    return {x: _HEADING_PREFIX.sub("", str(reply["headings"][x]).strip()) for x in letters}
+
+
+def _replace_block(result: dict, old: list[dict], new: list[dict]) -> None:
+    """Swap one block of questions for another and renumber the whole set."""
+    questions = result.get("questions") or []
+    dropped = {id(q) for q in old}
+    # By identity, not equality: two questions can compare equal, and `index`
+    # would then put the new block wherever the first look-alike happens to sit.
+    at = next((i for i, q in enumerate(questions) if id(q) in dropped), len(questions))
+    kept = [q for q in questions if id(q) not in dropped]
+    merged = kept[:at] + new + kept[at:]
+
+    was_keyed = result.get("answer_key") or {}
+    answer_key: dict[str, object] = {}
+    renumbered: dict[str, str] = {}
+    for number, q in enumerate(merged, start=1):
+        before = str(q.get("number"))
+        q["number"] = number
+        if "_answer" in q:
+            answer_key[str(number)] = q.pop("_answer")
+        else:
+            renumbered[before] = str(number)
+            answer_key[str(number)] = was_keyed.get(before)
+    result["questions"] = merged
+    result["answer_key"] = answer_key
+
+    # A table_completion cell addresses its question by number, so renumbering
+    # without this silently unhooks the gap from the question it fills.
+    visual = result.get("visual")
+    if visual:
+        result["visual"] = json.loads(re.sub(
+            r"__(\d+)__",
+            lambda m: f"__{renumbered.get(m.group(1), m.group(1))}__",
+            json.dumps(visual, ensure_ascii=False),
+        ))
+
+
+async def _rebuild_headings(result: dict) -> None:
+    """Replace whatever matching_headings the model wrote with a built block.
+
+    Rebuilding unconditionally, rather than only when the model's block looks
+    broken, is the point: a block can satisfy every structural rule and still
+    carry a wrong key, and nothing downstream can tell. Building it means the
+    key is never inferred.
+
+    If the passage cannot support a block the questions are dropped instead. A
+    set one question short is still sittable; a headings block keyed by
+    guesswork is not.
+    """
+    questions = result.get("questions") or []
+    old = [q for q in questions if qtype(q) == canon("matching_headings")]
+    if not old:
+        return
+
+    bodies = _paragraph_bodies(str(result.get("passage") or ""))
+    keyed = min(len(bodies) - _HEADINGS_DISTRACTORS, _MAX_HEADINGS_BLOCK)
+    new: list[dict] = []
+    if keyed >= _MIN_HEADINGS_BLOCK:
+        letters = [chr(65 + i) for i in range(len(bodies))]
+        headings = await _write_headings(letters, bodies)
+        if headings:
+            # Written back so the letters the questions name are the letters the
+            # student can actually see, whether or not the model labelled them.
+            result["passage"] = "\n\n".join(
+                f"{letter}. {body}" for letter, body in zip(letters, bodies))
+            new = _headings_questions(letters[:keyed], headings)
+    _replace_block(result, old, new)
+
+
 async def create_practice(
     question_types: list[str] | None = None,
     difficulty: str | None = None,
@@ -284,7 +478,7 @@ async def create_practice(
         READING_TRAINER_SYSTEM,
         [{"role": "user", "content": "\n".join(parts)}],
         required_keys=("title", "passage", "questions", "answer_key"),
-        validate=validate_practice,
+        validate=partial(validate_practice, judge_headings=False),
         # A ~1200-word passage plus 8-13 questions carrying full options lists
         # is a 3.5-5k-token JSON object; LLM_MAX_TOKENS is 2048 locally. A
         # truncation is expensive twice over — the corrective retry replays the
@@ -298,6 +492,16 @@ async def create_practice(
         expanded = await _expand_passage(passage, str(result.get("title") or ""))
         if expanded and len(expanded.split()) > len(passage.split()):
             result["passage"] = expanded
+
+    # After the expansion, so the headings describe the paragraphs the student
+    # is given rather than the shorter ones they were written from.
+    await _rebuild_headings(result)
+    # The block was skipped on the way in on the promise that it would be built
+    # correctly here. Nothing else can fail this, so a complaint means the
+    # construction is wrong and the set must not reach a student.
+    problem = validate_practice(result)
+    if problem:
+        raise ValueError(f"the rebuilt matching_headings block is invalid: {problem}")
 
     return result
 
