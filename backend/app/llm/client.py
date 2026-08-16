@@ -20,9 +20,92 @@ _FENCE_RE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL)
 # failing. Past this size the correction message alone carries the feedback.
 _MAX_ECHOED_REPLY_CHARS = 2000
 
+# The local checkpoints fail to finish a reply in three measured ways, and each
+# costs the full finetune_timeout as a TimeoutError that complete_json does not
+# catch — 15 minutes spent, no retry earned. Watching the stream ends them early.
+#
+#   repeating  the model locks into a paragraph-length cycle and emits it until
+#              it hits num_predict (recorded: a 769-char cycle incrementing a
+#              counter, "In the 49th century... the 50th century...").
+#   stalled    the model emits a RAW `"` inside a string value. Under
+#              format="json" that closes the string, after which the grammar
+#              admits only `,`/`}`/whitespace while the model still wants prose
+#              — so it emits spaces and the stream dies with no `done` chunk.
+#   unbounded  the model keeps writing NEW, non-repeating prose and never stops.
+#              Measured live at 15,875 characters and still going, scoring 0.325
+#              — correctly above the repeat threshold, because nothing repeats.
+#              Only a hard length bound ends this one, which is also what makes
+#              the guard a guarantee rather than a heuristic.
+#
+# An earlier probe-based detector (an exact 80-char probe repeated at three
+# offsets) is deliberately gone. It caught both recorded run-ons but went 0/4
+# live, including a full 900s timeout, because it needs a probe to land on
+# digit-free text against a cycle that varies every repeat. The distinct-40-gram
+# ratio below has no such luck in it, and catches whitespace stalls as well.
+#
+# Every threshold here is measured, and backend/tools/_diag_loop_detector.py
+# re-measures them: run-ons score 0.171 and 0.051, every one of the 449
+# legitimate replies floors at 0.303, and only one sits below 0.435.
+_RUNAWAY_WINDOW = 6000
+_RUNAWAY_GRAM = 40
+_RUNAWAY_MIN_RATIO = 0.25
+# Below this the tail is too short for the ratio to mean anything.
+_RUNAWAY_MIN_CHARS = 2000
+_RUNAWAY_CHECK_EVERY = 1000
+# The longest reply in either committed corpus is 14,607 chars; the longest the
+# checkpoint has been seen to produce and have accepted is 8,019. Past this the
+# reply is longer than anything it was trained to write, so it is not going to
+# become valid by continuing.
+_RUNAWAY_MAX_CHARS = 16_000
+
+_ADVICE_REPEATING = (
+    "Your previous reply ran on and never closed the JSON object. "
+    "Write a shorter one: keep every required key, but no repeated "
+    "or padded text. Do not restate a sentence you have already "
+    "written, and stop the passage once it is long enough rather "
+    "than adding further paragraphs."
+)
+_ADVICE_STALLED = (
+    "Your previous reply stopped in the middle of a JSON string and never "
+    "closed the object. Write a completely new one, and do not use quotation "
+    "marks anywhere inside the text of a JSON value — name things without "
+    "quoting them."
+)
+
+
+class RunawayGeneration(ValueError):
+    """The model never finished its reply, in any of the three ways above.
+
+    Carries the correction to send back, because the modes need opposite advice:
+    a repeating or unbounded reply must be told to write less, while a stalled
+    one is already too short and needs to be told what tripped it.
+    """
+
+    def __init__(self, message: str, advice: str) -> None:
+        super().__init__(message)
+        self.advice = advice
+
 
 def _strip_think(text: str) -> str:
     return _THINK_RE.sub("", text).strip()
+
+
+def _runaway_ratio(text: str) -> float:
+    """Share of the tail's 40-grams that are distinct. Low means self-repeating.
+
+    Only the tail, so that a reply which rambles at the end is caught even
+    though its opening was fine — and so the cost stays flat as the reply grows.
+
+    Length 40 is what separates a lock-in from the repetition reading
+    legitimately requires: a matching headings block repeats its whole options
+    list on every question, but at 40 characters each repeat still carries
+    enough of its own question text to read as distinct.
+    """
+    tail = text[-_RUNAWAY_WINDOW:]
+    if len(tail) <= _RUNAWAY_GRAM:
+        return 1.0
+    grams = [tail[i:i + _RUNAWAY_GRAM] for i in range(len(tail) - _RUNAWAY_GRAM + 1)]
+    return len(set(grams)) / len(grams)
 
 
 def _extract_json(text: str) -> dict[str, Any]:
@@ -78,21 +161,26 @@ class LLMClient(ABC):
                     raise ValueError(problem)
             return obj
 
-        raw = await self.complete(system, messages, json_mode=True, **kw)
+        raw = ""
         try:
+            # Inside the try so an abandoned run-on earns its retry. Left
+            # outside, it reached the caller as a hard failure — the single
+            # most expensive way for a generation to end.
+            raw = await self.complete(system, messages, json_mode=True, **kw)
             return parse(raw)
         except (ValueError, json.JSONDecodeError) as first_error:
-            echoed = len(raw) <= _MAX_ECHOED_REPLY_CHARS
-            if isinstance(first_error, json.JSONDecodeError):
-                # The local checkpoints break JSON one way: they ramble past any
-                # length they were trained on and get cut off at num_predict, so
-                # the object never closes. Quoting the decoder's column number
-                # gives the model nothing to act on; asking for less prose does.
-                complaint = (
-                    "Your previous reply was not valid JSON — it ran on and was "
-                    "cut off before the object closed. Write a shorter one: keep "
-                    "every required key, but no repeated or padded text."
-                )
+            echoed = bool(raw) and len(raw) <= _MAX_ECHOED_REPLY_CHARS
+            if isinstance(first_error, RunawayGeneration):
+                # Checked before ValueError generally: the stream watcher
+                # already knows which way the reply broke, and the two ways need
+                # opposite corrections.
+                complaint = first_error.advice
+            elif isinstance(first_error, json.JSONDecodeError):
+                # A reply that got this far and still will not parse was cut off
+                # at num_predict having rambled past any length it was trained
+                # on. Quoting the decoder's column number gives the model nothing
+                # to act on; asking for less prose does.
+                complaint = _ADVICE_REPEATING
             else:
                 complaint = f"Your previous reply was not acceptable ({first_error})."
                 if not echoed:
@@ -193,7 +281,9 @@ class OllamaClient(LLMClient):
         payload: dict[str, Any] = {
             "model": self.model,
             "messages": [{"role": "system", "content": system}] + messages,
-            "stream": False,
+            # Streamed so a run-on can be cut off while it is happening. Waiting
+            # for the whole reply means waiting out the full token budget.
+            "stream": True,
             "think": not json_mode,
             "options": {
                 "temperature": temperature if temperature is not None else settings.llm_temperature,
@@ -222,11 +312,7 @@ class OllamaClient(LLMClient):
             async with asyncio.timeout(per_call_timeout):
                 async with semaphore:
                     acquired_at = loop.time()
-                    resp = await client.post(
-                        f"{self.base_url}/api/chat", json=payload, timeout=per_call_timeout
-                    )
-                    resp.raise_for_status()
-                    data = resp.json()
+                    content = await self._stream(client, payload, per_call_timeout)
         except TimeoutError as exc:
             elapsed = loop.time() - start
             queued = elapsed if acquired_at is None else acquired_at - start
@@ -237,7 +323,66 @@ class OllamaClient(LLMClient):
                 f"{elapsed:.0f}s, {queued:.0f}s of it queued — ollama serves one "
                 "model at a time, so concurrent callers wait their turn"
             ) from exc
-        return _strip_think(data["message"]["content"])
+        return _strip_think(content)
+
+    async def _stream(
+        self, client: httpx.AsyncClient, payload: dict[str, Any], timeout: float
+    ) -> str:
+        """Accumulate a streamed reply, abandoning it if it stops progressing."""
+        pieces: list[str] = []
+        size = 0
+        finished = False
+        next_check = _RUNAWAY_MIN_CHARS
+        async with client.stream(
+            "POST", f"{self.base_url}/api/chat", json=payload, timeout=timeout
+        ) as resp:
+            resp.raise_for_status()
+            async for line in resp.aiter_lines():
+                if not line.strip():
+                    continue
+                chunk = json.loads(line)
+                # A streamed failure (model still loading, context overflow)
+                # arrives as a JSON line under a 200, so it has to be read out
+                # of the body rather than the status.
+                if chunk.get("error"):
+                    raise httpx.HTTPError(f"{self.model}: {chunk['error']}")
+                piece = (chunk.get("message") or {}).get("content") or ""
+                if piece:
+                    pieces.append(piece)
+                    size += len(piece)
+                    if size > _RUNAWAY_MAX_CHARS:
+                        raise RunawayGeneration(
+                            f"{self.model} wrote {size} characters without "
+                            "finishing, more than any reply it was trained on",
+                            _ADVICE_REPEATING,
+                        )
+                    if size >= next_check:
+                        next_check = size + _RUNAWAY_CHECK_EVERY
+                        ratio = _runaway_ratio("".join(pieces))
+                        if ratio < _RUNAWAY_MIN_RATIO:
+                            # Leaving the context manager drops the connection,
+                            # which is how ollama learns to stop generating.
+                            raise RunawayGeneration(
+                                f"{self.model} stopped saying anything new after "
+                                f"{size} characters — only {ratio:.0%} of its "
+                                "recent output was distinct",
+                                _ADVICE_REPEATING,
+                            )
+                if chunk.get("done"):
+                    finished = True
+                    break
+        if not finished:
+            # ollama ends the stream without a done chunk when the reply can no
+            # longer satisfy the JSON grammar — reliably, when the model writes
+            # an unescaped quote inside a string. Returning the fragment would
+            # surface as an unterminated-JSON error that spends the retry on the
+            # wrong complaint, so name it here where the cause is still known.
+            raise RunawayGeneration(
+                f"{self.model} ended its reply after {size} characters without "
+                "a completion marker, so the reply is a fragment",
+                _ADVICE_STALLED,
+            )
+        return "".join(pieces)
 
 
 class AnthropicClient(LLMClient):

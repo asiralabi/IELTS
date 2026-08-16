@@ -12,9 +12,49 @@ from app.llm.client import (
     LLMClient,
     OllamaClient,
     OpenAIClient,
+    RunawayGeneration,
+    _RUNAWAY_MIN_RATIO,
     _extract_json,
+    _runaway_ratio,
     gather_llm,
 )
+
+
+class FakeOllama:
+    """httpx.AsyncClient stand-in that streams NDJSON chunks like /api/chat.
+
+    `sent` counts the chunks actually pulled, which is how the tests tell an
+    abandoned generation from one that was merely rejected after the fact.
+    """
+
+    def __init__(self, pieces: list[str], delay: float = 0.0,
+                 finish: bool = True) -> None:
+        self.pieces = list(pieces)
+        self.delay = delay
+        # ollama ends the stream with no done chunk when the reply can no longer
+        # satisfy the JSON grammar. finish=False reproduces that.
+        self.finish = finish
+        self.sent = 0
+
+    def stream(self, method, url, json=None, timeout=None):
+        return self
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    def raise_for_status(self) -> None: ...
+
+    async def aiter_lines(self):
+        for piece in self.pieces:
+            if self.delay:
+                await asyncio.sleep(self.delay)
+            self.sent += 1
+            yield json.dumps({"message": {"content": piece}, "done": False})
+        if self.finish:
+            yield json.dumps({"message": {"content": ""}, "done": True})
 
 
 class ScriptedClient(LLMClient):
@@ -277,19 +317,10 @@ async def test_the_ollama_budget_covers_time_spent_queued(monkeypatch):
     fine-tune call and come back having never 'exceeded' its cap.
     """
 
-    class Response:
-        def raise_for_status(self) -> None: ...
-
-        def json(self) -> dict:
-            return {"message": {"content": "done"}}
-
-    class SlowOllama:
-        async def post(self, *args, **kwargs):
-            await asyncio.sleep(0.5)
-            return Response()
-
     monkeypatch.setattr(client_module, "_ollama_semaphore", None)
-    monkeypatch.setattr(client_module, "_get_http_client", SlowOllama)
+    monkeypatch.setattr(
+        client_module, "_get_http_client", lambda: FakeOllama(["done"], delay=0.5)
+    )
 
     async def timed(client: OllamaClient):
         started = asyncio.get_running_loop().time()
@@ -308,6 +339,194 @@ async def test_the_ollama_budget_covers_time_spent_queued(monkeypatch):
     # call ahead of it finally let go of the semaphore.
     assert elapsed < 0.4
     assert "queued" in str(failure)
+
+
+class TestRunawayDetection:
+    """A run-on is the local checkpoints' one fatal failure: the model locks
+    into a paragraph-length cycle and emits it until num_predict, ~880s of
+    decode, so finetune_timeout kills it as a TimeoutError nothing catches.
+
+    The hard part is that reading REQUIRES a large verbatim repetition — a
+    matching-headings block repeats its whole options list on every question —
+    so the detector has to tell the two apart, not just spot repetition.
+    """
+
+    # Shaped like the recorded run-on: prose inside one unterminated JSON
+    # string, near-identical each time round, varying only a counter the model
+    # increments forever ("In the 49th century... the 50th century...").
+    @staticmethod
+    def _looping_passage(cycles: int, start: int = 40) -> str:
+        cycle = (
+            "In the {n}th century, the production of paper in Europe will "
+            "continue to decline, and this is due to a number of factors. One "
+            "of the main factors is the decline of the paper industry in China. "
+            "The decline of the paper industry in China leads to a decline in "
+            "the quality of paper that is available in Europe. This decline in "
+            "the quality of paper leads to a decline in the demand for paper, "
+            "which in turn leads to a decline in the production of paper. "
+        )
+        return '{"title": "Paper", "passage": "' + "".join(
+            cycle.format(n=start + i) for i in range(cycles)
+        )
+
+    # Shaped like a real headings set: the same options list on every question,
+    # which is mandatory (the frontend renders no `headings` field).
+    @staticmethod
+    def _headings_questions(count: int) -> str:
+        options = ", ".join(
+            f'"{n}. The {w} of paper"'
+            for n, w in zip("i ii iii iv v vi vii viii".split(),
+                            "origin spread decline revival cost craft trade future".split())
+        )
+        return '{"questions": [' + ", ".join(
+            f'{{"number": {i}, "type": "matching_headings", "question": '
+            f'"Choose the correct heading for Paragraph {chr(64 + i)}.", '
+            f'"options": [{options}]}}'
+            for i in range(1, count + 1)
+        ) + "]}"
+
+    def test_a_repeating_cycle_is_caught(self):
+        assert _runaway_ratio(self._looping_passage(12)) < _RUNAWAY_MIN_RATIO
+
+    def test_a_whitespace_stall_is_caught(self):
+        """The mode the previous detector was blind to by construction: it
+        required a cycle of at least 200 characters, and this one has period 1.
+        Measured live — a reply died at `known as "` and then emitted 3,539
+        spaces, because an unescaped quote closes the string and the JSON
+        grammar will accept nothing else the model wants to say.
+        """
+        assert _runaway_ratio('{"passage": "known as ' + '"' + " " * 4000) < _RUNAWAY_MIN_RATIO
+
+    def test_the_mandatory_headings_repetition_is_not_a_loop(self):
+        """The exact repetition reading depends on, and the reason the window is
+        scored in 40-grams: at that length each repeat still carries enough of
+        its own question text to read as distinct.
+        """
+        assert _runaway_ratio(self._headings_questions(8)) >= _RUNAWAY_MIN_RATIO
+
+    def test_ordinary_prose_is_not_a_loop(self):
+        passage = " ".join(
+            f"Paragraph {i} discusses a different aspect of papermaking in "
+            f"some detail, with its own facts, dates and named figures."
+            for i in range(40)
+        )
+        assert _runaway_ratio(passage) >= _RUNAWAY_MIN_RATIO
+
+    def test_a_short_reply_is_never_judged(self):
+        """The ratio is meaningless on a tail too short to repeat in, and a
+        legitimate reply is a fragment for its first few hundred characters.
+        """
+        assert _runaway_ratio('{"title": "Paper"') == 1.0
+
+    async def test_a_run_on_is_abandoned_instead_of_decoded_to_the_cap(
+        self, monkeypatch
+    ):
+        """The whole point: stop paying for it. Waiting for the reply means
+        waiting out the full token budget, then failing with nothing to show.
+        """
+        text = self._looping_passage(40)
+        pieces = [text[i:i + 60] for i in range(0, len(text), 60)]
+        fake = FakeOllama(pieces)
+        monkeypatch.setattr(client_module, "_ollama_semaphore", None)
+        monkeypatch.setattr(client_module, "_get_http_client", lambda: fake)
+
+        with pytest.raises(RunawayGeneration, match="anything new"):
+            await OllamaClient("m", timeout=30.0).complete("sys", [])
+        assert fake.sent < len(pieces)
+
+    async def test_a_reply_longer_than_any_it_was_trained_on_is_abandoned(
+        self, monkeypatch
+    ):
+        """The mode neither repeat-detector can see, measured live: the model
+        kept writing NEW prose past 15,875 characters, scoring 0.325 — correctly
+        above the repeat threshold, because nothing was repeating. Without a
+        length bound the guard is a heuristic; with one it terminates.
+        """
+        novel = " ".join(
+            f"Sentence {i} records a distinct fact about papermaking, naming "
+            f"a different year, place and person from all the others."
+            for i in range(400)
+        )
+        assert _runaway_ratio(novel) >= _RUNAWAY_MIN_RATIO, "must not be a repeat"
+        assert len(novel) > client_module._RUNAWAY_MAX_CHARS
+        pieces = [novel[i:i + 200] for i in range(0, len(novel), 200)]
+        fake = FakeOllama(pieces)
+        monkeypatch.setattr(client_module, "_ollama_semaphore", None)
+        monkeypatch.setattr(client_module, "_get_http_client", lambda: fake)
+
+        with pytest.raises(RunawayGeneration, match="trained on"):
+            await OllamaClient("m", timeout=30.0).complete("sys", [])
+        assert fake.sent < len(pieces)
+
+    async def test_a_stream_that_never_completes_is_a_failure_not_a_reply(
+        self, monkeypatch
+    ):
+        """Without this the fragment is returned as if it were the answer, and
+        the retry is spent complaining about whatever the fragment failed to be.
+        """
+        fake = FakeOllama(['{"title": "Paper", "passage": "known as "'],
+                          finish=False)
+        monkeypatch.setattr(client_module, "_ollama_semaphore", None)
+        monkeypatch.setattr(client_module, "_get_http_client", lambda: fake)
+
+        with pytest.raises(RunawayGeneration, match="without a completion marker"):
+            await OllamaClient("m", timeout=30.0).complete("sys", [])
+
+    async def test_the_two_failure_modes_get_opposite_corrections(self):
+        """A repeating reply must be told to write less; a stalled one is
+        already too short, and telling it to write less cannot help.
+        """
+        class Breaks(LLMClient):
+            def __init__(self, error: RunawayGeneration) -> None:
+                self.error = error
+                self.calls: list[list[dict]] = []
+
+            async def complete(self, system, messages, json_mode=False,
+                               temperature=None, max_tokens=None) -> str:
+                self.calls.append(messages)
+                if len(self.calls) == 1:
+                    raise self.error
+                return json.dumps({"passage": "p"})
+
+        stalled = Breaks(RunawayGeneration(
+            "ended without a completion marker", client_module._ADVICE_STALLED))
+        await stalled.complete_json("sys", [{"role": "user", "content": "go"}],
+                                    required_keys=("passage",))
+        assert "quotation marks" in stalled.calls[1][-1]["content"]
+
+        repeating = Breaks(RunawayGeneration(
+            "stopped saying anything new", client_module._ADVICE_REPEATING))
+        await repeating.complete_json("sys", [{"role": "user", "content": "go"}],
+                                      required_keys=("passage",))
+        assert "shorter" in repeating.calls[1][-1]["content"]
+
+    async def test_a_run_on_earns_a_retry_rather_than_reaching_the_caller(self):
+        """It used to surface as a TimeoutError raised outside complete_json's
+        try block — the most expensive way for a generation to end, since it
+        cost the full budget AND could not be retried.
+        """
+        class RunsAwayOnce(LLMClient):
+            def __init__(self) -> None:
+                self.calls: list[list[dict]] = []
+
+            async def complete(self, system, messages, json_mode=False,
+                               temperature=None, max_tokens=None) -> str:
+                self.calls.append(messages)
+                if len(self.calls) == 1:
+                    raise RunawayGeneration("locked into a 769-character cycle",
+                                            client_module._ADVICE_REPEATING)
+                return json.dumps({"passage": "p"})
+
+        client = RunsAwayOnce()
+        result = await client.complete_json(
+            "sys", [{"role": "user", "content": "generate"}],
+            required_keys=("passage",),
+        )
+        assert result == {"passage": "p"}
+        correction = client.calls[1][-1]["content"]
+        assert "shorter" in correction
+        # Nothing to echo — the reply was abandoned, not received.
+        assert [m["role"] for m in client.calls[1]] == ["user", "user"]
 
 
 class TestHostedClientTimeouts:
