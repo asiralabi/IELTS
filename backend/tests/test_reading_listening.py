@@ -9,8 +9,12 @@ def _practice_and_check(client, auth_headers, section: str) -> None:
     assert isinstance(practice_id, int)
     assert body["title"]
     assert len(body["questions"]) == 2
-    # The answer key must never be exposed to the student
-    assert "answer_key" not in body
+    # Nothing that gives the answers away may reach the student. The two
+    # routers kept separate lists of what that means and disagreed: reading
+    # dropped `answer_key` alone, so anything listening-shaped it ever grew
+    # would have gone straight to the browser.
+    for leak in ("answer_key", "accepted_variants", "answer_positions", "blueprint"):
+        assert leak not in body
     if section == "reading":
         assert body["passage"]
     else:

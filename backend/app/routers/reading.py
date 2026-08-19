@@ -6,6 +6,7 @@ from app.agents import reading_trainer
 from app.auth import get_current_user
 from app.database import get_db
 from app.models import GeneratedQuestion, PracticeAttempt, User
+from app.routers._payload import public, strip_sections
 from app.services import practice_pool
 
 router = APIRouter(prefix="/reading", tags=["reading"])
@@ -53,8 +54,7 @@ async def create_practice(
     db.add(question)
     db.commit()
     db.refresh(question)
-    public = {k: v for k, v in practice.items() if k != "answer_key"}
-    return {"practice_id": question.id, **public}
+    return {"practice_id": question.id, **public(practice)}
 
 
 @router.post("/check")

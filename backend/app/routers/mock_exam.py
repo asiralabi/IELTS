@@ -8,15 +8,13 @@ from app.agents import orchestrator
 from app.auth import get_current_user
 from app.database import get_db
 from app.models import MockExam, User
+from app.routers._payload import ANSWER_FIELDS
 
 router = APIRouter(prefix="/mock-exam", tags=["mock-exam"])
 
-_HIDDEN_KEYS = {"answer_key", "answers", "explanation"}
-
-
 def _strip_keys(obj: Any) -> Any:
     if isinstance(obj, dict):
-        return {k: _strip_keys(v) for k, v in obj.items() if k not in _HIDDEN_KEYS}
+        return {k: _strip_keys(v) for k, v in obj.items() if k not in ANSWER_FIELDS}
     if isinstance(obj, list):
         return [_strip_keys(x) for x in obj]
     return obj

@@ -6,6 +6,7 @@ from app.agents import listening_trainer
 from app.auth import get_current_user
 from app.database import get_db
 from app.models import GeneratedQuestion, PracticeAttempt, User
+from app.routers._payload import public, strip_sections
 from app.services import practice_pool, tts
 
 router = APIRouter(prefix="/listening", tags=["listening"])
@@ -24,25 +25,6 @@ class CheckRequest(BaseModel):
 
 class FullTestRequest(BaseModel):
     difficulty: str | None = None
-
-
-# Server-only fields that reveal answers or exam design — never sent to the
-# client before grading (they stay in the stored payload for the checker).
-_ANSWER_FIELDS = ("answer_key", "accepted_variants", "answer_positions", "blueprint")
-
-
-def _public(practice: dict) -> dict:
-    """Drop answer-bearing / design fields from a single practice payload."""
-    return {k: v for k, v in practice.items() if k not in _ANSWER_FIELDS}
-
-
-def _strip_answer_keys(test: dict) -> dict:
-    """Return the full-test payload with every part's answer-bearing fields
-    removed so the correct answers never reach the client before grading."""
-    return {
-        **{k: v for k, v in test.items() if k != "parts"},
-        "parts": [_public(part) for part in test.get("parts", [])],
-    }
 
 
 @router.post("/practice")
@@ -73,7 +55,7 @@ async def create_practice(
     db.add(question)
     db.commit()
     db.refresh(question)
-    return {"practice_id": question.id, **_public(practice)}
+    return {"practice_id": question.id, **public(practice)}
 
 
 @router.post("/check")
@@ -180,7 +162,7 @@ async def create_full_test(
     db.add(question)
     db.commit()
     db.refresh(question)
-    return {"practice_id": question.id, **_strip_answer_keys(test)}
+    return {"practice_id": question.id, **strip_sections(test, "parts")}
 
 
 @router.post("/full-test/check")
