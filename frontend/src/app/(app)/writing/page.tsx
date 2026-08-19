@@ -285,6 +285,12 @@ export default function WritingPage() {
                   <Wand2 className="size-4" aria-hidden />
                   Generate AI prompt
                 </Button>
+                <button
+                  onClick={() => router.push("/writing/test")}
+                  className="text-sm font-medium text-primary transition-colors hover:text-primary/80"
+                >
+                  Or take a full test — both tasks, one band →
+                </button>
               </div>
             )}
 

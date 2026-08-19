@@ -54,6 +54,44 @@ function asQuestionText(value: unknown): string {
   return String(value ?? "");
 }
 
+// A pooled mock exam serves whole papers — four listening parts, three reading
+// passages, numbered straight through. A cold pool falls back to one practice
+// set per section. Both collapse to the same list so the exam renders once.
+type ExamSection = {
+  key: string;
+  label: string;
+  body?: string;
+  title?: string;
+  visual?: Visual;
+  visuals?: Visual[];
+  questions: PracticeQuestion[];
+};
+
+function toSections(
+  paper: unknown,
+  listKey: "parts" | "passages",
+  indexKey: "part" | "passage_number",
+  bodyKey: "audio_script" | "passage",
+  noun: string
+): ExamSection[] {
+  if (!paper || typeof paper !== "object") return [];
+  const obj = paper as Record<string, unknown>;
+  const list = Array.isArray(obj[listKey])
+    ? (obj[listKey] as Record<string, unknown>[])
+    : [obj];
+  return list.map((section, i) => ({
+    key: `${noun}-${section[indexKey] ?? i + 1}`,
+    label: `${noun} ${section[indexKey] ?? i + 1}`,
+    body: typeof section[bodyKey] === "string" ? (section[bodyKey] as string) : undefined,
+    title: typeof section.title === "string" ? section.title : undefined,
+    visual: (section.visual as Visual) ?? undefined,
+    visuals: (section.visuals as Visual[]) ?? undefined,
+    questions: Array.isArray(section.questions)
+      ? (section.questions as PracticeQuestion[])
+      : [],
+  }));
+}
+
 function extractVisual(value: unknown): Visual | null {
   if (!value || typeof value !== "object") return null;
   const raw = (value as { visual?: unknown }).visual;
@@ -132,12 +170,15 @@ export default function MockTestPage() {
   };
 
   const examData = (exam?.exam ?? {}) as Record<string, unknown>;
-  const listening = examData.listening as
-    | { title?: string; audio_script?: string; questions?: PracticeQuestion[] }
-    | undefined;
-  const reading = examData.reading as
-    | { title?: string; passage?: string; questions?: PracticeQuestion[] }
-    | undefined;
+  const listeningParts = React.useMemo(
+    () => toSections(examData.listening, "parts", "part", "audio_script", "Part"),
+    [examData.listening]
+  );
+  const readingPassages = React.useMemo(
+    () =>
+      toSections(examData.reading, "passages", "passage_number", "passage", "Passage"),
+    [examData.reading]
+  );
   const writing = (examData.writing ?? {}) as Record<string, unknown>;
   const speaking = (examData.speaking ?? {}) as Record<string, unknown>;
 
@@ -170,7 +211,8 @@ export default function MockTestPage() {
               The AI examiner scores everything and returns your overall band.
             </p>
             <p className="mt-2 text-xs text-muted-foreground/70">
-              Generation runs 7 AI tasks and can take a while on a local model.
+              Full papers are written in the background ahead of time. If they
+              are not ready yet you get a shorter exam, scaled to the same band.
             </p>
             <Button size="lg" className="mt-8" onClick={generate}>
               Generate my exam
@@ -252,47 +294,69 @@ export default function MockTestPage() {
                 transition={{ duration: 0.25 }}
                 className="space-y-5"
               >
-                {section === "listening" && listening && (
-                  <>
-                    <div className="glass rounded-[24px] p-6 shadow-soft">
-                      <Badge variant="accent" className="mb-3">
-                        Recording script
-                      </Badge>
-                      <p className="whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">
-                        {listening.audio_script}
-                      </p>
+                {section === "listening" &&
+                  listeningParts.map((part) => (
+                    <div key={part.key} className="space-y-4">
+                      <div className="glass rounded-[24px] p-6 shadow-soft">
+                        <Badge variant="accent" className="mb-3">
+                          {listeningParts.length > 1 ? part.label : "Recording script"}
+                        </Badge>
+                        {part.title && (
+                          <h3 className="mb-2 font-display text-lg font-semibold">
+                            {part.title}
+                          </h3>
+                        )}
+                        <p className="whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">
+                          {part.body}
+                        </p>
+                        <Visuals
+                          visual={part.visual}
+                          visuals={part.visuals}
+                          className="mt-4"
+                        />
+                      </div>
+                      <QuestionList
+                        questions={part.questions}
+                        answers={listeningAnswers}
+                        onAnswer={(k, v) => {
+                          setListeningAnswers((a) => ({ ...a, [k]: v }));
+                          pulseSaved();
+                        }}
+                      />
                     </div>
-                    <QuestionList
-                      questions={listening.questions ?? []}
-                      answers={listeningAnswers}
-                      onAnswer={(k, v) => {
-                        setListeningAnswers((a) => ({ ...a, [k]: v }));
-                        pulseSaved();
-                      }}
-                    />
-                  </>
-                )}
+                  ))}
 
-                {section === "reading" && reading && (
-                  <div className="grid gap-6 lg:grid-cols-2">
-                    <div className="glass max-h-[65vh] overflow-y-auto rounded-[24px] p-6 shadow-soft lg:sticky lg:top-24">
-                      <Badge variant="secondary" className="mb-3">
-                        {reading.title ?? "Passage"}
-                      </Badge>
-                      <p className="whitespace-pre-wrap text-[15px] leading-[1.8]">
-                        {reading.passage}
-                      </p>
+                {section === "reading" &&
+                  readingPassages.map((passage) => (
+                    <div key={passage.key} className="grid gap-6 lg:grid-cols-2">
+                      <div className="glass max-h-[65vh] overflow-y-auto rounded-[24px] p-6 shadow-soft lg:sticky lg:top-24">
+                        <Badge variant="secondary" className="mb-3">
+                          {readingPassages.length > 1 ? passage.label : "Passage"}
+                        </Badge>
+                        {passage.title && (
+                          <h3 className="mb-2 font-display text-lg font-semibold">
+                            {passage.title}
+                          </h3>
+                        )}
+                        <p className="whitespace-pre-wrap text-[15px] leading-[1.8]">
+                          {passage.body}
+                        </p>
+                        <Visuals
+                          visual={passage.visual}
+                          visuals={passage.visuals}
+                          className="mt-4"
+                        />
+                      </div>
+                      <QuestionList
+                        questions={passage.questions}
+                        answers={readingAnswers}
+                        onAnswer={(k, v) => {
+                          setReadingAnswers((a) => ({ ...a, [k]: v }));
+                          pulseSaved();
+                        }}
+                      />
                     </div>
-                    <QuestionList
-                      questions={reading.questions ?? []}
-                      answers={readingAnswers}
-                      onAnswer={(k, v) => {
-                        setReadingAnswers((a) => ({ ...a, [k]: v }));
-                        pulseSaved();
-                      }}
-                    />
-                  </div>
-                )}
+                  ))}
 
                 {section === "writing" &&
                   (["task1", "task2"] as const).map((t) => {

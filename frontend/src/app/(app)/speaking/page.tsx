@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Mic, Square, Wand2, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
@@ -65,6 +66,7 @@ function Waveform({ active }: { active: boolean }) {
 }
 
 export default function SpeakingPage() {
+  const router = useRouter();
   const [part, setPart] = React.useState<SpeakingPart>("part1");
   // Store the raw question from the API — could be a string OR a cue-card
   // object (Part 2 backend schema is `{topic, bullets, closing}`).
@@ -230,6 +232,15 @@ export default function SpeakingPage() {
             animate={{ opacity: 1, y: 0 }}
             className="space-y-5"
           >
+            <div className="flex justify-end">
+              <button
+                onClick={() => router.push("/speaking/test")}
+                className="text-sm font-medium text-primary transition-colors hover:text-primary/80"
+              >
+                Or take a full test — all three parts, one band →
+              </button>
+            </div>
+
             {/* Part selector */}
             <div className="grid gap-3 sm:grid-cols-3">
               {PARTS.map((p) => (

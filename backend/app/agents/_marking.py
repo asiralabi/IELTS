@@ -42,6 +42,32 @@ def band_from_40(correct: int, total: int, table: list[tuple[int, float]]) -> fl
     return 2.0 if scaled >= 2 else 0.0
 
 
+def round_band(value: float) -> float:
+    """IELTS reports in half bands, and never outside 0-9."""
+    return min(9.0, max(0.0, round(value * 2) / 2))
+
+
+def writing_band(task1: float | None, task2: float | None) -> float | None:
+    """The official IELTS weighting: Task 2 is worth twice Task 1.
+
+    A candidate who wrote only one task is banded on that task alone rather
+    than averaged against a blank they were never asked to fill.
+    """
+    if task1 is not None and task2 is not None:
+        return round_band((task1 + 2 * task2) / 3)
+    only = task2 if task2 is not None else task1
+    return None if only is None else round_band(only)
+
+
+def speaking_band(bands: list[float]) -> float | None:
+    """Speaking is one continuous performance — the parts average into a band.
+
+    Unweighted, unlike Writing: the examiner scores the candidate across the
+    whole interview rather than scoring each part as a separate task.
+    """
+    return round_band(sum(bands) / len(bands)) if bands else None
+
+
 def resolve_choice(question: dict, answer: str) -> str:
     """The option text an answer denotes, for a question that lists options.
 
@@ -213,4 +239,65 @@ async def mark_answers(
         "total": len(results),
         "band_estimate": band_from_40(score, len(results), band_table),
         "results": results,
+    }
+
+
+async def mark_full_test(
+    sections: list[dict],
+    answers: dict,
+    check_one,
+    band_table: list[tuple[int, float]],
+    index_key: str,
+    summary_key: str,
+) -> dict:
+    """Mark a whole test section by section, then band the run as a whole.
+
+    A full test is renumbered globally, so the student submits one flat dict of
+    answers for the entire paper. Each section is handed only the numbers it
+    owns — passing all of them to every section would have each section mark
+    answers it has no question for and report a total nobody can add up.
+
+    The band comes from the aggregate, never from the per-section scores:
+    banding each section separately and averaging is not how IELTS converts,
+    and would move a borderline candidate by half a band.
+    """
+    str_answers = {str(k): v for k, v in (answers or {}).items()}
+    coros = []
+    for section in sections:
+        owned = {str(q.get("number")) for q in section.get("questions") or []}
+        coros.append(
+            check_one(section, {k: v for k, v in str_answers.items() if k in owned})
+        )
+    outcomes = await gather_llm("evaluator", coros)
+
+    merged: list[dict] = []
+    summaries: list[dict] = []
+    total_correct = 0
+    total_questions = 0
+    for section, outcome in zip(sections, outcomes):
+        rows = outcome.get("results") or []
+        merged.extend(rows)
+        score = safe_int(outcome.get("score"))
+        section_total = safe_int(
+            outcome.get("total"), len(section.get("questions") or [])
+        )
+        total_correct += score
+        total_questions += section_total
+        summaries.append(
+            {
+                index_key: section.get(index_key),
+                "title": section.get("title"),
+                "score": score,
+                "total": section_total,
+                "results": rows,
+            }
+        )
+
+    merged.sort(key=lambda r: safe_int(r.get("number")))
+    return {
+        "score": total_correct,
+        "total": total_questions,
+        "band_estimate": band_from_40(total_correct, total_questions, band_table),
+        summary_key: summaries,
+        "results": merged,
     }

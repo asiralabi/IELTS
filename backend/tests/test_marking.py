@@ -16,6 +16,8 @@ from app.agents._marking import (
     evaluator_user_turn,
     mark_answers,
     resolve_choice,
+    speaking_band,
+    writing_band,
 )
 from app.agents.listening_trainer import _LISTENING_BAND_TABLE
 from app.agents.reading_trainer import _READING_BAND_TABLE
@@ -173,3 +175,20 @@ def test_reading_is_marked_harder_than_listening_at_the_same_raw_score():
     assert band_from_40(0, 0, _READING_BAND_TABLE) == 0.0
     # Short sets scale to the 40-question table rather than being marked raw.
     assert band_from_40(13, 14, _READING_BAND_TABLE) == 8.5
+
+
+def test_writing_weights_task_two_double():
+    # An unweighted mean would call this 7.0 and hand the student half a band
+    # they did not earn — Task 2 is worth twice Task 1 in the official scheme.
+    assert writing_band(8.0, 6.0) == 6.5
+    assert writing_band(6.0, 8.0) == 7.5
+    # One task attempted is banded on that task, not averaged against a blank.
+    assert writing_band(None, 6.5) == 6.5
+    assert writing_band(6.5, None) == 6.5
+    assert writing_band(None, None) is None
+
+
+def test_speaking_averages_its_parts_unweighted():
+    assert speaking_band([6.0, 7.0, 7.0]) == 6.5
+    assert speaking_band([5.0]) == 5.0
+    assert speaking_band([]) is None

@@ -68,6 +68,10 @@ async def check_answers(
     if (
         question is None
         or question.section != "listening"
+        # A full test keys its questions globally and holds them under `parts`,
+        # so marking one here would find nothing and hand the student a
+        # confident 0/0 instead of an error.
+        or question.question_type == "full_test"
         or question.user_id not in (None, user.id)
     ):
         raise HTTPException(status_code=404, detail="Practice not found")
@@ -147,10 +151,18 @@ async def create_full_test(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict:
-    try:
-        test = await listening_trainer.create_full_test(payload.difficulty)
-    except ValueError:
-        raise HTTPException(status_code=502, detail="LLM returned invalid output")
+    # Four parts is four heavy local generations — the best part of an hour
+    # that no request can wait out. The warm pool builds them ahead of time;
+    # only a request asking for a difficulty the pool doesn't stock pays itself.
+    test = None
+    if not payload.difficulty:
+        test = practice_pool.pop(db, "listening", practice_pool.FULL_TEST)
+
+    if test is None:
+        try:
+            test = await listening_trainer.create_full_test(payload.difficulty)
+        except ValueError:
+            raise HTTPException(status_code=502, detail="LLM returned invalid output")
 
     question = GeneratedQuestion(
         user_id=user.id,

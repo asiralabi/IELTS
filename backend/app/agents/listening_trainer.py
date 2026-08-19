@@ -3,7 +3,8 @@ import random
 import re
 from functools import partial
 
-from app.agents._marking import band_from_40, mark_answers, safe_int
+from app.agents._marking import mark_answers, mark_full_test
+from app.agents._numbering import renumber
 from app.agents.answerability import (
     canon,
     cross_section_error,
@@ -475,50 +476,7 @@ async def _expand_script(script: str, title: str) -> str | None:
 # Full 4-part / 40-question test
 
 
-def _renumber(result: dict, offset: int) -> dict:
-    """Shift a single part's questions to global numbering.
-
-    A part is generated with local numbers 1..10; for a full test Part 2 must
-    become 11..20, Part 3 → 21..30, etc. Questions are renumbered positionally
-    (robust to the model mislabelling), and the answer key and any table
-    `__N__` blank placeholders are remapped through the same old→new mapping.
-    """
-    questions = result.get("questions") or []
-    answer_key = result.get("answer_key") or {}
-    mapping: dict[str, str] = {}
-    new_questions = []
-    for i, q in enumerate(questions):
-        if not isinstance(q, dict):
-            continue
-        new_number = offset + i + 1
-        mapping[str(q.get("number"))] = str(new_number)
-        new_questions.append({**q, "number": new_number})
-    new_answer_key = {
-        mapping.get(str(k), str(k)): v for k, v in answer_key.items()
-    }
-    result["questions"] = new_questions
-    result["answer_key"] = new_answer_key
-
-    # Keep the answer-number-keyed metadata dicts aligned with the renumbering.
-    for meta_key in ("accepted_variants", "answer_positions"):
-        meta = result.get(meta_key)
-        if isinstance(meta, dict):
-            result[meta_key] = {
-                mapping.get(str(k), str(k)): v for k, v in meta.items()
-            }
-
-    visual = result.get("visual")
-    if isinstance(visual, dict) and visual.get("chart_type") == "table":
-        for row in visual.get("series") or []:
-            if not isinstance(row, dict):
-                continue
-            for cell in row.get("data") or []:
-                if isinstance(cell, list) and len(cell) >= 2:
-                    m = _BLANK_RE.match(str(cell[1]))
-                    if m:
-                        old_n = m.group(1)
-                        cell[1] = f"__{mapping.get(old_n, old_n)}__"
-    return result
+_renumber = renumber
 
 
 def _num(value: object, default: float) -> float:
@@ -726,46 +684,11 @@ async def check_answers(practice: dict, answers: dict) -> dict:
 
 async def check_full_test(test_payload: dict, answers: dict) -> dict:
     """Mark all 40 answers part by part, then aggregate."""
-    parts = test_payload.get("parts") or []
-    str_answers = {str(k): v for k, v in (answers or {}).items()}
-
-    coros = []
-    for part in parts:
-        qnums = {str(q.get("number")) for q in part.get("questions") or []}
-        part_answers = {k: v for k, v in str_answers.items() if k in qnums}
-        coros.append(check_answers(part, part_answers))
-    outcomes = await gather_llm("evaluator", coros)
-
-    merged_results: list[dict] = []
-    part_summaries: list[dict] = []
-    total_correct = 0
-    total_questions = 0
-    for part, outcome in zip(parts, outcomes):
-        rows = outcome.get("results") or []
-        merged_results.extend(rows)
-        score = safe_int(outcome.get("score"))
-        part_total = safe_int(
-            outcome.get("total"), len(part.get("questions") or [])
-        )
-        total_correct += score
-        total_questions += part_total
-        part_summaries.append(
-            {
-                "part": part.get("part"),
-                "title": part.get("title"),
-                "score": score,
-                "total": part_total,
-                "results": rows,
-            }
-        )
-
-    merged_results.sort(key=lambda r: safe_int(r.get("number")))
-    return {
-        "score": total_correct,
-        "total": total_questions,
-        "band_estimate": band_from_40(
-            total_correct, total_questions, _LISTENING_BAND_TABLE
-        ),
-        "parts": part_summaries,
-        "results": merged_results,
-    }
+    return await mark_full_test(
+        test_payload.get("parts") or [],
+        answers,
+        check_answers,
+        _LISTENING_BAND_TABLE,
+        "part",
+        "parts",
+    )

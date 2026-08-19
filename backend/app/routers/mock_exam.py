@@ -39,7 +39,7 @@ async def generate_mock_exam(
     db: Session = Depends(get_db), user: User = Depends(get_current_user)
 ) -> dict:
     try:
-        exam_payload = await orchestrator.build_mock_exam(user.target_band)
+        exam_payload = await orchestrator.build_mock_exam(db, user.target_band)
     except ValueError:
         raise HTTPException(status_code=502, detail="LLM returned invalid output")
 

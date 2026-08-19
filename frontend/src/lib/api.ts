@@ -9,7 +9,12 @@ import type {
   ChatSession,
   CheckResult,
   FullListeningTest,
+  FullReadingTest,
+  FullSpeakingTest,
+  FullSpeakingTestResult,
   FullTestResult,
+  FullWritingTest,
+  FullWritingTestResult,
   GeneratedQuestion,
   MockExam,
   MockExamResult,
@@ -17,6 +22,7 @@ import type {
   Progress,
   Section,
   SpeakingHistoryItem,
+  SpeakingPart,
   SpeakingResult,
   StudyPlan,
   TaskType,
@@ -215,6 +221,18 @@ export const api = {
   }) =>
     request<WritingResult>("/writing/submit", { method: "POST", body: payload, slow: true }),
   writingHistory: () => request<WritingHistoryItem[]>("/writing/history"),
+  writingFullTest: () =>
+    request<FullWritingTest>("/writing/full-test", { method: "POST", slow: true }),
+  writingFullTestSubmit: (
+    payload: Partial<
+      Record<TaskType, { prompt: string; essay: string; visual?: Visual | null }>
+    >
+  ) =>
+    request<FullWritingTestResult>("/writing/full-test/submit", {
+      method: "POST",
+      body: payload,
+      slow: true,
+    }),
 
   // --- speaking ---
   submitSpeaking: (payload: { part: string; question: string; transcript: string }) => {
@@ -225,6 +243,16 @@ export const api = {
     return request<SpeakingResult>("/speaking/submit", { method: "POST", form, slow: true });
   },
   speakingHistory: () => request<SpeakingHistoryItem[]>("/speaking/history"),
+  speakingFullTest: () =>
+    request<FullSpeakingTest>("/speaking/full-test", { method: "POST", slow: true }),
+  speakingFullTestSubmit: (
+    payload: Partial<Record<SpeakingPart, { question: unknown; transcript: string }>>
+  ) =>
+    request<FullSpeakingTestResult>("/speaking/full-test/submit", {
+      method: "POST",
+      body: payload,
+      slow: true,
+    }),
 
   // --- reading / listening ---
   readingPractice: (payload: {
@@ -235,6 +263,18 @@ export const api = {
     request<PracticeSet>("/reading/practice", { method: "POST", body: payload, slow: true }),
   readingCheck: (practice_id: number, answers: Record<string, string>) =>
     request<CheckResult>("/reading/check", {
+      method: "POST",
+      body: { practice_id, answers },
+      slow: true,
+    }),
+  readingFullTest: (difficulty?: string) =>
+    request<FullReadingTest>("/reading/full-test", {
+      method: "POST",
+      body: { difficulty: difficulty ?? null },
+      slow: true,
+    }),
+  readingFullTestCheck: (practice_id: number, answers: Record<string, string>) =>
+    request<FullTestResult>("/reading/full-test/check", {
       method: "POST",
       body: { practice_id, answers },
       slow: true,

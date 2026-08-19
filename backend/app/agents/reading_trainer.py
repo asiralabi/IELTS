@@ -4,7 +4,8 @@ import re
 from collections import Counter
 from functools import partial
 
-from app.agents._marking import mark_answers
+from app.agents._marking import mark_answers, mark_full_test
+from app.agents._numbering import renumber
 from app.agents.answerability import (
     GAP_FILL_TYPES,
     canon,
@@ -13,7 +14,7 @@ from app.agents.answerability import (
     qtype,
     word_limit_error,
 )
-from app.llm.client import get_llm_client
+from app.llm.client import gather_llm, get_llm_client
 from app.llm.prompts import (
     HEADINGS_WRITER_SYSTEM,
     NOTGIVEN_WRITER_SYSTEM,
@@ -612,4 +613,57 @@ async def check_answers(practice: dict, answers: dict) -> dict:
     """Mark a Reading passage answer-by-answer with the fine-tuned evaluator."""
     return await mark_answers(
         practice, answers, READING_EVALUATOR_SYSTEM, _READING_BAND_TABLE
+    )
+
+
+# The real paper is 3 passages / 40 questions, but the corpus writes 8 questions
+# at the mode — 158 of 227 sets, mean 8.1, never more than 15. Demanding the
+# exam's 13-14 per passage is far enough off-distribution that a set would fail
+# validation and be retried rather than come back longer. Three passages at the
+# count the checkpoint actually writes is the honest structure, and
+# `band_from_40` already scales a short paper onto the /40 table, so the band
+# the student is shown is the one they earned.
+_FULL_TEST_PASSAGES = 3
+
+# A real paper's passages get harder as it runs. `difficulty` is part of the SFT
+# user turn, so varying it per passage is a shape the checkpoint was trained on.
+_DIFFICULTY_RAMP = ("easy", "medium", "hard")
+
+
+async def create_full_test(difficulty: str | None = None) -> dict:
+    """Assemble a complete 3-passage IELTS Academic Reading test."""
+    passages = await gather_llm(
+        "generator",
+        [
+            create_practice(difficulty=difficulty or _DIFFICULTY_RAMP[i])
+            for i in range(_FULL_TEST_PASSAGES)
+        ],
+    )
+
+    # Sequential, and only once every passage is back. Listening can compute its
+    # offsets up front because a part is always ten questions; a reading passage
+    # returns whatever count it wrote, so passage 2's offset is unknown until
+    # passage 1 has said how long it is.
+    offset = 0
+    for number, passage in enumerate(passages, start=1):
+        renumber(passage, offset)
+        offset += len(passage.get("questions") or [])
+        passage["passage_number"] = number
+
+    return {
+        "title": "IELTS Academic Reading Practice Test",
+        "kind": "full_reading_test",
+        "passages": passages,
+    }
+
+
+async def check_full_test(test_payload: dict, answers: dict) -> dict:
+    """Mark the whole paper passage by passage, then aggregate onto one band."""
+    return await mark_full_test(
+        test_payload.get("passages") or [],
+        answers,
+        check_answers,
+        _READING_BAND_TABLE,
+        "passage_number",
+        "passages",
     )

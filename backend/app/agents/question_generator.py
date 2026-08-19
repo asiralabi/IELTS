@@ -1,4 +1,6 @@
+import json
 import logging
+from typing import Any
 
 from app.llm.client import get_llm_client
 from app.llm.prompts import QUESTION_GENERATOR_SYSTEM
@@ -16,6 +18,18 @@ _SECTION_QUERY_HINTS = {
 # The four official IELTS Writing Task 2 essay types. Any task2_type value
 # outside this set will be rejected in validation.
 _TASK2_TYPES = {"opinion", "discuss_both_views", "problem_solution", "two_part_question"}
+
+
+def as_text(question: Any) -> str:
+    """A generated question rendered for an examiner prompt.
+
+    Only Writing arrives as a plain string. A Part 2 cue card is an object and
+    Part 3 is a list, and handing either straight to an examiner shows it a
+    Python repr of the question it is marking against.
+    """
+    if isinstance(question, str):
+        return question
+    return json.dumps(question, ensure_ascii=False)
 
 
 def _is_task1_academic(section: str, question_type: str | None) -> bool:

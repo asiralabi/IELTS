@@ -39,6 +39,12 @@ class Bucket:
         return (self.section, self.question_type)
 
 
+# The question_type marking a bucket that holds a whole paper rather than one
+# practice set. Deliberately not in _BUCKET_ALIASES: no student request may
+# resolve to it, or a practice route would serve a 40-question test.
+FULL_TEST = "full_test"
+
+
 # One bucket per common student flow. Keep small — every extra bucket costs
 # CPU-minutes on qwen3:4b.
 BUCKETS: tuple[Bucket, ...] = (
@@ -52,6 +58,13 @@ BUCKETS: tuple[Bucket, ...] = (
     Bucket("speaking", "Part 1 questions", target_size=2),
     Bucket("speaking", "Part 2 cue card", target_size=2),
     Bucket("speaking", "Part 3 discussion questions", target_size=2),
+    # The mock exam's two full papers: 4 listening parts and 3 reading
+    # passages, seven heavy generations that no request can wait out. Kept last
+    # on purpose — the warmer walks this tuple in order and only reaches these
+    # once every cheap bucket is full, so an hour spent on a full paper never
+    # starves the buckets students actually pop from.
+    Bucket("listening", FULL_TEST, target_size=1),
+    Bucket("reading", FULL_TEST, target_size=1),
 )
 
 
@@ -160,15 +173,19 @@ def insert(
 ProducerFn = Callable[[Bucket], Awaitable[dict[str, Any]]]
 
 
-async def _reading(_bucket: Bucket) -> dict[str, Any]:
+async def _reading(bucket: Bucket) -> dict[str, Any]:
     from app.agents import reading_trainer
 
+    if bucket.question_type == FULL_TEST:
+        return await reading_trainer.create_full_test()
     return await reading_trainer.create_practice()
 
 
-async def _listening(_bucket: Bucket) -> dict[str, Any]:
+async def _listening(bucket: Bucket) -> dict[str, Any]:
     from app.agents import listening_trainer
 
+    if bucket.question_type == FULL_TEST:
+        return await listening_trainer.create_full_test()
     return await listening_trainer.create_practice()
 
 

@@ -160,9 +160,17 @@ export default function ReadingPage() {
               The AI will write a fresh IELTS-style passage with authentic
               question types, then mark your answers instantly.
             </p>
-            <Button size="lg" className="mt-8" onClick={generate}>
-              Generate a passage
-            </Button>
+            <div className="mt-8 flex flex-col items-center gap-3">
+              <Button size="lg" onClick={generate}>
+                Generate a passage
+              </Button>
+              <button
+                onClick={() => router.push("/reading/test")}
+                className="text-sm font-medium text-primary transition-colors hover:text-primary/80"
+              >
+                Or take a full test — 3 passages, one band →
+              </button>
+            </div>
           </motion.div>
         )}
 

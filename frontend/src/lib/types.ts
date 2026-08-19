@@ -62,7 +62,9 @@ export interface WritingHistoryItem {
 
 export interface SpeakingResult {
   id: number;
-  transcript: string;
+  // Echoed back only when the server did the transcribing. A full interview
+  // sends its own transcripts up and still holds them.
+  transcript?: string;
   band_score: number | null;
   fluency_coherence?: number | null;
   lexical_resource?: number | null;
@@ -165,8 +167,70 @@ export interface FullListeningTest {
   parts: FullTestPart[];
 }
 
-export interface FullTestPartResult {
-  part: number;
+// Passage counts vary per generation, so a passage carries the question range
+// it actually owns rather than the caller deriving it from a fixed size.
+export interface FullTestPassage {
+  passage_number: number;
+  title?: string;
+  passage?: string;
+  visual?: Visual;
+  visuals?: Visual[];
+  questions?: PracticeQuestion[];
+}
+
+export interface FullReadingTest {
+  practice_id: number;
+  title?: string;
+  kind?: string;
+  passages: FullTestPassage[];
+}
+
+// Writing and Speaking papers carry no answer key, so unlike Reading and
+// Listening they are never marked server-side against a stored copy — the
+// tasks the student was shown come back with the answers.
+export interface FullWritingTask {
+  task: TaskType;
+  label: string;
+  minutes: number;
+  min_words: number;
+  question?: unknown;
+  visual?: Visual;
+  [key: string]: unknown;
+}
+
+export interface FullWritingTest {
+  kind?: string;
+  title?: string;
+  tasks: FullWritingTask[];
+}
+
+export interface FullWritingTestResult {
+  tasks: Partial<Record<TaskType, WritingResult>>;
+  overall_band: number | null;
+}
+
+export interface FullSpeakingPart {
+  part: SpeakingPart;
+  label: string;
+  minutes: number;
+  question?: unknown;
+  [key: string]: unknown;
+}
+
+export interface FullSpeakingTest {
+  kind?: string;
+  title?: string;
+  parts: FullSpeakingPart[];
+}
+
+export interface FullSpeakingTestResult {
+  parts: Partial<Record<SpeakingPart, SpeakingResult>>;
+  overall_band: number | null;
+}
+
+export interface FullTestSectionResult {
+  part?: number;
+  passage_number?: number;
   title?: string;
   score: number | null;
   total: number | null;
@@ -183,7 +247,8 @@ export interface FullTestResult {
   score: number | null;
   total: number | null;
   band_estimate?: number | null;
-  parts?: FullTestPartResult[];
+  parts?: FullTestSectionResult[];
+  passages?: FullTestSectionResult[];
   results?: Array<{
     number?: number;
     correct?: boolean;
