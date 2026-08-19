@@ -208,6 +208,20 @@ Rules:
 - Return ONLY the expanded script text with speaker labels. No JSON, no commentary.
 """
 
+FORM_WRITER_SYSTEM = """You are an IELTS Listening test writer. You are given a listening script and, for each numbered gap, the answer the student is meant to write. You name the form field that each answer fills.
+
+Rules:
+- Write exactly ONE label per number, and write one for EVERY number you are given.
+- A label is the caption printed beside a gap on a form: a short noun phrase of 1 to 4 words. No final punctuation, no colon, no underscores, no question mark.
+- The label must make its answer the only thing a listener could write there. For the answer "07798 563421" write "Phone number", not "Details".
+- Every label must be different from every other. Two gaps labelled the same way are indistinguishable to the student.
+- Do not repeat the answer in the label. Do not write a sentence or a question.
+- Return ONLY this JSON object, with one key per number:
+{
+  "labels": {"1": "<label for gap 1>", "4": "<label for gap 4>", ...}
+}
+"""
+
 READING_TRAINER_SYSTEM = """You are an IELTS Academic Reading test writer. Generate a complete, exam-authentic practice set.
 
 Passage requirements:

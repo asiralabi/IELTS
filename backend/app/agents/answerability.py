@@ -227,9 +227,15 @@ def missing_map_error(questions: list, visual: object) -> str | None:
     )
 
 
-def dangling_structure_error(questions: list, visual: object, source: str) -> str | None:
-    """Reject a completion item that points at a block the student never sees."""
+def dangling_completions(questions: list, visual: object) -> list[dict]:
+    """Completion items that point at a block the student never sees.
+
+    Shared with the repair that rewrites them, so the two cannot disagree about
+    which questions are broken — a repair that fixed a different set than the
+    validator rejects would loop until the retries ran out.
+    """
     slots = visual_slots(visual)
+    dangling = []
     for q in questions:
         if not isinstance(q, dict) or qtype(q) not in STRUCTURE_TYPES:
             continue
@@ -237,6 +243,13 @@ def dangling_structure_error(questions: list, visual: object, source: str) -> st
             continue
         if is_self_contained(str(q.get("question") or "")):
             continue
+        dangling.append(q)
+    return dangling
+
+
+def dangling_structure_error(questions: list, visual: object, source: str) -> str | None:
+    """Reject a completion item that points at a block the student never sees."""
+    for q in dangling_completions(questions, visual):
         return (
             f"question {q.get('number')} ({q.get('type')}) points at a summary/note/"
             "table/flow chart that the student never sees — nothing renders one. "

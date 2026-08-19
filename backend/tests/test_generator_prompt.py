@@ -31,10 +31,15 @@ READING_REPLY = {
 LISTENING_REPLY = {
     "title": "Joining a Sports Centre",
     "audio_script": "AGENT: Good morning, how can I help you today? " * 130,
+    # Ten questions because create_part takes no other length, and each carries
+    # its own gap: these tests assert on the prompt, so the reply has to be a
+    # set the generator accepts without repairing it first.
     "questions": [
-        {"number": 1, "type": "form_completion", "question": "Membership starts on ..."}
+        {"number": n, "type": "form_completion",
+         "question": f"Membership detail {n} is ______"}
+        for n in range(1, 11)
     ],
-    "answer_key": {"1": "Monday"},
+    "answer_key": {str(n): "Monday" for n in range(1, 11)},
 }
 
 

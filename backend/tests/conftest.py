@@ -105,21 +105,29 @@ READING_PRACTICE = {
 LISTENING_PRACTICE = {
     "title": "Booking a City Tour",
     "audio_script": "AGENT: Good morning, City Tours. STUDENT: Hello, I would like to book. " * 15,
+    # Real gaps, not three-dot ellipses: a completion question showing no gap
+    # is one create_practice now repairs before returning, which would put an
+    # LLM call in the way of every route test that leans on this.
     "questions": [
         {
             "number": 1,
             "type": "form completion",
-            "question": "Tour starts at ... (ONE WORD AND/OR A NUMBER)",
+            "question": "Tour starts at ______ (ONE WORD AND/OR A NUMBER)",
             "options": None,
         },
         {
             "number": 2,
             "type": "form completion",
-            "question": "Surname: ... (ONE WORD)",
+            "question": "Surname: ______ (ONE WORD)",
             "options": None,
         },
     ],
     "answer_key": {"1": "6:00", "2": "BRAITHWAITE"},
+    # Present so the route tests can prove they never reach the student.
+    # Neither is consulted for the answers those tests submit, so marking is
+    # unaffected: "SMITH" matches neither the key nor the variant.
+    "accepted_variants": {"2": ["Brathwaite"]},
+    "answer_positions": {"1": "opening exchange"},
 }
 
 FEEDBACK_PLAN = {
