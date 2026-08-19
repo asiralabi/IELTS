@@ -1,6 +1,7 @@
 import json
 import random
 import re
+from collections import Counter
 from functools import partial
 
 from app.agents._marking import mark_answers
@@ -15,6 +16,7 @@ from app.agents.answerability import (
 from app.llm.client import get_llm_client
 from app.llm.prompts import (
     HEADINGS_WRITER_SYSTEM,
+    NOTGIVEN_WRITER_SYSTEM,
     PASSAGE_EXPANDER_SYSTEM,
     READING_EVALUATOR_SYSTEM,
     READING_TRAINER_SYSTEM,
@@ -71,6 +73,9 @@ _PARAGRAPH_LABEL = re.compile(r"^\**\s*(?:Paragraph\s+)?([A-Z])\s*[.):]\s*\**\s*
 _HEADING_PREFIX = re.compile(r"^\s*[ivx]+\s*[.)]\s+", re.IGNORECASE)
 
 _TFNG_TYPES = {canon("true_false_notgiven"), canon("yes_no_notgiven")}
+
+# Every spelling of the verdict the corpus uses.
+_NOTGIVEN_VERDICTS = {"NOT GIVEN", "NOTGIVEN", "NG"}
 
 _ARTICLES = {"a", "an", "the"}
 
@@ -130,16 +135,20 @@ def _non_verbatim_answers(result: dict) -> list[str]:
     return missing
 
 
-def validate_practice(result: dict, *, judge_headings: bool = True) -> str | None:
+def validate_practice(
+    result: dict, *, judge_headings: bool = True, judge_notgiven: bool = True
+) -> str | None:
     """Reject a practice set a student could not fairly sit.
 
     Returned as the `validate` hook on complete_json, so a broken set costs one
     corrective retry instead of reaching the student — or, during dataset
     export, becoming a training target that teaches the pathology.
 
-    `judge_headings=False` is for the one caller that rebuilds the block in code
-    afterwards: the model's own headings are discarded, so a retry spent
-    complaining about them buys nothing. Every other caller judges them.
+    `judge_headings=False` and `judge_notgiven=False` are for the one caller
+    that repairs those two things in code afterwards: the model's own headings
+    are discarded and its missing NOT GIVEN is written by a second, narrower
+    call, so a retry spent complaining about either buys nothing. Every other
+    caller judges them.
     """
     cross_section = cross_section_error(result, "reading")
     if cross_section:
@@ -262,7 +271,7 @@ def validate_practice(result: dict, *, judge_headings: bool = True) -> str | Non
             )
         # The teacher reliably writes only verifiable statements unless pushed.
         # A block with no NOT GIVEN never trains the skill the type exists for.
-        if not verdicts & {"NOT GIVEN", "NOTGIVEN", "NG"}:
+        if judge_notgiven and not verdicts & _NOTGIVEN_VERDICTS:
             return (
                 f"none of the {len(tfng)} true/false/not-given answers is NOT GIVEN; "
                 "rewrite at least one statement so it makes a plausible claim the "
@@ -440,6 +449,67 @@ async def _rebuild_headings(result: dict) -> None:
     _replace_block(result, old, new)
 
 
+async def _write_notgiven(passage: str, used: list[str]) -> str | None:
+    """One short call for one statement the passage never makes."""
+    prompt = (
+        f"Passage:\n{passage}\n\n"
+        "Statements already used in this block — do not reuse or negate any "
+        "of them:\n" + "\n".join(f"- {s}" for s in used)
+    )
+    try:
+        reply = await get_llm_client("generator").complete_json(
+            NOTGIVEN_WRITER_SYSTEM,
+            [{"role": "user", "content": prompt}],
+            required_keys=("statement",),
+            max_tokens=256,
+        )
+    except Exception:
+        return None
+    return str(reply.get("statement") or "").strip() or None
+
+
+async def _repair_missing_notgiven(result: dict) -> None:
+    """Give a NOT-GIVEN-less true/false block a real NOT GIVEN.
+
+    All 68 blocks of four or more in the corpus carry one, so the rule this
+    satisfies is not off-distribution — the checkpoint simply draws a block of
+    wholly verifiable statements often enough to fail twice running, and the
+    corrective retry rewrites the entire passage rather than the one statement
+    at fault. Asking for a single statement is a sub-task a 3B can do, and
+    costs one short call instead of another 4096-token set.
+
+    Whether the statement really is unstated is the model's judgement and
+    nothing here can confirm it; what is guaranteed is that the block now
+    trains the choice the question type exists to test.
+    """
+    tfng = [q for q in result.get("questions") or [] if qtype(q) in _TFNG_TYPES]
+    if len(tfng) < 4:
+        return
+    answer_key = result.get("answer_key") or {}
+
+    def verdict(q: dict) -> str:
+        return str(answer_key.get(str(q.get("number")))).strip().upper()
+
+    verdicts = [verdict(q) for q in tfng]
+    if set(verdicts) & _NOTGIVEN_VERDICTS:
+        return
+
+    # Convert one of the majority verdict's statements, so the block does not
+    # lose whichever verdict it only had once.
+    majority = Counter(verdicts).most_common(1)[0][0]
+    victim = [q for q in tfng if verdict(q) == majority][-1]
+
+    statement = await _write_notgiven(
+        str(result.get("passage") or ""),
+        [str(q.get("question") or "") for q in tfng],
+    )
+    if not statement:
+        return
+    victim["question"] = statement
+    answer_key[str(victim.get("number"))] = "NOT GIVEN"
+    result["answer_key"] = answer_key
+
+
 async def create_practice(
     question_types: list[str] | None = None,
     difficulty: str | None = None,
@@ -478,7 +548,9 @@ async def create_practice(
         READING_TRAINER_SYSTEM,
         [{"role": "user", "content": "\n".join(parts)}],
         required_keys=("title", "passage", "questions", "answer_key"),
-        validate=partial(validate_practice, judge_headings=False),
+        validate=partial(
+            validate_practice, judge_headings=False, judge_notgiven=False
+        ),
         # A ~1200-word passage plus 8-13 questions carrying full options lists
         # is a 3.5-5k-token JSON object; LLM_MAX_TOKENS is 2048 locally. A
         # truncation is expensive twice over — the corrective retry replays the
@@ -496,12 +568,15 @@ async def create_practice(
     # After the expansion, so the headings describe the paragraphs the student
     # is given rather than the shorter ones they were written from.
     await _rebuild_headings(result)
-    # The block was skipped on the way in on the promise that it would be built
-    # correctly here. Nothing else can fail this, so a complaint means the
-    # construction is wrong and the set must not reach a student.
+    # After the rebuild, so a statement is not written against a question the
+    # rebuild is about to replace.
+    await _repair_missing_notgiven(result)
+    # Both rules were skipped on the way in on the promise that they would be
+    # satisfied here. Nothing else can fail this, so a complaint means a repair
+    # did not take and the set must not reach a student.
     problem = validate_practice(result)
     if problem:
-        raise ValueError(f"the rebuilt matching_headings block is invalid: {problem}")
+        raise ValueError(f"the repaired reading set is invalid: {problem}")
 
     return result
 

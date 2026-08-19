@@ -190,6 +190,22 @@ Rules:
 }
 """
 
+NOTGIVEN_WRITER_SYSTEM = """You are an IELTS Academic Reading test writer. You are given one passage and asked to write a single NOT GIVEN statement for it.
+
+A NOT GIVEN statement is one the passage neither confirms nor contradicts. The student must have to read carefully and conclude that the passage simply never says.
+
+Rules:
+- Write about the passage's own subject, using its own vocabulary, so the statement looks like it belongs. A statement about an unrelated topic is answerable at a glance and tests nothing.
+- The passage must not state it, imply it, or state its opposite. If a reader could point at a sentence and say "that settles it", the statement is TRUE or FALSE, not NOT GIVEN.
+- Prefer a claim about a quantity, comparison, cause, motive, date, or consequence the passage leaves open — those are the gaps real papers exploit.
+- One sentence, declarative, no hedging words like "may" or "possibly" — a hedged claim is unfalsifiable rather than unstated.
+- Do not reuse or negate any statement you are shown.
+- Return ONLY this JSON object:
+{
+  "statement": "<the NOT GIVEN statement>"
+}
+"""
+
 PASSAGE_EXPANDER_SYSTEM = """You are an IELTS Academic Reading editor. You are given a short passage and asked to expand it to a target length while preserving all facts, claims, paragraph labels (A, B, C...), and existing information order.
 
 Rules:
