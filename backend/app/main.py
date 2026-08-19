@@ -27,8 +27,34 @@ ROUTER_MODULES = [
 ]
 
 
+def check_jwt_secret() -> None:
+    """Refuse to serve real users with the placeholder signing key.
+
+    The placeholder ships in `.env.example` and in git history, so a
+    deployment that kept it will accept a token anyone can forge. A debug run
+    only warns — a developer who has not written a `.env` yet should still get
+    a server rather than a traceback.
+    """
+    if not settings.jwt_secret_is_default:
+        return
+    if settings.debug:
+        logger.warning(
+            "JWT_SECRET is the placeholder from .env.example — tokens signed "
+            "with it can be forged by anyone. Set it before this serves real "
+            "users."
+        )
+        return
+    raise RuntimeError(
+        "JWT_SECRET is still the placeholder from .env.example, so any login "
+        "token can be forged. Set JWT_SECRET in backend/.env to a random "
+        'value (python -c "import secrets; print(secrets.token_urlsafe(48))") '
+        "or set DEBUG=true for a local run."
+    )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    check_jwt_secret()
     settings.ensure_data_dirs()
     init_db()
     try:

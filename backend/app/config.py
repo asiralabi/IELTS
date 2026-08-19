@@ -2,6 +2,8 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+_DEFAULT_JWT_SECRET = "change-me-in-production"
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
@@ -11,7 +13,7 @@ class Settings(BaseSettings):
 
     database_url: str = "sqlite:///./data/ielts.db"
 
-    jwt_secret: str = "change-me-in-production"
+    jwt_secret: str = _DEFAULT_JWT_SECRET
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
     refresh_token_expire_days: int = 7
@@ -63,6 +65,15 @@ class Settings(BaseSettings):
     rag_chunk_size: int = 650
     rag_chunk_overlap: int = 100
     rag_top_k: int = 5
+
+    @property
+    def jwt_secret_is_default(self) -> bool:
+        """Whether tokens are being signed with the secret that ships in git.
+
+        Anyone holding it can mint a token for any user, so this is a
+        credential in name only until it is overridden.
+        """
+        return self.jwt_secret == _DEFAULT_JWT_SECRET
 
     def ensure_data_dirs(self) -> None:
         Path(self.data_dir).mkdir(parents=True, exist_ok=True)

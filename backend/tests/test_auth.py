@@ -1,7 +1,35 @@
 """Auth flow: register, duplicate, login, /auth/me, refresh."""
 
+import logging
+
+import pytest
+
+from app.config import _DEFAULT_JWT_SECRET, settings
+from app.main import check_jwt_secret
+
 EMAIL = "auth-flow@example.com"
 PASSWORD = "supersecret1"
+
+
+def test_startup_refuses_the_placeholder_jwt_secret(monkeypatch):
+    monkeypatch.setattr(settings, "jwt_secret", _DEFAULT_JWT_SECRET)
+    monkeypatch.setattr(settings, "debug", False)
+    with pytest.raises(RuntimeError, match="JWT_SECRET"):
+        check_jwt_secret()
+
+
+def test_debug_run_only_warns_about_the_placeholder(monkeypatch, caplog):
+    monkeypatch.setattr(settings, "jwt_secret", _DEFAULT_JWT_SECRET)
+    monkeypatch.setattr(settings, "debug", True)
+    with caplog.at_level(logging.WARNING):
+        check_jwt_secret()
+    assert "JWT_SECRET" in caplog.text
+
+
+def test_a_real_secret_starts_cleanly(monkeypatch):
+    monkeypatch.setattr(settings, "jwt_secret", "a-real-secret")
+    monkeypatch.setattr(settings, "debug", False)
+    check_jwt_secret()
 
 
 def test_health_is_public(client):
