@@ -110,8 +110,8 @@ def _loose_stem(word: str) -> str:
     return word
 
 
-def _non_verbatim_answers(result: dict) -> list[str]:
-    """Gap-fill answers that appear nowhere in the passage.
+def _non_verbatim_answers(result: dict) -> list[tuple[str, str]]:
+    """(question number, answer) for gap-fill answers absent from the passage.
 
     Every completion type instructs the student to choose words FROM THE
     PASSAGE, so an answer that isn't a span of it cannot be produced or marked.
@@ -125,7 +125,7 @@ def _non_verbatim_answers(result: dict) -> list[str]:
     haystack = f" {' '.join(passage)} "
     stemmed = f" {' '.join(_loose_stem(w) for w in passage)} "
     answer_key = result.get("answer_key") or {}
-    missing = []
+    missing: list[tuple[str, str]] = []
     for q in result.get("questions") or []:
         if not isinstance(q, dict) or qtype(q) not in GAP_FILL_TYPES:
             continue
@@ -142,12 +142,16 @@ def _non_verbatim_answers(result: dict) -> list[str]:
             span = f" {' '.join(words)} "
             span_stemmed = f" {' '.join(_loose_stem(w) for w in words)} "
             if span not in haystack and span_stemmed not in stemmed:
-                missing.append(f"Q{q.get('number')}={cand.strip()!r}")
+                missing.append((str(q.get("number")), cand.strip()))
     return missing
 
 
 def validate_practice(
-    result: dict, *, judge_headings: bool = True, judge_notgiven: bool = True
+    result: dict,
+    *,
+    judge_headings: bool = True,
+    judge_notgiven: bool = True,
+    judge_verbatim: bool = True,
 ) -> str | None:
     """Reject a practice set a student could not fairly sit.
 
@@ -155,11 +159,12 @@ def validate_practice(
     corrective retry instead of reaching the student — or, during dataset
     export, becoming a training target that teaches the pathology.
 
-    `judge_headings=False` and `judge_notgiven=False` are for the one caller
-    that repairs those two things in code afterwards: the model's own headings
-    are discarded and its missing NOT GIVEN is written by a second, narrower
-    call, so a retry spent complaining about either buys nothing. Every other
-    caller judges them.
+    `judge_headings=False`, `judge_notgiven=False` and `judge_verbatim=False`
+    are for the one caller that repairs those three things in code afterwards:
+    the model's own headings are discarded, its missing NOT GIVEN is written by
+    a second narrower call, and the passage is rewritten to name the answers
+    keyed against it — so a retry spent complaining about any of them buys
+    nothing. Every other caller judges them.
     """
     cross_section = cross_section_error(result, "reading")
     if cross_section:
@@ -261,11 +266,12 @@ def validate_practice(
     # One stray paraphrase is teacher noise and costs a retry for little gain;
     # two in the same set is a habit that would train the model to invent
     # answers no student could find.
-    unfindable = _non_verbatim_answers(result)
+    unfindable = _non_verbatim_answers(result) if judge_verbatim else []
     if len(unfindable) >= 2:
+        named = ', '.join(f"Q{number}={answer!r}" for number, answer in unfindable)
         return (
             f"these gap-fill answers do not appear anywhere in the passage: "
-            f"{', '.join(unfindable)}. Completion answers must be copied "
+            f"{named}. Completion answers must be copied "
             "verbatim from the passage — the student is told to choose words "
             "FROM THE PASSAGE, so a paraphrase or a shortened phrase is "
             "unmarkable. Either reword the passage to contain the answer "
@@ -595,7 +601,10 @@ async def create_practice(
         [{"role": "user", "content": "\n".join(parts)}],
         required_keys=("title", "passage", "questions", "answer_key"),
         validate=partial(
-            validate_practice, judge_headings=False, judge_notgiven=False
+            validate_practice,
+            judge_headings=False,
+            judge_notgiven=False,
+            judge_verbatim=False,
         ),
         # A ~1200-word passage plus 8-13 questions carrying full options lists
         # is a 3.5-5k-token JSON object; LLM_MAX_TOKENS is 2048 locally. A
@@ -605,11 +614,24 @@ async def create_practice(
         max_tokens=6144,
     )
 
+    # Two reasons to rewrite the passage, and one call settles both. Measured
+    # on three live diagram passages: each wrote a ~420-word HISTORY of the
+    # sewing machine and drew a mechanical cross-section beside it, keying
+    # bobbin, spool, take-up lever and presser foot — words the passage never
+    # used. The questions are sound and the figure is sound; they are simply
+    # about different halves of the subject, and the student is told to choose
+    # words FROM THE PASSAGE. The passage is ours to edit, so the vocabulary is
+    # written into it rather than the whole set being thrown away.
     passage = str(result.get("passage") or "")
-    if len(passage.split()) < _MIN_PASSAGE_WORDS:
-        expanded = await _expand_passage(passage, str(result.get("title") or ""))
-        if expanded and len(expanded.split()) > len(passage.split()):
-            result["passage"] = expanded
+    missing = [answer for _, answer in _non_verbatim_answers(result)]
+    if passage and (len(passage.split()) < _MIN_PASSAGE_WORDS or missing):
+        expanded = await _expand_passage(
+            passage, str(result.get("title") or ""), missing)
+        if expanded:
+            trial = {**result, "passage": expanded}
+            longer = len(expanded.split()) > len(passage.split())
+            if longer or len(_non_verbatim_answers(trial)) < len(missing):
+                result["passage"] = expanded
 
     # After the expansion, so the headings describe the paragraphs the student
     # is given rather than the shorter ones they were written from.
@@ -627,12 +649,19 @@ async def create_practice(
     return result
 
 
-async def _expand_passage(passage: str, title: str) -> str | None:
+async def _expand_passage(
+    passage: str, title: str, must_name: list[str] | None = None
+) -> str | None:
     """Single-call expansion — asks the model to lengthen without changing meaning.
 
     Returns the raw expanded string or None if the call didn't produce
     something usably longer. Errors are swallowed so a failed expansion
     doesn't kill the whole practice generation.
+
+    `must_name` is wording the passage has to contain because an answer is keyed
+    to it. Naming a part the passage forgot is the same act as adding supporting
+    detail, so it rides along on a call that was happening anyway rather than
+    costing one of its own.
     """
     if not passage.strip():
         return None
@@ -643,6 +672,14 @@ async def _expand_passage(passage: str, title: str) -> str | None:
         "and elaboration. Return ONLY the expanded passage prose — no JSON, "
         "no title, no commentary."
     )
+    if must_name:
+        listed = "; ".join(sorted({str(w).strip() for w in must_name if str(w).strip()}))
+        prompt += (
+            "\n\nThe expanded passage MUST use each of these exact wordings "
+            "somewhere, in a sentence saying what it is or what it does: "
+            f"{listed}. Write them into the subject matter — do not list them, "
+            "and never mention questions, diagrams or answers."
+        )
     try:
         expanded = await get_llm_client().complete(
             PASSAGE_EXPANDER_SYSTEM,
