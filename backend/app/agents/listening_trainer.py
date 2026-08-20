@@ -16,6 +16,7 @@ from app.agents.answerability import (
     missing_map_error,
     qtype,
     unlettered_map_error,
+    unmarkable_matching_error,
     unnamed_place_error,
     word_limit_error,
 )
@@ -180,7 +181,9 @@ _LISTENING_BAND_TABLE: list[tuple[int, float]] = [
 ]
 
 
-def validate_part(result: dict, *, judge_structure: bool = True) -> str | None:
+def validate_part(
+    result: dict, *, judge_structure: bool = True, judge_matching: bool = True
+) -> str | None:
     """Reject a part a student could not actually sit.
 
     Passed as the `validate` hook on complete_json so a broken set costs one
@@ -267,6 +270,11 @@ def validate_part(result: dict, *, judge_structure: bool = True) -> str | None:
             "or replace the question with one the script already answers."
         )
 
+    if judge_matching:
+        unmarkable = unmarkable_matching_error(questions, answer_key)
+        if unmarkable:
+            return unmarkable
+
     for q in mc:
         opts = q.get("options")
         if not isinstance(opts, list) or not opts:
@@ -341,7 +349,9 @@ async def create_practice(
         LISTENING_TRAINER_SYSTEM,
         [{"role": "user", "content": "\n".join(parts)}],
         required_keys=("title", "audio_script", "questions", "answer_key"),
-        validate=partial(validate_part, judge_structure=False),
+        validate=partial(
+            validate_part, judge_structure=False, judge_matching=False
+        ),
         # A full part is a ~1.7-3.1k-token JSON object, but LLM_MAX_TOKENS is
         # 2048 locally — that truncates mid-JSON on the longer half of the
         # range, and each retry costs another ~5 min. The ~2.9k prompt plus
@@ -353,6 +363,7 @@ async def create_practice(
     # and the expander is forbidden to change an answer, so the longer script
     # would only cost input tokens on the repair call.
     await _repair_dangling_completions(result)
+    _repair_compound_matching(result)
     # Skipped on the way in on the promise it would be repaired here.
     problem = validate_part(result)
     if problem:
@@ -438,6 +449,103 @@ async def _write_field_labels(
         return {n: _clean_label(reply["labels"][n]) for n in numbers}
     except Exception:
         return None
+
+
+# The separator between a matched pair's two halves: a colon, or a dash with
+# spaces around it. Searched rather than split on, so the first one wins and a
+# value carrying its own colon ("Route A: $10 million") stays intact.
+_PAIR_SEP = re.compile(r"\s*(?::|\s[-–—]\s)\s*")
+
+
+def _matching_pairs(answer: object) -> list[tuple[str, str]]:
+    """Split "Emma: Introduction, Jack: Data analysis" into its pairs.
+
+    A fragment carrying no separator is the tail of the value before it — a
+    right-hand side with a comma in it — rather than a pair of its own.
+    """
+    chunks = [c.strip() for c in re.split(r"[;,]", str(answer)) if c.strip()]
+    merged: list[str] = []
+    for chunk in chunks:
+        if _PAIR_SEP.search(chunk):
+            merged.append(chunk)
+        elif merged:
+            merged[-1] += ", " + chunk
+    pairs: list[tuple[str, str]] = []
+    for chunk in merged:
+        sep = _PAIR_SEP.search(chunk)
+        left, right = chunk[: sep.start()].strip(), chunk[sep.end():].strip()
+        if left and right:
+            pairs.append((left, right))
+    return pairs
+
+
+def _repair_compound_matching(result: dict) -> None:
+    """Give each matching question ONE pair to answer.
+
+    The teacher writes a whole matching block as a single question and keys the
+    entire mapping against it: 58 of 89 corpus matching answers read like
+    "Emma: Introduction, Jack: Data analysis, Sarah: Drafting the report". The
+    student has one box, so not one of those questions can be marked — and 43
+    of the 66 units carrying a matching block have exactly one question in it,
+    so this is the shape rather than an accident.
+
+    The pairing itself is sound; only the packing is wrong, and unpacking it
+    needs no model call. Each question in the block keeps one pair and the
+    other right-hand sides become the options it chooses between, which is what
+    a real paper prints. The script still describes every pair, exactly as a
+    real recording carries more than it asks about.
+
+    Where the options are the LEFT column — "which speaker said this" — the
+    question is turned round instead, so the answer stays inside the list the
+    student is shown.
+
+    Left alone when the answer cannot be split, or when the block has more
+    questions than pairs. The caller re-validates, so anything unmarkable fails
+    loudly rather than reaching a student.
+    """
+    questions = [q for q in (result.get("questions") or [])
+                 if isinstance(q, dict) and qtype(q) == canon("matching")]
+    if not questions:
+        return
+    answer_key = result.get("answer_key") or {}
+    variants = result.get("accepted_variants")
+
+    blocks: dict[str, list[dict]] = {}
+    for q in questions:
+        answer = str(answer_key.get(str(q.get("number"))) or "").strip()
+        if answer:
+            blocks.setdefault(answer, []).append(q)
+
+    for answer, block in blocks.items():
+        pairs = _matching_pairs(answer)
+        if len(pairs) < len(block):
+            continue
+        options = [str(o) for o in (block[0].get("options") or [])]
+        # The options list the left column when every pair's left side is in
+        # it; then the student is picking the speaker, not the statement.
+        inverted = bool(options) and all(
+            left in options for left, _ in pairs
+        )
+        if not inverted:
+            options = list(dict.fromkeys(right for _, right in pairs))
+        if len(options) < 2:
+            continue
+
+        for q, (left, right) in zip(block, pairs):
+            number = str(q.get("number"))
+            item, keyed = (right, left) if inverted else (left, right)
+            rubric = str(q.get("question") or "").strip()
+            # The rubric is the block's shared instruction; the item is what
+            # this one question asks about. Both, or the question says only how
+            # to answer.
+            q["question"] = f"{rubric} {item}".strip()
+            q["options"] = list(options)
+            answer_key[number] = keyed
+            if isinstance(variants, dict):
+                # Written against the whole mapping, so they describe an answer
+                # that no longer exists.
+                variants.pop(number, None)
+    result["answer_key"] = answer_key
 
 
 async def _repair_dangling_completions(result: dict) -> None:
@@ -683,7 +791,9 @@ def _plan_entrance(entrance: object, grid: list[list[str]]) -> dict | None:
     return {"side": side, "index": index, "label": label}
 
 
-def _validate_full_test_part(result: dict, *, judge_structure: bool = True) -> str | None:
+def _validate_full_test_part(
+    result: dict, *, judge_structure: bool = True, judge_matching: bool = True
+) -> str | None:
     """validate_part, plus the count a full test depends on.
 
     _renumber assigns global numbers positionally as `offset + i + 1`, so a part
@@ -740,7 +850,9 @@ async def create_part(
         LISTENING_TRAINER_SYSTEM,
         [{"role": "user", "content": "\n".join(parts)}],
         required_keys=("title", "audio_script", "questions", "answer_key"),
-        validate=partial(_validate_full_test_part, judge_structure=False),
+        validate=partial(
+            _validate_full_test_part, judge_structure=False, judge_matching=False
+        ),
         # A full part is a ~1.7-3.1k-token JSON object, but LLM_MAX_TOKENS is
         # 2048 locally — that truncates mid-JSON on the longer half of the
         # range, and each retry costs another ~5 min. The ~2.9k prompt plus
@@ -751,6 +863,7 @@ async def create_part(
     # Before _renumber, so the labels are keyed by the numbers the questions
     # still carry.
     await _repair_dangling_completions(result)
+    _repair_compound_matching(result)
     problem = _validate_full_test_part(result)
     if problem:
         raise ValueError(f"the repaired listening part is invalid: {problem}")

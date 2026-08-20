@@ -400,6 +400,39 @@ def self_answering_error(questions: list) -> str | None:
         "plain assertion, the way the person making the claim would put it."
     )
 
+def unmarkable_matching_error(questions: list, answer_key: dict) -> str | None:
+    """Reject a matching question whose answer is not one of its own options.
+
+    A matching item is one pair: the student picks from a printed list, so an
+    answer outside that list can never be marked. The teacher's habit is to
+    key an entire mapping against a single question — 58 of 89 corpus answers
+    read that way — and listening_trainer unpacks those before this runs. What
+    is left is an item whose correct choice was never offered, which no code
+    can guess. 82 of the 89 pass this once repaired, against 31 before.
+    """
+    for q in questions:
+        if not isinstance(q, dict) or qtype(q) != canon("matching"):
+            continue
+        number = q.get("number")
+        options = q.get("options")
+        if not isinstance(options, list) or not options:
+            return (
+                f"matching question {number} has no options array. The student "
+                "chooses from a printed list, so every question must carry that "
+                "list in full."
+            )
+        answer = str((answer_key or {}).get(str(number)) or "").strip()
+        letters = {chr(ord("A") + i).lower() for i in range(len(options))}
+        if canon(answer) in {canon(o) for o in options} | letters:
+            continue
+        return (
+            f"the answer to matching question {number} is {answer!r}, which is "
+            f"not one of its options ({', '.join(repr(str(o)) for o in options)}). "
+            "One question is ONE pair: name the item it asks about, offer the "
+            "candidates as options, and key the single one that matches."
+        )
+    return None
+
 def dangling_completions(questions: list, visual: object) -> list[dict]:
     """Completion items that point at a block the student never sees.
 
