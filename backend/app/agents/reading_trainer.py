@@ -75,6 +75,9 @@ _HEADING_PREFIX = re.compile(r"^\s*[ivx]+\s*[.)]\s+", re.IGNORECASE)
 
 _TFNG_TYPES = {canon("true_false_notgiven"), canon("yes_no_notgiven")}
 
+# Question types whose answers are read off a printed figure.
+_FIGURE_TYPES = {canon("table_completion"), canon("diagram_label_completion")}
+
 # Every spelling of the verdict the corpus uses.
 _NOTGIVEN_VERDICTS = {"NOT GIVEN", "NOTGIVEN", "NG"}
 
@@ -524,7 +527,15 @@ async def create_practice(
     if topic:
         parts.append(f"Topic: {topic}.")
 
-    client = get_llm_client("generator")
+    # Same reason as listening's _FIGURE_PARTS: a set built around a printed
+    # figure has to come from the general model, because the checkpoint's corpus
+    # never described one.
+    client = get_llm_client(
+        "generator",
+        skip_finetune=bool(
+            _FIGURE_TYPES.intersection(canon(t) for t in question_types or ())
+        ),
+    )
     # The SFT user turn is topic/difficulty/types only, so grounding a
     # fine-tune puts it off-distribution: it read the exemplar as content to
     # continue and emitted the exemplar's own questions against its new
@@ -629,13 +640,23 @@ _FULL_TEST_PASSAGES = 3
 # user turn, so varying it per passage is a shape the checkpoint was trained on.
 _DIFFICULTY_RAMP = ("easy", "medium", "hard")
 
+# A Cambridge paper prints a figure on roughly one passage, and the default type
+# mix never reaches for one, so a paper generated without a steer carries none.
+# Asking passage 2 for a labelled diagram is where the real papers put theirs.
+_PASSAGE_TYPES: dict[int, list[str]] = {
+    1: ["diagram_label_completion", "true_false_notgiven", "multiple_choice"],
+}
+
 
 async def create_full_test(difficulty: str | None = None) -> dict:
     """Assemble a complete 3-passage IELTS Academic Reading test."""
     passages = await gather_llm(
         "generator",
         [
-            create_practice(difficulty=difficulty or _DIFFICULTY_RAMP[i])
+            create_practice(
+                question_types=_PASSAGE_TYPES.get(i),
+                difficulty=difficulty or _DIFFICULTY_RAMP[i],
+            )
             for i in range(_FULL_TEST_PASSAGES)
         ],
     )

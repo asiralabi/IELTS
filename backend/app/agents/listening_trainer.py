@@ -1,17 +1,20 @@
 import logging
 import random
 import re
+from collections import Counter
 from functools import partial
 
 from app.agents._marking import mark_answers, mark_full_test
 from app.agents._numbering import renumber
 from app.agents.answerability import (
+    MAP_TYPES,
     canon,
     cross_section_error,
     dangling_completions,
     dangling_structure_error,
     missing_map_error,
     qtype,
+    unlettered_map_error,
     word_limit_error,
 )
 from app.llm.client import gather_llm, get_llm_client
@@ -83,11 +86,13 @@ _PART_SPECS: dict[int, dict[str, str]] = {
             "'SPEAKER:'."
         ),
         "figure": (
-            "Include a map_labelling block with 5-6 lettered locations A-F on a "
-            "simple plan, so a MAP figure is shown (include the `visual` map "
-            "object). Fill the remaining questions with sentence_completion or "
-            "matching, plus AT MOST 2 multiple_choice. map_labelling answers "
-            "are LETTERS, with no `options` array."
+            "Include a map_labelling block so a PLAN figure is shown: emit the "
+            "`visual` plan object as a grid, where every place a question asks "
+            "about is a LETTERED room and its name appears nowhere on the "
+            "grid. Only the orientation landmarks are named. Fill the "
+            "remaining questions with sentence_completion or matching, plus AT "
+            "MOST 2 multiple_choice. map_labelling answers are LETTERS, with "
+            "no `options` array."
         ),
         "types": "map_labelling, multiple_choice, short_answer",
     },
@@ -117,6 +122,13 @@ _PART_SPECS: dict[int, dict[str, str]] = {
         "types": "note_completion, sentence_completion",
     },
 }
+
+
+# Parts whose spec calls for a figure. The generator checkpoint cannot draw one
+# — its corpus encodes a part's figure through question types alone and never
+# describes the figure itself — so these parts go to the general model, which
+# reads the grid schema out of the system prompt.
+_FIGURE_PARTS = frozenset({1, 2})
 
 
 def _finetune_user_message(
@@ -228,6 +240,10 @@ def validate_part(result: dict, *, judge_structure: bool = True) -> str | None:
     if mapless:
         return mapless
 
+    unlettered = unlettered_map_error(questions, result.get("visual"), answer_key)
+    if unlettered:
+        return unlettered
+
     over_limit = word_limit_error(result)
     if over_limit:
         return over_limit
@@ -273,7 +289,15 @@ async def create_practice(
     difficulty: str | None = None,
     topic: str | None = None,
 ) -> dict:
-    client = get_llm_client("generator")
+    # A student can ask for map labelling on a single part just as part 2 of a
+    # full test asks for it, and the checkpoint cannot draw the plan either
+    # way — so the same routing applies. See _FIGURE_PARTS.
+    client = get_llm_client(
+        "generator",
+        skip_finetune=bool(
+            MAP_TYPES.intersection(canon(t) for t in question_types or ())
+        ),
+    )
     if client.is_finetune:
         # Every corpus record is one numbered part, so the fine-tune needs a
         # section. Spread across all four or the warm pool fills with Part 1
@@ -334,7 +358,7 @@ async def create_practice(
         if expanded and len(expanded.split()) > len(script.split()):
             result["audio_script"] = expanded
 
-    _normalize_map_visual(result)
+    _normalize_plan_visual(result)
     return result
 
 
@@ -491,94 +515,166 @@ def _clampi(value: float, lo: int, hi: int) -> int:
     return max(lo, min(hi, int(round(value))))
 
 
-def _normalize_map_visual(result: dict) -> None:
-    """Clean a generated map visual in place so it always renders legibly.
+_PLAN_MAX_COLS = 12
+_PLAN_MAX_ROWS = 10
+_PLAN_SIDES = ("top", "bottom", "left", "right")
 
-    The model reliably produces a *consistent* map (letters match the answer
-    key) but is unreliable about *geometry*: it sometimes drops two features on
-    the same cell (labels then stack), places them off-grid, or reuses a
-    letter. This clamps the grid, guarantees each feature sits on its own
-    well-spaced cell, dedupes repeated letters, and prunes degenerate paths —
-    none of which the LLM can be trusted to get right every time.
+
+def _plan_cell(value: object) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if len(text) == 1 and text.isalpha():
+        return text.upper()
+    if text.lower() == "corridor":
+        return "corridor"
+    return text
+
+
+def _normalize_plan_visual(result: dict) -> None:
+    """Clean a generated floor plan in place so it always renders legibly.
+
+    The grid says only which room owns which cell, so walls, doors and room
+    shapes are derived downstream and cannot come out overlapping or off-page.
+    What the model still gets wrong is bookkeeping: ragged rows, casing, and
+    above all writing one room in two unconnected places, which leaves the
+    question with two rooms to point at instead of one.
     """
     visual = result.get("visual")
-    if not isinstance(visual, dict) or visual.get("kind") != "map":
+    if not isinstance(visual, dict) or visual.get("kind") != "plan":
         return
 
-    gw = max(4, _clampi(_num(visual.get("width"), 10), 4, 24))
-    gh = max(4, _clampi(_num(visual.get("height"), 8), 4, 24))
-    visual["width"] = gw
-    visual["height"] = gh
+    rows = [row for row in (visual.get("grid") or []) if isinstance(row, list)]
+    if not rows:
+        result["visual"] = None
+        return
 
-    raw = [f for f in (visual.get("features") or []) if isinstance(f, dict)]
+    width = min(_PLAN_MAX_COLS, max((len(row) for row in rows), default=0))
+    grid = [
+        [_plan_cell(row[c] if c < len(row) else "") for c in range(width)]
+        for row in rows[:_PLAN_MAX_ROWS]
+    ]
+    if not width or not any(cell for row in grid for cell in row):
+        result["visual"] = None
+        return
 
-    # Drop repeated single-letter labels (a duplicated "A" breaks labelling).
-    seen_letters: set[str] = set()
-    features: list[dict] = []
-    for f in raw:
-        label = str(f.get("label") or "").strip()
-        if len(label) == 1 and label.isalpha():
-            up = label.upper()
-            if up in seen_letters:
+    _split_repeated_rooms(grid)
+    visual["grid"] = grid
+    entrance = _plan_entrance(visual.get("entrance"), grid)
+    if entrance:
+        visual["entrance"] = entrance
+    else:
+        visual.pop("entrance", None)
+
+
+def _split_repeated_rooms(grid: list[list[str]]) -> None:
+    """Leave one region per room name.
+
+    A letter written in two unconnected places gives the question two rooms to
+    point at, so the smaller copy is folded into whatever surrounds it.
+    Corridors are exempt — several separate walkways are a legitimate plan.
+    """
+    rows, cols = len(grid), len(grid[0])
+    seen = [[False] * cols for _ in range(rows)]
+    groups: dict[str, list[list[tuple[int, int]]]] = {}
+    for r in range(rows):
+        for c in range(cols):
+            value = grid[r][c]
+            if seen[r][c] or not value or value == "corridor":
                 continue
-            seen_letters.add(up)
-            f["label"] = up
-        features.append(f)
-
-    occupied: set[tuple[int, int]] = set()
-
-    def nearest_free(x: int, y: int) -> tuple[int, int]:
-        """Nearest cell not already taken — minimal nudge, preserving layout.
-
-        We only relocate features that genuinely collide, and move them the
-        smallest distance possible, so the arrangement the recording describes
-        (room B is left of the reception, etc.) stays intact.
-        """
-        x, y = _clampi(x, 0, gw), _clampi(y, 0, gh)
-        if (x, y) not in occupied:
-            return x, y
-        for radius in range(1, gw + gh + 1):
-            best: tuple[int, int] | None = None
-            for dx in range(-radius, radius + 1):
-                for dy in range(-radius, radius + 1):
-                    if max(abs(dx), abs(dy)) != radius:
+            cells: list[tuple[int, int]] = []
+            stack = [(r, c)]
+            seen[r][c] = True
+            while stack:
+                cr, cc = stack.pop()
+                cells.append((cr, cc))
+                for nr, nc in ((cr - 1, cc), (cr + 1, cc), (cr, cc - 1), (cr, cc + 1)):
+                    if not (0 <= nr < rows and 0 <= nc < cols):
                         continue
-                    nx, ny = _clampi(x + dx, 0, gw), _clampi(y + dy, 0, gh)
-                    if (nx, ny) not in occupied:
-                        best = (nx, ny)
-                        break
-                if best:
-                    break
-            if best:
-                return best
-        return x, y
+                    if seen[nr][nc] or grid[nr][nc] != value:
+                        continue
+                    seen[nr][nc] = True
+                    stack.append((nr, nc))
+            groups.setdefault(value, []).append(cells)
 
-    # Keep the model's positions (the script depends on them); only move a
-    # feature when it would land on a cell another feature already holds.
-    for f in features:
-        x = _num(f.get("x"), gw / 2)
-        y = _num(f.get("y"), gh / 2)
-        if f.get("fixed") and "entrance" in str(f.get("label") or "").lower():
-            y = 0
-        nx, ny = nearest_free(_clampi(x, 0, gw), _clampi(y, 0, gh))
-        occupied.add((nx, ny))
-        f["x"], f["y"] = nx, ny
-
-    visual["features"] = features
-
-    clean_paths = []
-    for path in visual.get("paths") or []:
-        if not isinstance(path, dict):
+    for value, regions in groups.items():
+        if len(regions) < 2:
             continue
-        pts = [
-            [_clampi(_num(p[0], 0), 0, gw), _clampi(_num(p[1], 0), 0, gh)]
-            for p in (path.get("points") or [])
-            if isinstance(p, (list, tuple)) and len(p) >= 2
-        ]
-        if len(pts) >= 2:
-            path["points"] = pts
-            clean_paths.append(path)
-    visual["paths"] = clean_paths
+        regions.sort(key=len, reverse=True)
+        for cells in regions[1:]:
+            replacement = _surrounding_room(grid, cells, value)
+            for r, c in cells:
+                grid[r][c] = replacement
+
+
+def _surrounding_room(
+    grid: list[list[str]], cells: list[tuple[int, int]], exclude: str
+) -> str:
+    """The room the given cells are most enclosed by, so absorbing them keeps
+    the plan solid rather than punching a hole in it."""
+    rows, cols = len(grid), len(grid[0])
+    inside = set(cells)
+    counts: Counter[str] = Counter()
+    for r, c in cells:
+        for nr, nc in ((r - 1, c), (r + 1, c), (r, c - 1), (r, c + 1)):
+            if not (0 <= nr < rows and 0 <= nc < cols) or (nr, nc) in inside:
+                continue
+            neighbour = grid[nr][nc]
+            if neighbour and neighbour != exclude:
+                counts[neighbour] += 1
+    if not counts:
+        return "corridor"
+    return max(sorted(counts), key=lambda name: counts[name])
+
+
+def _plan_edge(grid: list[list[str]], side: str, index: int) -> str:
+    if side == "top":
+        return grid[0][index]
+    if side == "bottom":
+        return grid[-1][index]
+    if side == "left":
+        return grid[index][0]
+    return grid[index][-1]
+
+
+def _plan_entrance(entrance: object, grid: list[list[str]]) -> dict | None:
+    """Put the way in against the walkway.
+
+    An entrance opening straight into a room reads as a mistake on a floor
+    plan — the corridor is what the recording walks the student down — so the
+    stated position is nudged to the nearest corridor before anything else.
+    """
+    rows, cols = len(grid), len(grid[0])
+    data = entrance if isinstance(entrance, dict) else {}
+    side = str(data.get("side") or "").strip().lower()
+    if side not in _PLAN_SIDES:
+        side = "bottom"
+
+    def along(name: str) -> int:
+        return cols if name in ("top", "bottom") else rows
+
+    want = _clampi(_num(data.get("index"), along(side) / 2), 0, along(side) - 1)
+
+    def nearest(name: str, wanted: str | None) -> int | None:
+        order = sorted(range(along(name)), key=lambda i: (abs(i - want), i))
+        for i in order:
+            cell = _plan_edge(grid, name, i)
+            if cell and (wanted is None or cell == wanted):
+                return i
+        return None
+
+    for name in (side, *(s for s in _PLAN_SIDES if s != side)):
+        index = nearest(name, "corridor")
+        if index is not None:
+            side = name
+            break
+    else:
+        index = nearest(side, None)
+        if index is None:
+            return None
+
+    label = str(data.get("label") or "").strip() or "Main entrance"
+    return {"side": side, "index": index, "label": label}
 
 
 def _validate_full_test_part(result: dict, *, judge_structure: bool = True) -> str | None:
@@ -608,7 +704,9 @@ async def create_part(
 ) -> dict:
     """Generate ONE part of a full test (10 questions), globally renumbered."""
     spec = _PART_SPECS[part_number]
-    client = get_llm_client("generator")
+    client = get_llm_client(
+        "generator", skip_finetune=part_number in _FIGURE_PARTS
+    )
     if client.is_finetune:
         parts = [_finetune_user_message(part_number, difficulty, topic)]
     else:
@@ -658,7 +756,7 @@ async def create_part(
             result["audio_script"] = expanded
 
     _renumber(result, (part_number - 1) * 10)
-    _normalize_map_visual(result)
+    _normalize_plan_visual(result)
     result["part"] = part_number
     return result
 

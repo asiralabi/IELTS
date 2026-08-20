@@ -152,15 +152,15 @@ def test_an_existing_visual_survives_the_repair(client):
     """The repair moves the question, never the figure.
 
     Rebuilding the form would put back the two-artifact coupling the checkpoint
-    drops, and a set whose visual is a map has no room for a second object.
+    drops, and a set whose visual is a plan has no room for a second object.
     """
-    visual = {"kind": "map", "title": "Campus", "width": 10, "height": 8,
-              "features": [{"label": "A", "x": 2, "y": 2}]}
+    visual = {"kind": "plan", "title": "Campus",
+              "grid": [["A", "A", "corridor"], ["Hall", "Hall", "corridor"]]}
     client(_set(visual=visual))
 
     result = _practice()
 
-    assert result["visual"]["kind"] == "map"
+    assert result["visual"]["kind"] == "plan"
     assert result["questions"][0]["question"] == "Full name: ______"
 
 

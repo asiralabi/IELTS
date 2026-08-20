@@ -38,12 +38,18 @@ STRUCTURE_TYPES = {canon(t) for t in (
     "flow_chart_completion",
     "table_completion",
     "form_completion",
+    "diagram_label_completion",
 )}
 
 # Labelling types the figure DEFINES rather than merely illustrates. A
 # completion item can inline its own gap and survive without the block it
 # names; these cannot, because the answer is a position on the drawing.
 MAP_TYPES = {canon(t) for t in ("map_labelling", "plan_labelling")}
+
+# Figure kinds that carry a drawn layout. `plan` states which room owns which
+# grid cell and lets the renderer derive the walls; `map` is the older
+# coordinate form, still present in payloads generated before the switch.
+LAYOUT_KINDS = {"plan", "map"}
 
 # A gap the student writes into: underscores, or the dotted leader a real exam
 # paper prints. Three dots are an ellipsis, so a leader needs four.
@@ -58,6 +64,7 @@ GAP_FILL_TYPES = {canon(t) for t in (
     "table_completion",
     "form_completion",
     "flow_chart_completion",
+    "diagram_label_completion",
 )}
 
 
@@ -120,13 +127,15 @@ def cross_section_error(result: dict, section: str) -> str | None:
             f"contract. Return only the keys the {section.title()} schema "
             "declares."
         )
-    # Reading has no map renderer; only Listening's map_labelling uses one.
+    # Reading labels a diagram, it never asks for a position on a map, so the
+    # coordinate form has no reading use and its questions would be unanswerable.
     if section == "reading":
         visual = result.get("visual")
         if isinstance(visual, dict) and str(visual.get("kind", "")).lower() == "map":
             return (
-                "`visual` is a map, which the Reading page cannot render. A "
-                "Reading visual must be a table object or null."
+                "`visual` is a coordinate map, which a Reading set never uses. "
+                "A Reading visual must be a table object, a plan object (for "
+                "diagram labelling), or null."
             )
     return None
 
@@ -212,7 +221,7 @@ def missing_map_error(questions: list, visual: object) -> str | None:
     location marked as point C?" is circular without the drawing, and the
     corpus keys it 'C'. So there is no escape hatch.
     """
-    if isinstance(visual, dict) and str(visual.get("kind", "")).lower() == "map":
+    if isinstance(visual, dict) and str(visual.get("kind", "")).lower() in LAYOUT_KINDS:
         return None
     numbers = [str(q.get("number")) for q in questions
                if isinstance(q, dict) and qtype(q) in MAP_TYPES]
@@ -220,11 +229,69 @@ def missing_map_error(questions: list, visual: object) -> str | None:
         return None
     return (
         f"question(s) {', '.join(numbers)} ask the student to label a map or "
-        "plan, but `visual` carries no map — there is nothing to read a "
-        "position off, so they cannot be answered. Emit a map `visual` whose "
-        "lettered features are the ones the questions ask about, or use a "
+        "plan, but `visual` carries no plan — there is nothing to read a "
+        "position off, so they cannot be answered. Emit a plan `visual` whose "
+        "lettered rooms are the ones the questions ask about, or use a "
         "question type that needs no drawing."
     )
+
+
+def unlettered_map_error(
+    questions: list, visual: object, answer_key: dict
+) -> str | None:
+    """Reject a plan whose letters do not carry the answers keyed against it.
+
+    `missing_map_error` only asks that a plan exists. This catches the plan
+    existing and being useless: the teacher prints the real name of every place
+    a question asks about and keys letters it never drew, so the figure answers
+    the questions it was meant to pose. Measured on the first hosted part 2 —
+    A, E and F keyed against a grid holding only A.
+
+    Only `plan` is judged. The older coordinate `map` keeps its letters in
+    `features` rather than the grid, and nothing generates one any more.
+    """
+    if not isinstance(visual, dict) or str(visual.get("kind", "")).lower() != "plan":
+        return None
+    grid = visual.get("grid")
+    if not isinstance(grid, list):
+        return None
+    letters = {
+        cell.strip().upper()
+        for row in grid if isinstance(row, list)
+        for cell in row
+        if isinstance(cell, str)
+        and len(cell.strip()) == 1
+        and cell.strip().isalpha()
+    }
+
+    prose: list[str] = []
+    missing: dict[str, str] = {}
+    for q in questions:
+        if not isinstance(q, dict) or qtype(q) not in MAP_TYPES:
+            continue
+        number = str(q.get("number"))
+        answer = str((answer_key or {}).get(number) or "").strip()
+        if len(answer) != 1 or not answer.isalpha():
+            prose.append(number)
+        elif answer.upper() not in letters:
+            missing[number] = answer.upper()
+
+    if prose:
+        return (
+            f"question(s) {', '.join(sorted(prose))} label the plan, so each is "
+            "answered with the letter of a room rather than with words. Letter "
+            "the room each one asks about and key that letter."
+        )
+    if missing:
+        keyed = ", ".join(f"Q{n} keys {a}" for n, a in sorted(missing.items()))
+        drawn = ", ".join(sorted(letters)) or "no letters at all"
+        return (
+            f"the answer key points at letters the plan never draws: {keyed}, "
+            f"while the grid holds {drawn}. Every place a question asks about "
+            "is a lettered cell whose name appears nowhere on the grid — draw "
+            "the missing letters as rooms and leave the naming to the script."
+        )
+    return None
 
 
 def dangling_completions(questions: list, visual: object) -> list[dict]:

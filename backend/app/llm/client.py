@@ -515,12 +515,21 @@ def _build_client(task: str | None) -> LLMClient:
     return OllamaClient()
 
 
-def get_llm_client(task: str | None = None) -> LLMClient:
+def get_llm_client(
+    task: str | None = None, *, skip_finetune: bool = False
+) -> LLMClient:
     """Return the client for a task ("generator", "evaluator") or the general
     model when task is None or has no fine-tuned checkpoint configured.
+
+    skip_finetune routes a task past its checkpoint to the general model.
+    Figure-bearing generation needs it: the generator's SFT corpus never
+    mentions a figure, so the checkpoint answers with its trained shape instead
+    of the schema the system prompt asks for.
     """
     if _override is not None:
         return _override
+    if skip_finetune:
+        task = None
     if task not in _clients:
         _clients[task] = _build_client(task)
     return _clients[task]

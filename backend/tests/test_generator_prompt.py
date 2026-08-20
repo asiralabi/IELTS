@@ -10,11 +10,13 @@ accepts. Nothing else would catch that.
 """
 
 import asyncio
+import json
 
 import pytest
 
 from app.agents import listening_trainer, reading_trainer
 from app.llm.client import LLMClient, get_llm_client, set_llm_client
+from app.llm.prompts import LISTENING_TRAINER_SYSTEM
 
 GROUNDING_MARKER = "Real Cambridge IELTS"
 
@@ -146,6 +148,100 @@ def _part(question_count: int) -> dict:
         ],
         "answer_key": {str(n): "Monday" for n in range(1, question_count + 1)},
     }
+
+
+class TestFigureWorkBypassesTheCheckpoint:
+    """The checkpoint's corpus encodes a part's figure through its question
+    types and never describes the figure itself, so asked for one it answers
+    with its trained shape rather than the grid schema in the system prompt. A
+    live run died in the runaway guard both ways round — the listening part
+    stalled with the object still open, the reading passage repeated. So the
+    calls that need a figure ask for the general model instead.
+    """
+
+    @pytest.fixture()
+    def requested(self, monkeypatch, capture):
+        """Every skip_finetune the agents ask "generator" for, in call order."""
+        capture(is_finetune=False)
+        asked: list[bool] = []
+
+        for module in (listening_trainer, reading_trainer):
+            real = module.get_llm_client
+
+            def spy(task=None, *, skip_finetune=False, _real=real):
+                if task == "generator":
+                    asked.append(skip_finetune)
+                return _real(task, skip_finetune=skip_finetune)
+
+            monkeypatch.setattr(module, "get_llm_client", spy)
+        return asked
+
+    @pytest.mark.parametrize(
+        "part_number, bypasses",
+        [(1, True), (2, True), (3, False), (4, False)],
+        ids=["part 1 table", "part 2 plan", "part 3 none", "part 4 none"],
+    )
+    def test_only_the_listening_parts_carrying_a_figure_bypass_it(
+        self, requested, part_number, bypasses
+    ):
+        asyncio.run(listening_trainer.create_part(part_number))
+
+        assert requested[0] is bypasses
+
+    @pytest.mark.parametrize(
+        "question_types, bypasses",
+        [
+            (["map_labelling"], True),
+            (["Map Labelling", "multiple_choice"], True),
+            (["form_completion", "short_answer"], False),
+            (None, False),
+        ],
+        ids=["map", "display spelling", "prose only", "unsteered"],
+    )
+    def test_a_listening_set_bypasses_it_only_when_steered_to_a_plan(
+        self, requested, question_types, bypasses
+    ):
+        """A single part comes from the same checkpoint part 2 of a full test
+        does, so a student asking for map labelling here meets the same shape
+        it cannot draw. Form and table completion stay on it: it couples the
+        cells it does emit correctly, and the gap it drops is repaired in code.
+        """
+        asyncio.run(listening_trainer.create_practice(question_types=question_types))
+
+        assert requested[0] is bypasses
+
+    @pytest.mark.parametrize(
+        "question_types, bypasses",
+        [
+            (["diagram_label_completion", "true_false_notgiven"], True),
+            (["table_completion"], True),
+            # The teacher's display spelling has to match too, or the steer
+            # reaches the checkpoint unnoticed.
+            (["Diagram Label Completion"], True),
+            (["true_false_notgiven", "matching_headings"], False),
+            (None, False),
+        ],
+        ids=["diagram", "table", "display spelling", "prose only", "unsteered"],
+    )
+    def test_a_reading_passage_bypasses_it_only_when_steered_to_a_figure(
+        self, requested, question_types, bypasses
+    ):
+        asyncio.run(reading_trainer.create_practice(question_types=question_types))
+
+        assert requested[0] is bypasses
+
+    def test_the_papers_figure_passage_is_one_of_the_steered_ones(self):
+        """_PASSAGE_TYPES is what puts a figure in a generated paper at all;
+        if its steer ever stopped naming a figure type the paper would come
+        back figureless and still pass every structural check."""
+        steered = set(reading_trainer._PASSAGE_TYPES)
+
+        assert steered, "no passage is steered to a figure"
+        for index in steered:
+            types = reading_trainer._PASSAGE_TYPES[index]
+            assert reading_trainer._FIGURE_TYPES.intersection(
+                reading_trainer.canon(t) for t in types
+            )
 
 
 def test_full_test_part_requires_ten_questions():
@@ -353,7 +449,8 @@ def test_a_number_does_not_count_toward_the_cap():
 
 MAP_Q = [{"number": 1, "type": "map_labelling",
           "question": "What is the location marked as point C?"}]
-MAP_VISUAL = {"kind": "map", "title": "Campus", "features": [{"label": "C", "x": 2, "y": 3}]}
+MAP_VISUAL = {"kind": "plan", "title": "Campus",
+              "grid": [["C", "C", "corridor"], ["Hall", "Hall", "corridor"]]}
 
 
 def test_map_labelling_without_a_map_is_rejected():
@@ -362,18 +459,109 @@ def test_map_labelling_without_a_map_is_rejected():
     answer 'C', the letter its own text quotes. A position cannot be read off a
     drawing the student never sees, so there is no self-contained form."""
     problem = listening_trainer.validate_part(_keyed({"1": "Library"}, MAP_Q))
-    assert "carries no map" in problem
+    assert "carries no plan" in problem
     assert listening_trainer.validate_part(
-        {**_keyed({"1": "Library"}, MAP_Q), "visual": MAP_VISUAL}
+        {**_keyed({"1": "C"}, MAP_Q), "visual": MAP_VISUAL}
     ) is None
 
 
 def test_a_table_visual_does_not_satisfy_a_map_question():
     """The Listening contract allows either kind, so presence alone is not
-    enough — only a map renders lettered positions."""
+    enough — only a plan renders lettered rooms."""
     table = {"kind": "chart", "chart_type": "table", "title": "t",
              "series": [{"name": "r", "data": [["c", "__1__"]]}]}
     problem = listening_trainer.validate_part(
         {**_keyed({"1": "Library"}, MAP_Q), "visual": table}
     )
-    assert "carries no map" in problem
+    assert "carries no plan" in problem
+
+
+def test_a_letter_the_plan_never_draws_is_rejected():
+    """The first hosted part 2 keyed A, E and F against a grid holding only A:
+    it printed the real name of every place the questions asked about and
+    invented letters for them. A plan that answers its own questions leaves the
+    student nothing to write, and `missing_map_error` waves it through because
+    a plan is present."""
+    grid = [["A", "A", "corridor"], ["Reception", "Reception", "corridor"]]
+    problem = listening_trainer.validate_part({
+        **_keyed({"1": "A", "2": "F"}, [
+            {"number": 1, "type": "map_labelling", "question": "Café"},
+            {"number": 2, "type": "map_labelling", "question": "IT Suite"},
+        ]),
+        "visual": {"kind": "plan", "title": "Centre", "grid": grid},
+    })
+    assert "Q2 keys F" in problem
+    assert "the grid holds A" in problem
+
+
+def test_a_plan_question_answered_in_words_is_rejected():
+    """Naming the room is the same failure read from the other end — the
+    student writes a letter into the answer sheet, so a keyed room name can
+    never be marked correct however well they read the plan."""
+    problem = listening_trainer.validate_part(
+        {**_keyed({"1": "the Library"}, MAP_Q), "visual": MAP_VISUAL}
+    )
+    assert "answered with the letter of a room" in problem
+
+
+def test_the_letter_check_ignores_a_part_with_no_plan_question():
+    """Parts 1 and 2 both route past the checkpoint, so a plan can ride along
+    beside ordinary gap-fill questions. Only map_labelling answers are letters;
+    holding the rest to that would reject every one of them."""
+    assert listening_trainer.validate_part({
+        **_keyed({"1": "9.30 am"}, [_gapfill(1, 2)]),
+        "visual": MAP_VISUAL,
+    }) is None
+
+
+def _example_plan_grid() -> list[list[str]]:
+    """The plan grid LISTENING_TRAINER_SYSTEM shows the model."""
+    text = LISTENING_TRAINER_SYSTEM
+    start = text.index('"grid": [', text.index('"kind": "plan"'))
+    depth, i = 0, text.index("[", start)
+    for end in range(i, len(text)):
+        depth += {"[": 1, "]": -1}.get(text[end], 0)
+        if depth == 0:
+            return json.loads(text[i:end + 1])
+    raise AssertionError("the plan example's grid is not bracket-balanced")
+
+
+def test_the_plan_example_obeys_the_rules_printed_beside_it():
+    """A worked example outranks the prose around it — the model copies what it
+    can see. The example shipped with 4 lettered rooms while the text demanded
+    6-8, which is the shape the first hosted part 2 came back with: a grid of
+    named rooms and letters in the key that were never drawn."""
+    grid = _example_plan_grid()
+    assert len({len(row) for row in grid}) == 1, "rows are ragged"
+    assert 4 <= len(grid) <= 6 and 6 <= len(grid[0]) <= 9
+
+    rows, cols = len(grid), len(grid[0])
+    def around(r, c):
+        for nr, nc in ((r - 1, c), (r + 1, c), (r, c - 1), (r, c + 1)):
+            if 0 <= nr < rows and 0 <= nc < cols:
+                yield nr, nc
+
+    def region(value):
+        cells = {(r, c) for r, row in enumerate(grid)
+                 for c, v in enumerate(row) if v == value}
+        seen, stack = {min(cells)}, [min(cells)]
+        while stack:
+            for n in around(*stack.pop()):
+                if n in cells and n not in seen:
+                    seen.add(n)
+                    stack.append(n)
+        return cells, seen
+
+    values = {v for row in grid for v in row if v}
+    letters = {v for v in values if len(v) == 1 and v.isalpha()}
+    assert len(letters) >= 6, f"only {sorted(letters)} lettered — the text asks 6-8"
+    assert 2 <= len(values - letters - {"corridor"}) <= 4, "2-4 named landmarks"
+
+    corridor_cells, corridor_seen = region("corridor")
+    assert corridor_cells == corridor_seen, "the corridor is not one walkway"
+    for value in values - {"corridor"}:
+        cells, seen = region(value)
+        assert cells == seen, f"{value!r} sits in two unconnected places"
+        assert len(cells) >= 2, f"{value!r} is a single-cell room"
+        assert any(grid[nr][nc] == "corridor" for cell in cells
+                   for nr, nc in around(*cell)), f"{value!r} has no door"

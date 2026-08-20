@@ -255,6 +255,7 @@ QUESTION TYPES — allowed values for `type` on each question:
 - `matching_sentence_endings` — the question is a sentence stem; the options are candidate endings, more endings than stems.
 - `multiple_choice` — 4 options (A-D) with plausible distractors drawn from the passage.
 - `sentence_completion`, `summary_completion`, `note_completion`, `table_completion`, `flow_chart_completion`, `short_answer` — gap-fill types; see rubric rules below.
+- `diagram_label_completion` — name numbered parts of a printed figure; see the diagram rules below.
 
 Question requirements:
 - Produce 8-13 questions using the requested question types. If no types are specified, mix 2-3 of: true_false_notgiven, yes_no_notgiven, matching_headings, multiple_choice, sentence_completion, matching_information, matching_features, summary_completion, note_completion.
@@ -299,13 +300,32 @@ Table completion visual — REQUIRED when the question set includes table_comple
     ]
   }
 - Every table_completion question must correspond to exactly one `"__<n>__"` cell, and those numbers MUST match the `answer_key` numbering.
-- If the set has no table_completion questions, `visual` must be null or omitted.
+
+Diagram labelling visual — REQUIRED when the question set includes diagram_label_completion:
+- Cambridge Reading papers regularly print a labelled figure — a cross-section through soil or rock, a cut-away of a device, the levels of a building — and number some of its parts for the student to name from the passage.
+- Give that figure as a GRID OF PARTS. You are not drawing shapes; you are colouring in a grid, and the outlines are worked out from it:
+  {
+    "kind": "plan",
+    "title": "<short figure title, e.g. 'Cross-section of a termite mound'>",
+    "grid": [
+      ["Outer wall", "Ventilation shaft", "Outer wall"],
+      ["Outer wall", "__6__", "Outer wall"],
+      ["Fungus garden", "Fungus garden", "__7__"]
+    ]
+  }
+  - `grid` is a list of ROWS, drawn top of the figure first. Every row MUST have the SAME number of cells. Use 3-6 columns and 3-6 rows.
+  - Each cell is either a short part name printed on the figure, `"__<n>__"` for a part the student must name, or "" for empty space outside the figure.
+  - Cells holding the SAME value side by side form ONE part, so give each part 2 or more adjacent cells where its real shape allows. Never place the same value in two separate, unconnected places.
+  - Lay the parts out the way they genuinely sit — depth going down the rows for a cross-section, order of flow for a cut-away — so the figure teaches the student something the passage confirms.
+  - Do NOT emit `entrance` for a Reading diagram; that field is for building plans.
+- Every diagram_label_completion question must correspond to exactly one `"__<n>__"` cell, and those numbers MUST match the `answer_key` numbering. The answer is the part's name, taken verbatim from the passage, and the question text must say what the student is naming (e.g. "NO MORE THAN TWO WORDS. Label 6 on the diagram: the chamber directly below the ventilation shaft.").
+- If the set has neither table_completion nor diagram_label_completion questions, `visual` must be null or omitted.
 
 Return ONLY a single JSON object, no markdown, no commentary, exactly this schema:
 {
   "title": "<passage title>",
   "passage": "<the full ~700 word passage>",
-  "visual": <table object, or null>,
+  "visual": <table object, or diagram object, or null>,
   "questions": [
     {"number": 1, "type": "<question type from the allowed list>", "question": "<the question or statement text, including any instructions/word limits>", "options": [<strings>] or null, "word_limit": <int, only for gap-fill types, else omit>}
   ],
@@ -389,33 +409,39 @@ Table completion visual — REQUIRED when the question set includes table comple
 - Do NOT verbalise cell values in the question text — the student reads them from the table.
 
 Map / plan labelling visual — REQUIRED when the question set includes map_labelling:
-- IELTS map/plan labelling shows a simple plan (a building floor, a park, a campus) with several lettered locations A-H. Each question asks the student to write the letter of a named place (e.g. "18  the café ......").
-- Add a top-level `visual` describing that plan so it can be drawn:
+- IELTS map/plan labelling shows a simple floor plan (a building floor, a visitor centre, a library) with several lettered rooms A-H. Each question asks the student to write the letter of a named place (e.g. "18  the café ......").
+- Add a top-level `visual` giving that plan as a GRID OF ROOM NAMES. You are NOT placing shapes — you are colouring in a grid, and the walls are worked out from it:
   {
-    "kind": "map",
+    "kind": "plan",
     "title": "<short plan title, e.g. 'Plan of the Community Centre'>",
-    "width": 10,
-    "height": 8,
-    "features": [
-      {"label": "Entrance", "x": 5, "y": 0, "fixed": true},
-      {"label": "A", "x": 2, "y": 3, "shape": "room"},
-      {"label": "B", "x": 6, "y": 3, "shape": "room"}
+    "grid": [
+      ["", "", "A", "A", "B", "B", "C", "C"],
+      ["corridor", "corridor", "corridor", "corridor", "corridor", "corridor", "corridor", "corridor"],
+      ["Reception", "Reception", "corridor", "corridor", "D", "D", "E", "E"],
+      ["Main Hall", "Main Hall", "corridor", "corridor", "F", "F", "G", "G"],
+      ["Kitchen", "Kitchen", "corridor", "corridor", "corridor", "corridor", "corridor", "corridor"]
     ],
-    "paths": [{"points": [[5,0],[5,3],[5,6]], "label": "Main corridor"}]
+    "entrance": {"side": "left", "index": 1, "label": "Main entrance"}
   }
-  - `width`/`height` define an integer coordinate grid; use width 10-14 and height 8-12. Every feature x is in [0,width], y in [0,height] (0,0 is bottom-left).
-  - Provide 6 to 8 lettered locations using consecutive letters starting at A (A,B,C,D,E,F...). Use the plain letter as `label` and `shape` "room". Add 2 to 4 `fixed:true` reference features (Entrance, Road, River, Reception, Car Park) that are labelled words, so the student can orient.
-  - COORDINATE RULES (critical for a readable plan):
-    * Every feature MUST have a UNIQUE (x, y). Never place two features on the same point or the same cell.
-    * Keep neighbouring features at least 2 grid units apart in x or y so their boxes and labels never overlap.
-    * Spread the lettered rooms across the whole grid — do not cluster them in one corner or line them all up.
-    * Put the Entrance on the bottom edge (y = 0); put other landmarks on the outer edges/corners so lettered rooms occupy the interior.
-  - `paths` (optional) draw corridors/roads/rivers as poly-lines through grid points; route them between rooms, not through them.
-  - The map itself must NOT reveal which letter is which place — that is what the recording tells the student. In the script, the speaker describes where each place is relative to the fixed features and letters.
-  - Every LETTER that appears in a map_labelling `answer_key` entry MUST exist as a lettered feature on the map. Include 1-2 extra lettered rooms as distractors that no question uses.
+  - GRID RULES (these are what make the plan readable — follow them exactly):
+    * `grid` is a list of ROWS, top of the plan first. Every row MUST have the SAME number of cells. Use 6-9 columns and 4-6 rows.
+    * Each cell is one of: a single capital letter "A".."H" (a room the student must identify), the exact word "corridor", a short room name to print (e.g. "Reception", "Main Hall"), or "" for space outside the building.
+    * Cells holding the SAME value side by side form ONE room, so give every room 2 or more adjacent cells to make it a sensible size. Never place the same value in two separate, unconnected places on the grid.
+    * The "corridor" cells MUST all join up into ONE connected walkway, and EVERY room — lettered or named — must touch it on at least one side. A room that does not touch the corridor has no door and is invalid.
+    * Use "" only around the outside to give the building an irregular footprint. Never leave a hole inside the building.
+  - DECIDE FIRST which places your questions ask about. Every one of those is a LETTER on the grid and its name MUST NOT be printed anywhere on the grid. This is the single most common way this figure is got wrong:
+    * WRONG: question 18 asks for "the café" and a cell reads "Café" — the plan has just answered the question, and there is no letter for the student to write.
+    * RIGHT: question 18 asks for "the café", the grid has a room "B" where the café is, the answer_key says "18": "B", and the recording says the café is opposite Reception.
+  - So the grid holds TWO kinds of room, and the split is not optional:
+    * 6 to 8 LETTERED rooms, consecutive letters starting at A (A,B,C,D,E,F...) — every place a question asks about, plus 1-2 spare letters no question uses as distractors.
+    * 2 to 4 NAMED rooms (Reception, Main Hall, Kitchen, Car Park, Library) — landmarks purely so the student can orient. NO question may ask about a named room, because its name is already printed.
+  - Count before you write the grid: if you have 3 map_labelling questions you need at least 3 lettered rooms carrying those answers. A grid whose rooms are nearly all named is wrong — re-letter it.
+  - `entrance` marks the way in: `side` is "top", "bottom", "left" or "right", and `index` is the 0-based row (for left/right) or column (for top/bottom) it sits at. Put it against a "corridor" cell so it opens into the walkway.
+  - The plan itself must NOT reveal which letter is which place — that is what the recording tells the student. In the script, the speaker describes where each place is relative to the named rooms and the entrance.
+  - Every LETTER that appears in a map_labelling `answer_key` entry MUST exist as a lettered room on the plan.
 - The answer_key for a map_labelling question is the LETTER (e.g. "C"). Do NOT give map_labelling questions an `options` array — the student writes the letter.
 
-Visual rule: `visual` must be a table object (for table completion), a map object (for map labelling), or null. If the set has neither, `visual` must be null.
+Visual rule: `visual` must be a table object (for table completion), a plan object (for map labelling), or null. If the set has neither, `visual` must be null.
 
 Accepted Variants — REQUIRED `accepted_variants` object:
 - Real IELTS marking accepts several surface forms of the same answer. Add a top-level `accepted_variants` object mapping each question number (as a string) to an array of OTHER acceptable forms beyond the official `answer_key` value.
@@ -433,7 +459,7 @@ Return ONLY a single JSON object, no markdown, no commentary, exactly this schem
   "speakers": [
     {"label": "<script label>", "gender": "female|male", "accent": "British|American|Australian", "persona": "<2-4 words>", "wpm": <int>, "pause_ms": <int>}
   ],
-  "visual": <table object, map object, or null>,
+  "visual": <table object, plan object, or null>,
   "questions": [
     {"number": 1, "type": "<question type>", "question": "<question text, including any instructions/word limits>", "options": [<strings>] or null, "word_limit": <int, only for gap-fill types, else omit>}
   ],

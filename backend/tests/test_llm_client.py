@@ -649,3 +649,41 @@ class TestOpenAIStreaming:
         assert "distinct" in str(excinfo.value)
         # Abandoned mid-flight rather than judged at the end.
         assert fake.pieces
+
+
+class TestSkipFinetuneRouting:
+    """A configured checkpoint serves "generator" — except for figure work.
+
+    The generator's SFT corpus never mentions a figure, so the checkpoint
+    answers a figure request with the shape it was trained on rather than the
+    grid schema in the system prompt. skip_finetune is how a caller opts out.
+    """
+
+    @pytest.fixture(autouse=True)
+    def routed(self, monkeypatch):
+        import openai
+
+        monkeypatch.setattr(client_module, "_override", None)
+        monkeypatch.setattr(client_module, "_clients", {})
+        monkeypatch.setattr(settings, "generator_model", "a-checkpoint")
+        monkeypatch.setattr(settings, "llm_provider", "openai")
+        monkeypatch.setattr(openai, "AsyncOpenAI", lambda **kwargs: object())
+
+    def test_the_generator_serves_from_the_checkpoint_by_default(self):
+        client = get_llm_client("generator")
+
+        assert client.is_finetune
+        assert client.model == "a-checkpoint"
+
+    def test_skip_finetune_hands_the_call_to_the_general_model(self):
+        client = get_llm_client("generator", skip_finetune=True)
+
+        assert not client.is_finetune
+        assert isinstance(client, OpenAIClient)
+
+    def test_skipping_does_not_evict_the_checkpoint_for_later_callers(self):
+        """The two clients are cached side by side — a figure part must not
+        leave the non-figure parts talking to the hosted model."""
+        get_llm_client("generator", skip_finetune=True)
+
+        assert get_llm_client("generator").is_finetune

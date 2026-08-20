@@ -2,7 +2,13 @@
 
 import type { ReactNode } from "react";
 import { API_URL } from "@/lib/api";
-import type { Visual, VisualChart, VisualChartSeries, VisualMap } from "@/lib/types";
+import type {
+  Visual,
+  VisualChart,
+  VisualChartSeries,
+  VisualMap,
+  VisualPlan,
+} from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 export function Visuals({
@@ -60,10 +66,529 @@ export function VisualBlock({
       </figure>
     );
   }
+  if (visual.kind === "plan") {
+    return <PlanBlock visual={visual} className={className} />;
+  }
   if (visual.kind === "map") {
     return <MapBlock visual={visual} className={className} />;
   }
   return <ChartBlock visual={visual} className={className} />;
+}
+
+// ---------------------------------------------------------------------------
+// Floor plan renderer — the grid carries only *which room is where*, so the
+// geometry is derived here: cells holding the same value merge into one room,
+// which makes shared walls and non-overlapping rooms structural rather than
+// something the generator has to get right.
+
+type PlanCell = { r: number; c: number };
+type PlanRegion = { value: string; cells: PlanCell[] };
+
+const PLAN_CELL = 46;
+const PLAN_CHAR_W = 5.9;
+
+function PlanBlock({ visual, className }: { visual: VisualPlan; className?: string }) {
+  const raw = Array.isArray(visual.grid) ? visual.grid : [];
+  const rows = raw.length;
+  const cols = raw.reduce(
+    (m, row) => Math.max(m, Array.isArray(row) ? row.length : 0),
+    0
+  );
+  if (rows === 0 || cols === 0) return null;
+
+  const grid: string[][] = Array.from({ length: rows }, (_, r) =>
+    Array.from({ length: cols }, (_, c) => {
+      const v = raw[r]?.[c];
+      return typeof v === "string" ? v.trim() : "";
+    })
+  );
+
+  const entrance = planEntrance(visual.entrance, grid, rows, cols);
+
+  // The entrance label hangs outside the building, so its side needs room for
+  // the whole caption rather than the default margin.
+  const base = 28;
+  const reach = entrance ? entrance.label.length * PLAN_CHAR_W + 46 : 0;
+  const side = entrance?.side;
+  const padL = base + (side === "left" ? reach : 0);
+  const padR = base + (side === "right" ? reach : 0);
+  const padT = base + (side === "top" ? 48 : 0);
+  const padB = base + (side === "bottom" ? 48 : 0);
+
+  const width = cols * PLAN_CELL + padL + padR;
+  const height = rows * PLAN_CELL + padT + padB;
+  const gx = (c: number) => padL + c * PLAN_CELL;
+  const gy = (r: number) => padT + r * PLAN_CELL;
+
+  const regions = planRegions(grid, rows, cols);
+  const ids = Array.from({ length: rows }, () => new Array<number>(cols).fill(-1));
+  regions.forEach((region, i) => {
+    for (const cellPos of region.cells) ids[cellPos.r][cellPos.c] = i;
+  });
+  const walls = planWalls(regions, ids, rows, cols, padL, padT, entrance?.key);
+
+  return (
+    <figure
+      className={cn("glass rounded-[20px] p-4 shadow-soft", className)}
+      aria-label={`Plan: ${visual.title}`}
+    >
+      <figcaption className="mb-3 text-sm font-medium">{visual.title}</figcaption>
+      <div className="overflow-x-auto">
+        <svg
+          viewBox={`0 0 ${width} ${height}`}
+          className="mx-auto w-full max-w-[600px]"
+          role="img"
+          preserveAspectRatio="xMidYMid meet"
+        >
+          {regions.map((region, ri) => {
+            const corridor = isCorridorValue(region.value);
+            return (
+              <g key={`f${ri}`}>
+                {region.cells.map((cellPos, ci) => (
+                  <rect
+                    key={ci}
+                    x={gx(cellPos.c)}
+                    y={gy(cellPos.r)}
+                    width={PLAN_CELL}
+                    height={PLAN_CELL}
+                    fill={corridor ? "currentColor" : "#5b5ceb"}
+                    fillOpacity={corridor ? 0.05 : 0.08}
+                  />
+                ))}
+              </g>
+            );
+          })}
+
+          {walls.map((wall, wi) => (
+            <line
+              key={`w${wi}`}
+              x1={wall.x1}
+              y1={wall.y1}
+              x2={wall.x2}
+              y2={wall.y2}
+              stroke="currentColor"
+              strokeOpacity={wall.outer ? 0.75 : 0.45}
+              strokeWidth={wall.outer ? 3.5 : 2}
+              strokeLinecap="square"
+            />
+          ))}
+
+          {regions.map((region, ri) => (
+            <PlanRegionLabel key={`l${ri}`} region={region} gx={gx} gy={gy} />
+          ))}
+
+          {entrance && (
+            <PlanEntranceMark
+              {...planEntrancePoint(entrance, rows, cols, gx, gy)}
+              label={entrance.label}
+            />
+          )}
+        </svg>
+      </div>
+    </figure>
+  );
+}
+
+function isCorridorValue(value: string): boolean {
+  return value.toLowerCase() === "corridor";
+}
+
+function planRegions(grid: string[][], rows: number, cols: number): PlanRegion[] {
+  const seen = Array.from({ length: rows }, () => new Array<boolean>(cols).fill(false));
+  const out: PlanRegion[] = [];
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const value = grid[r][c];
+      if (seen[r][c] || !value) continue;
+      const cells: PlanCell[] = [];
+      const stack: PlanCell[] = [{ r, c }];
+      seen[r][c] = true;
+      while (stack.length > 0) {
+        const cur = stack.pop() as PlanCell;
+        cells.push(cur);
+        const around: PlanCell[] = [
+          { r: cur.r - 1, c: cur.c },
+          { r: cur.r + 1, c: cur.c },
+          { r: cur.r, c: cur.c - 1 },
+          { r: cur.r, c: cur.c + 1 },
+        ];
+        for (const next of around) {
+          if (next.r < 0 || next.r >= rows || next.c < 0 || next.c >= cols) continue;
+          if (seen[next.r][next.c] || grid[next.r][next.c] !== value) continue;
+          seen[next.r][next.c] = true;
+          stack.push(next);
+        }
+      }
+      out.push({ value, cells });
+    }
+  }
+  return out;
+}
+
+type PlanWall = {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  outer: boolean;
+};
+
+type PlanRun = {
+  orient: "v" | "h";
+  fixed: number;
+  from: number;
+  to: number;
+  aId: number;
+  bId: number;
+};
+
+const PLAN_DOOR = 24;
+
+// Every boundary is visited exactly once — vertical edges by their left/right
+// pair, horizontal edges by their top/bottom pair — so a wall between two rooms
+// is drawn once and belongs to both of them. Collinear edges dividing the same
+// two rooms then merge into a single run, and each room gets exactly one
+// doorway, cut into its longest wall facing a corridor.
+function planWalls(
+  regions: PlanRegion[],
+  ids: number[][],
+  rows: number,
+  cols: number,
+  padX: number,
+  padY: number,
+  skipKey?: string
+): PlanWall[] {
+  const idAt = (r: number, c: number) =>
+    r < 0 || r >= rows || c < 0 || c >= cols ? -1 : ids[r][c];
+
+  const grouped = new Map<string, PlanRun[]>();
+  const add = (
+    orient: "v" | "h",
+    fixed: number,
+    start: number,
+    aId: number,
+    bId: number
+  ) => {
+    const key = `${orient}:${fixed}:${aId}:${bId}`;
+    const list = grouped.get(key) ?? [];
+    list.push({ orient, fixed, from: start, to: start + 1, aId, bId });
+    grouped.set(key, list);
+  };
+
+  for (let c = 0; c <= cols; c++) {
+    for (let r = 0; r < rows; r++) {
+      const a = idAt(r, c - 1);
+      const b = idAt(r, c);
+      if (a !== b && `v:${c}:${r}` !== skipKey) add("v", c, r, a, b);
+    }
+  }
+  for (let r = 0; r <= rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const a = idAt(r - 1, c);
+      const b = idAt(r, c);
+      if (a !== b && `h:${r}:${c}` !== skipKey) add("h", r, c, a, b);
+    }
+  }
+
+  const runs: PlanRun[] = [];
+  for (const list of grouped.values()) {
+    list.sort((p, q) => p.from - q.from);
+    let cur = { ...list[0] };
+    for (let i = 1; i < list.length; i++) {
+      if (list[i].from === cur.to) cur.to = list[i].to;
+      else {
+        runs.push(cur);
+        cur = { ...list[i] };
+      }
+    }
+    runs.push(cur);
+  }
+
+  // One door per room, cut into its longest wall onto the corridor; a room the
+  // plan never joined to the corridor falls back to its longest wall onto any
+  // neighbour, so none is drawn sealed shut. A plan with no corridor at all is
+  // a labelled diagram rather than a building — a cross-section through soil
+  // has no doorways between its layers — so it keeps unbroken outlines.
+  const isCorridorId = (id: number) => id >= 0 && isCorridorValue(regions[id].value);
+  const onCorridor = new Map<number, PlanRun>();
+  const onAnything = new Map<number, PlanRun>();
+  const consider = (into: Map<number, PlanRun>, room: number, run: PlanRun) => {
+    const best = into.get(room);
+    if (!best || run.to - run.from > best.to - best.from) into.set(room, run);
+  };
+  for (const run of runs) {
+    if (run.aId < 0 || run.bId < 0) continue;
+    for (const [room, other] of [
+      [run.aId, run.bId],
+      [run.bId, run.aId],
+    ]) {
+      if (isCorridorId(room)) continue;
+      consider(isCorridorId(other) ? onCorridor : onAnything, room, run);
+    }
+  }
+  const doors = new Set<PlanRun>();
+  if (onCorridor.size > 0)
+    for (let id = 0; id < regions.length; id++) {
+      if (isCorridorId(id)) continue;
+      const run = onCorridor.get(id) ?? onAnything.get(id);
+      if (run) doors.add(run);
+    }
+
+  const walls: PlanWall[] = [];
+  for (const run of runs) emitWall(walls, run, doors.has(run), padX, padY);
+  return walls;
+}
+
+function emitWall(
+  walls: PlanWall[],
+  run: PlanRun,
+  door: boolean,
+  padX: number,
+  padY: number
+): void {
+  const vertical = run.orient === "v";
+  const fixedPx = (vertical ? padX : padY) + run.fixed * PLAN_CELL;
+  const lo = (vertical ? padY : padX) + run.from * PLAN_CELL;
+  const hi = (vertical ? padY : padX) + run.to * PLAN_CELL;
+  const outer = run.aId < 0 || run.bId < 0;
+  const seg = (a: number, b: number) =>
+    walls.push(
+      vertical
+        ? { x1: fixedPx, y1: a, x2: fixedPx, y2: b, outer }
+        : { x1: a, y1: fixedPx, x2: b, y2: fixedPx, outer }
+    );
+
+  if (!door) {
+    seg(lo, hi);
+    return;
+  }
+  const gap = Math.min(PLAN_DOOR, (hi - lo) * 0.42);
+  const mid = (lo + hi) / 2;
+  seg(lo, mid - gap / 2);
+  seg(mid + gap / 2, hi);
+}
+
+function PlanRegionLabel({
+  region,
+  gx,
+  gy,
+}: {
+  region: PlanRegion;
+  gx: (c: number) => number;
+  gy: (r: number) => number;
+}) {
+  if (isCorridorValue(region.value)) return null;
+
+  // Anchor on the region's widest row, so an L-shaped room labels inside
+  // itself rather than in the notch of its bounding box. Ties go to the row
+  // nearest the vertical middle.
+  const byRow = new Map<number, number[]>();
+  for (const cellPos of region.cells) {
+    const list = byRow.get(cellPos.r) ?? [];
+    list.push(cellPos.c);
+    byRow.set(cellPos.r, list);
+  }
+  const rowsUsed = [...byRow.keys()].sort((a, b) => a - b);
+  const midRow = (rowsUsed[0] + rowsUsed[rowsUsed.length - 1]) / 2;
+  let anchorRow = rowsUsed[0];
+  for (const r of rowsUsed) {
+    const best = byRow.get(anchorRow) as number[];
+    const list = byRow.get(r) as number[];
+    if (
+      list.length > best.length ||
+      (list.length === best.length &&
+        Math.abs(r - midRow) < Math.abs(anchorRow - midRow))
+    )
+      anchorRow = r;
+  }
+  const anchorCols = byRow.get(anchorRow) as number[];
+  const minC = Math.min(...anchorCols);
+  const maxC = Math.max(...anchorCols);
+
+  const cx = (gx(minC) + gx(maxC + 1)) / 2;
+  const cy = gy(anchorRow) + PLAN_CELL / 2;
+  const boxW = (maxC - minC + 1) * PLAN_CELL;
+
+  const blank = /^_+\s*(\d+)\s*_+$/.exec(region.value);
+  if (blank) {
+    return (
+      <text
+        x={cx}
+        y={cy}
+        textAnchor="middle"
+        dominantBaseline="central"
+        fontSize={13}
+        fontWeight={600}
+        fill="currentColor"
+      >
+        {`${blank[1]} ${"·".repeat(8)}`}
+      </text>
+    );
+  }
+
+  if (/^[A-Za-z]$/.test(region.value)) {
+    return (
+      <text
+        x={cx}
+        y={cy}
+        textAnchor="middle"
+        dominantBaseline="central"
+        fontSize={20}
+        fontWeight={700}
+        fill="currentColor"
+      >
+        {region.value.toUpperCase()}
+      </text>
+    );
+  }
+
+  const lines = wrapPlanText(region.value, boxW - 8);
+  const start = cy - ((lines.length - 1) * 13) / 2;
+  return (
+    <g>
+      {lines.map((line, i) => (
+        <text
+          key={i}
+          x={cx}
+          y={start + i * 13}
+          textAnchor="middle"
+          dominantBaseline="central"
+          fontSize={10.5}
+          fill="currentColor"
+          fillOpacity={0.85}
+        >
+          {line}
+        </text>
+      ))}
+    </g>
+  );
+}
+
+function wrapPlanText(text: string, maxWidth: number): string[] {
+  const words = text.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return [];
+  const lines: string[] = [];
+  let cur = words[0];
+  for (let i = 1; i < words.length; i++) {
+    const merged = `${cur} ${words[i]}`;
+    if (merged.length * PLAN_CHAR_W <= maxWidth) cur = merged;
+    else {
+      lines.push(cur);
+      cur = words[i];
+    }
+  }
+  lines.push(cur);
+  return lines;
+}
+
+type PlanEntrance = {
+  key: string;
+  side: "top" | "bottom" | "left" | "right";
+  index: number;
+  label: string;
+};
+
+function planEntrance(
+  entrance: VisualPlan["entrance"],
+  grid: string[][],
+  rows: number,
+  cols: number
+): PlanEntrance | null {
+  if (!entrance) return null;
+  const side = entrance.side;
+  if (side !== "top" && side !== "bottom" && side !== "left" && side !== "right")
+    return null;
+
+  const along = side === "top" || side === "bottom" ? cols : rows;
+  const filled = (i: number) => {
+    if (side === "top") return grid[0]?.[i];
+    if (side === "bottom") return grid[rows - 1]?.[i];
+    if (side === "left") return grid[i]?.[0];
+    return grid[i]?.[cols - 1];
+  };
+
+  // Nearest position on that side that actually touches the building, so an
+  // entrance nominated over empty margin still lands on a wall.
+  const want = clamp(Math.round(entrance.index ?? Math.floor(along / 2)), 0, along - 1);
+  let index = -1;
+  for (let d = 0; d < along; d++) {
+    for (const i of [want - d, want + d]) {
+      if (i < 0 || i >= along || index >= 0) continue;
+      if (filled(i)) index = i;
+    }
+    if (index >= 0) break;
+  }
+  if (index < 0) return null;
+
+  const key =
+    side === "top"
+      ? `h:0:${index}`
+      : side === "bottom"
+        ? `h:${rows}:${index}`
+        : side === "left"
+          ? `v:0:${index}`
+          : `v:${cols}:${index}`;
+
+  return { key, side, index, label: entrance.label?.trim() || "Entrance" };
+}
+
+// Anchor on the outer wall, with (dx, dy) pointing into the building.
+function planEntrancePoint(
+  entrance: PlanEntrance,
+  rows: number,
+  cols: number,
+  gx: (c: number) => number,
+  gy: (r: number) => number
+): { x: number; y: number; dx: number; dy: number } {
+  const { side, index } = entrance;
+  if (side === "top")
+    return { x: gx(index) + PLAN_CELL / 2, y: gy(0), dx: 0, dy: 1 };
+  if (side === "bottom")
+    return { x: gx(index) + PLAN_CELL / 2, y: gy(rows), dx: 0, dy: -1 };
+  if (side === "left")
+    return { x: gx(0), y: gy(index) + PLAN_CELL / 2, dx: 1, dy: 0 };
+  return { x: gx(cols), y: gy(index) + PLAN_CELL / 2, dx: -1, dy: 0 };
+}
+
+function PlanEntranceMark({
+  x,
+  y,
+  dx,
+  dy,
+  label,
+}: {
+  x: number;
+  y: number;
+  dx: number;
+  dy: number;
+  label: string;
+}) {
+  return (
+    <g>
+      <line
+        x1={x - dx * 26}
+        y1={y - dy * 26}
+        x2={x + dx * 8}
+        y2={y + dy * 8}
+        stroke="#5b5ceb"
+        strokeWidth={2.5}
+        strokeLinecap="round"
+      />
+      <circle cx={x - dx * 26} cy={y - dy * 26} r={3.5} fill="#5b5ceb" />
+      <text
+        x={x - dx * 34}
+        y={y - dy * 34}
+        textAnchor={dx === 0 ? "middle" : dx > 0 ? "end" : "start"}
+        dominantBaseline={dy === 0 ? "central" : dy > 0 ? "auto" : "hanging"}
+        fontSize={11}
+        fontWeight={600}
+        fill="currentColor"
+        fillOpacity={0.85}
+      >
+        {label}
+      </text>
+    </g>
+  );
 }
 
 // ---------------------------------------------------------------------------

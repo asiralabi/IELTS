@@ -124,7 +124,21 @@ export interface VisualMap {
   paths?: VisualMapPath[];
 }
 
-export type Visual = VisualImage | VisualChart | VisualMap;
+/** A floor plan given as a grid of cells rather than coordinates.
+ *
+ * Each cell is a single letter (a room the student must identify), the
+ * reserved word "corridor", a room name to print, or "" for space outside
+ * the building. Cells holding the same value side by side are one room, so
+ * rooms share walls by construction and can never overlap.
+ */
+export interface VisualPlan {
+  kind: "plan";
+  title: string;
+  grid: string[][];
+  entrance?: { side: "top" | "bottom" | "left" | "right"; index?: number; label?: string };
+}
+
+export type Visual = VisualImage | VisualChart | VisualMap | VisualPlan;
 
 export interface PracticeQuestion {
   id?: string;
