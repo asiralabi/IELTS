@@ -360,6 +360,46 @@ def unnamed_place_error(questions: list) -> str | None:
     return None
 
 
+# The two verdict types, whose question text is a claim rather than a question.
+VERDICT_TYPES = {canon(t) for t in ("true_false_notgiven", "yes_no_notgiven")}
+
+# Wording that reports the passage's silence instead of asserting anything.
+# "The passage neither confirms nor contradicts X" IS the definition of NOT
+# GIVEN, so a statement written that way hands over its own answer. It is also
+# how NOTGIVEN_WRITER_SYSTEM explains the verdict, which is how it reached a
+# live statement. 0 of 553 corpus statements read this way, while 1.6% do say
+# "the author believes ..." — a real YES/NO shape this must not touch.
+_SELF_ANSWERING = re.compile(
+    r"neither confirms nor"
+    r"|(passage|text|article)[^.]{0,40}(does not|doesn.t|never)[^.]{0,20}(say|state|mention|confirm|discuss|address)"
+    r"|is not (mentioned|stated|given|discussed) (in|anywhere|by) the (passage|text|article)"
+    r"|no information (is given|about)",
+    re.I,
+)
+
+
+def self_answering_error(questions: list) -> str | None:
+    """Reject a verdict statement that describes the passage rather than the
+    subject.
+
+    A student meeting "The passage neither confirms nor contradicts that the
+    machine was widely adopted" writes NOT GIVEN without reading a word: the
+    statement has announced its own verdict. Measured live on a hosted reading
+    set, written by the repair whose own prompt uses that phrasing."""
+    guilty = [
+        str(q.get("number")) for q in questions
+        if isinstance(q, dict) and qtype(q) in VERDICT_TYPES
+        and _SELF_ANSWERING.search(str(q.get("question") or ""))
+    ]
+    if not guilty:
+        return None
+    return (
+        f"statement(s) {', '.join(guilty)} say what the passage does not "
+        "state instead of claiming anything about its subject, which hands "
+        "the student NOT GIVEN before they have read it. Write each one as a "
+        "plain assertion, the way the person making the claim would put it."
+    )
+
 def dangling_completions(questions: list, visual: object) -> list[dict]:
     """Completion items that point at a block the student never sees.
 

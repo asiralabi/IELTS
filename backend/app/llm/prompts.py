@@ -199,6 +199,7 @@ Rules:
 - The passage must not state it, imply it, or state its opposite. If a reader could point at a sentence and say "that settles it", the statement is TRUE or FALSE, not NOT GIVEN.
 - Prefer a claim about a quantity, comparison, cause, motive, date, or consequence the passage leaves open — those are the gaps real papers exploit.
 - One sentence, declarative, no hedging words like "may" or "possibly" — a hedged claim is unfalsifiable rather than unstated.
+- **The statement must never mention the passage or what it does or does not say.** "The passage neither confirms nor contradicts that the machine sold widely" is this instruction repeated back, and it hands the student NOT GIVEN without their reading a word. Write the claim itself — "The machine sold widely in rural areas" — and let the passage's silence be what makes it NOT GIVEN.
 - Do not reuse or negate any statement you are shown.
 - Return ONLY this JSON object:
 {
@@ -318,6 +319,7 @@ Diagram labelling visual — REQUIRED when the question set includes diagram_lab
   - Cells holding the SAME value side by side form ONE part, so give each part 2 or more adjacent cells where its real shape allows. Never place the same value in two separate, unconnected places.
   - Lay the parts out the way they genuinely sit — depth going down the rows for a cross-section, order of flow for a cut-away — so the figure teaches the student something the passage confirms.
   - Do NOT emit `entrance` for a Reading diagram; that field is for building plans.
+- **Number 3 to 6 parts** — one `"__<n>__"` cell each, one question each. A figure with a single blank is a drawing, not a question block; Cambridge never prints one.
 - Every diagram_label_completion question must correspond to exactly one `"__<n>__"` cell, and those numbers MUST match the `answer_key` numbering. The answer is the part's name, taken verbatim from the passage, and the question text must say what the student is naming (e.g. "NO MORE THAN TWO WORDS. Label 6 on the diagram: the chamber directly below the ventilation shaft.").
 - If the set has neither table_completion nor diagram_label_completion questions, `visual` must be null or omitted.
 

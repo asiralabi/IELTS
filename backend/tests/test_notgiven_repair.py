@@ -145,3 +145,30 @@ def test_a_set_the_writer_could_not_rescue_is_refused(practice):
     """
     with pytest.raises(ValueError, match="the repaired reading set is invalid"):
         practice(_set(["TRUE", "FALSE", "TRUE", "TRUE"]), statement=None)
+
+
+def test_a_statement_reporting_the_passages_own_silence_is_refused(practice):
+    '''The writer's prompt explains NOT GIVEN as the thing a passage neither
+    confirms nor contradicts, and a live hosted set handed that wording back
+    inside the statement — which answers itself before the student reads a
+    word. The writer's own call now checks its reply; this is the backstop
+    behind it.'''
+    leaked = ("The passage neither confirms nor contradicts the claim that "
+              "urban hives outproduce rural ones.")
+
+    with pytest.raises(ValueError, match="say what the passage does not state"):
+        practice(_set(["TRUE", "FALSE", "TRUE", "TRUE"]), statement=leaked)
+
+
+def test_a_view_attributed_to_the_author_is_left_alone(practice):
+    '''1.6% of corpus statements attribute a view to the author — the real
+    YES/NO shape. The refusal above must not reach for one just because it
+    names the author.'''
+    attributed = "The author believes urban hives outproduce rural ones."
+
+    result, _ = practice(
+        _set(["TRUE", "FALSE", "TRUE", "TRUE"]), statement=attributed)
+
+    rewritten = [q for q in result["questions"]
+                 if result["answer_key"][str(q["number"])] == "NOT GIVEN"]
+    assert rewritten[0]["question"] == attributed

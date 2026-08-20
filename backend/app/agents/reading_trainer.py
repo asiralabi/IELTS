@@ -12,6 +12,7 @@ from app.agents.answerability import (
     cross_section_error,
     dangling_structure_error,
     qtype,
+    self_answering_error,
     word_limit_error,
 )
 from app.llm.client import gather_llm, get_llm_client
@@ -55,6 +56,11 @@ _READING_BAND_TABLE: list[tuple[int, float]] = [
 # exactly 3, so enforcing the prompt's own number would reject 11.5% of the data
 # the checkpoint was trained on. 3 is the floor the corpus actually observes.
 _MIN_HEADINGS_BLOCK = 3
+
+# A labelled diagram numbers several parts; Cambridge never prints one with a
+# single blank, and all 5 figure-bearing corpus sets carry 3 or 4. One label
+# is a figure drawn for its own sake rather than a question block.
+_MIN_DIAGRAM_LABELS = 3
 
 # Every offered heading was written for a real paragraph, so the distractors are
 # simply the headings of the paragraphs left unkeyed. Two is the corpus shape:
@@ -281,6 +287,20 @@ def validate_practice(
                 "rewrite at least one statement so it makes a plausible claim the "
                 "passage never actually states"
             )
+
+    self_answering = self_answering_error(questions)
+    if self_answering:
+        return self_answering
+
+    labels = by_type.get(canon("diagram_label_completion")) or []
+    if labels and len(labels) < _MIN_DIAGRAM_LABELS:
+        return (
+            f"the diagram carries only {len(labels)} numbered part(s); a "
+            "labelled figure is worth printing only if it asks about at "
+            f"least {_MIN_DIAGRAM_LABELS} of them. Number that many parts on "
+            "the grid and write one question for each, or drop the diagram "
+            "and use another question type."
+        )
     return None
 
 
@@ -460,11 +480,23 @@ async def _write_notgiven(passage: str, used: list[str]) -> str | None:
         "Statements already used in this block — do not reuse or negate any "
         "of them:\n" + "\n".join(f"- {s}" for s in used)
     )
+
+    def check(reply: dict) -> str | None:
+        """The writer's own prompt explains NOT GIVEN as what the passage
+        "neither confirms nor contradicts", and that wording has come back
+        inside the statement. A 256-token retry is the cheapest place to
+        catch it."""
+        return self_answering_error([{
+            "number": "the statement", "type": "true_false_notgiven",
+            "question": str(reply.get("statement") or ""),
+        }])
+
     try:
         reply = await get_llm_client("generator").complete_json(
             NOTGIVEN_WRITER_SYSTEM,
             [{"role": "user", "content": prompt}],
             required_keys=("statement",),
+            validate=check,
             max_tokens=256,
         )
     except Exception:

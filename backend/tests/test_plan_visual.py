@@ -3,6 +3,7 @@ which cell — so these cover the bookkeeping the renderer cannot fix for itself
 """
 
 from app.agents.answerability import unlettered_map_error, unnamed_place_error
+from app.agents import reading_trainer
 from app.agents.listening_trainer import _normalize_plan_visual
 
 
@@ -204,3 +205,41 @@ def test_questions_that_are_not_about_the_plan_are_left_alone():
     ]
 
     assert unnamed_place_error(questions) is None
+
+
+def _labelled_diagram(labels: int) -> dict:
+    '''A reading set whose figure numbers `labels` of its parts.'''
+    passage = ("The shuttle carries the lower thread beneath the plate. The "
+               "bobbin holds that thread. The needle pierces the cloth above "
+               "it. ") * 30
+    return {
+        "title": "The Sewing Machine",
+        "passage": passage,
+        "visual": {
+            "kind": "plan",
+            "title": "Cross-section of a sewing machine",
+            "grid": [["Hand crank", "Gear system"],
+                     [f"__{n}__" for n in range(1, labels + 1)]],
+        },
+        "questions": [
+            {"number": n, "type": "diagram_label_completion",
+             "question": f"NO MORE THAN TWO WORDS. Label {n} on the diagram.",
+             "word_limit": 2}
+            for n in range(1, labels + 1)
+        ],
+        "answer_key": {str(n): word for n, word in
+                       enumerate(["shuttle", "bobbin", "needle"][:labels], start=1)},
+    }
+
+
+def test_a_diagram_numbering_one_part_is_refused():
+    '''Measured live: a hosted passage drew a whole sewing machine and asked
+    about one part of it. Cambridge never prints a figure for a single blank,
+    and all five figure-bearing corpus sets number three or four.'''
+    problem = reading_trainer.validate_practice(_labelled_diagram(1))
+
+    assert "only 1 numbered part" in problem
+
+
+def test_a_diagram_numbering_three_parts_passes():
+    assert reading_trainer.validate_practice(_labelled_diagram(3)) is None
