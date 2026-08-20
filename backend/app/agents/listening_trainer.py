@@ -15,6 +15,7 @@ from app.agents.answerability import (
     missing_map_error,
     qtype,
     unlettered_map_error,
+    unnamed_place_error,
     word_limit_error,
 )
 from app.llm.client import gather_llm, get_llm_client
@@ -243,6 +244,10 @@ def validate_part(result: dict, *, judge_structure: bool = True) -> str | None:
     unlettered = unlettered_map_error(questions, result.get("visual"), answer_key)
     if unlettered:
         return unlettered
+
+    unnamed = unnamed_place_error(questions)
+    if unnamed:
+        return unnamed
 
     over_limit = word_limit_error(result)
     if over_limit:

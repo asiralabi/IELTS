@@ -2,6 +2,7 @@
 which cell — so these cover the bookkeeping the renderer cannot fix for itself.
 """
 
+from app.agents.answerability import unlettered_map_error, unnamed_place_error
 from app.agents.listening_trainer import _normalize_plan_visual
 
 
@@ -120,3 +121,86 @@ def test_a_visual_that_is_not_a_plan_is_untouched():
     _normalize_plan_visual(result)
 
     assert result["visual"]["kind"] == "chart"
+
+
+def _asks(*texts):
+    """Map questions numbered from 11, the way a part 2 numbers them."""
+    return [{"number": 11 + i, "type": "map_labelling", "question": text}
+            for i, text in enumerate(texts)]
+
+
+PLAN = {
+    "kind": "plan",
+    "grid": [["A", "A", "corridor"], ["Reception", "Reception", "corridor"]],
+}
+
+
+def test_a_letter_the_plan_never_drew_is_rejected():
+    """The teacher prints the real name of every place its questions ask
+    about and keys letters it never drew, so the figure answers the very
+    questions it was meant to pose. Measured on the first hosted part 2."""
+    problem = unlettered_map_error(
+        _asks("Where is the cafe?", "Where is the library?"),
+        PLAN, {"11": "A", "12": "E"},
+    )
+
+    assert "Q12 keys E" in problem
+    assert "A" in problem
+
+
+def test_a_plan_carrying_every_keyed_letter_passes():
+    problem = unlettered_map_error(
+        _asks("Where is the cafe?"), PLAN, {"11": "A"},
+    )
+
+    assert problem is None
+
+
+def test_a_map_answer_written_in_words_is_rejected():
+    """A map question is answered with a letter. Keyed with the place's
+    name instead, the student who correctly writes the letter is marked
+    wrong — and the plan has no way to show a word."""
+    problem = unlettered_map_error(
+        _asks("Where is the cafe?"), PLAN, {"11": "Reception"},
+    )
+
+    assert "11" in problem
+
+
+def test_the_blocks_rubric_alone_is_not_a_question():
+    """The rubric is shared by every question in the block, so a question
+    made of nothing else tells the student to write a letter without
+    telling them which room to find."""
+    problem = unnamed_place_error(
+        _asks("Complete the plan below. Write the correct letter for each location.")
+    )
+
+    assert "give only the block" in problem
+
+
+def test_the_same_question_under_two_numbers_is_one_question():
+    problem = unnamed_place_error(
+        _asks("Where is the cafe?", "Where is the  cafe?")
+    )
+
+    assert "11 and 12" in problem
+
+
+def test_a_question_that_names_its_place_passes():
+    """Both the exam's own shapes: the place as a stem, and a direct
+    question. 320 of 321 corpus map questions read one of these ways."""
+    assert unnamed_place_error(_asks("11  the cafe ......")) is None
+    assert unnamed_place_error(_asks("Where is the cafe?")) is None
+    assert unnamed_place_error(_asks("Write the letter for the cafe.")) is None
+
+
+def test_questions_that_are_not_about_the_plan_are_left_alone():
+    """A completion question shares its block's rubric too, and the form
+    repair — not this check — is what gives it its gap."""
+    shared = "Complete the notes below."
+    questions = [
+        {"number": 1, "type": "note_completion", "question": shared},
+        {"number": 2, "type": "note_completion", "question": shared},
+    ]
+
+    assert unnamed_place_error(questions) is None

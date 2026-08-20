@@ -294,6 +294,72 @@ def unlettered_map_error(
     return None
 
 
+
+# The words a map question's rubric is built from. A question made of nothing
+# but these has said how to answer without saying what to answer — and that
+# rubric is shared by every question in the block, so it names no place.
+_RUBRIC_WORDS = frozenset("""
+a an and answer appropriate below box boxes choose complete correct diagram
+each following for from in into label letter letters list location locations
+map next of on onto or plan question questions right select shown that the
+their them then to use with write your
+""".split())
+
+
+def _names_a_place(text: str) -> bool:
+    """True if the question says anything its block's rubric does not."""
+    words = re.findall(r"[a-z']+", str(text or "").lower())
+    return any(word not in _RUBRIC_WORDS for word in words)
+
+
+def unnamed_place_error(questions: list) -> str | None:
+    """Reject a map question that never says which place the student is finding.
+
+    `unlettered_map_error` guarantees the plan carries the keyed letters; this
+    guarantees the question carries a place to look for. Shown a plan and told
+    only "Complete the plan below. Write the correct letter for each location",
+    the student has no way to know whether question 11 wants the café or the
+    library — and a second question saying exactly the same thing is not a
+    second question at all. A hosted part 2 came back with both.
+
+    Of 321 corpus map questions exactly one is bare and none repeat another's
+    wording, so this rejects what the teacher does not do rather than a shape
+    the checkpoint was trained on.
+    """
+    seen: dict[str, str] = {}
+    bare: list[str] = []
+    repeated: list[tuple[str, str]] = []
+    for q in questions:
+        if not isinstance(q, dict) or qtype(q) not in MAP_TYPES:
+            continue
+        number = str(q.get("number"))
+        text = str(q.get("question") or "")
+        if not _names_a_place(text):
+            bare.append(number)
+            continue
+        key = re.sub(r"\s+", " ", text.strip().lower())
+        if key in seen:
+            repeated.append((seen[key], number))
+        else:
+            seen[key] = number
+
+    if bare:
+        return (
+            f"question(s) {', '.join(sorted(bare))} give only the block's "
+            "instruction, so the student is never told which place to find on "
+            "the plan. Write each map question as the place itself — "
+            '"11  the café ......" — one place per question.'
+        )
+    if repeated:
+        clash = ", ".join(f"{a} and {b}" for a, b in repeated)
+        return (
+            f"map question(s) {clash} ask for the same place in the same "
+            "words, so they are one question printed twice. Give each its own "
+            "place, and key the letter of the room that place is in."
+        )
+    return None
+
+
 def dangling_completions(questions: list, visual: object) -> list[dict]:
     """Completion items that point at a block the student never sees.
 

@@ -379,8 +379,9 @@ Audio Performance Instructions — REQUIRED `speakers` array:
 
 Question requirements:
 - Produce 8-13 questions using the requested question types. If none specified, mix 2-3 of: form_completion, note_completion, table_completion, flow_chart_completion, summary_completion, multiple_choice, map_labelling, sentence_completion, short_answer, matching.
-- **EVERY question object MUST have non-empty `question` text that stands on its own.** Never emit a question whose text is "" and never rely on the previous question's text to carry the instructions. If a block of questions shares a rubric, repeat that rubric (or the relevant part of it) in each question's text. A blank question is unanswerable and invalid.
+- **EVERY question object MUST have non-empty `question` text that stands on its own.** Never emit a question whose text is "" and never rely on the previous question's text to carry the instructions. If a block of questions shares a rubric, repeat that rubric (or the relevant part of it) in each question's text — but the rubric ALONE is never a question. Each one must also carry the particular thing it asks for: the field being filled, the gap being completed, or the place being located. Two questions whose text is identical are one question printed twice.
 - **EVERY `multiple_choice` and `matching` question MUST carry its own complete `options` array**, repeated in full on each question of the block. The student sees each question independently; options are not inherited from a previous question.
+- **A `matching` question is ONE pair.** Its answer_key value is a SINGLE option from its own `options` array. Never key a question with the whole mapping ("Room A: café, Room B: library, ..."): the student has one box to write in, so only one answer can be marked. Five things to match means five numbered questions, one pair each.
 - **At most 4 questions per Part may be `multiple_choice`.** A real IELTS Listening Part is dominated by completion and labelling; do not fall back to multiple choice to fill the set.
 - **Answer order constraint (STRICT)**: All answers MUST appear in the same order as they occur in the transcript. Question number N's answer must be heard AFTER question N-1's answer in the script. Never reorder.
 - Questions must follow the order information appears in the script.
@@ -440,6 +441,7 @@ Map / plan labelling visual — REQUIRED when the question set includes map_labe
   - The plan itself must NOT reveal which letter is which place — that is what the recording tells the student. In the script, the speaker describes where each place is relative to the named rooms and the entrance.
   - Every LETTER that appears in a map_labelling `answer_key` entry MUST exist as a lettered room on the plan.
 - The answer_key for a map_labelling question is the LETTER (e.g. "C"). Do NOT give map_labelling questions an `options` array — the student writes the letter.
+- **Each map_labelling question NAMES the one place it asks for**, and no two name the same place: write it as the place itself — `"11  the café ......"` — or as a direct question ("Where is the café?"). "Complete the plan below. Write the correct letter for each location." is the block's shared instruction; a question carrying only that has told the student to write a letter without telling them which room to find, and repeating it under a second number does not make a second question.
 
 Visual rule: `visual` must be a table object (for table completion), a plan object (for map labelling), or null. If the set has neither, `visual` must be null.
 
