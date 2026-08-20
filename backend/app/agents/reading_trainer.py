@@ -1,3 +1,4 @@
+import asyncio
 import json
 import random
 import re
@@ -546,6 +547,12 @@ async def _repair_missing_notgiven(result: dict) -> None:
     result["answer_key"] = answer_key
 
 
+def _needs_a_figure(question_types: list[str] | None) -> bool:
+    """True when the steer names a type that has to print a figure, which is
+    what sends a passage to the general model — the checkpoint's corpus never
+    described one."""
+    return bool(_FIGURE_TYPES.intersection(canon(t) for t in question_types or ()))
+
 async def create_practice(
     question_types: list[str] | None = None,
     difficulty: str | None = None,
@@ -562,12 +569,7 @@ async def create_practice(
     # Same reason as listening's _FIGURE_PARTS: a set built around a printed
     # figure has to come from the general model, because the checkpoint's corpus
     # never described one.
-    client = get_llm_client(
-        "generator",
-        skip_finetune=bool(
-            _FIGURE_TYPES.intersection(canon(t) for t in question_types or ())
-        ),
-    )
+    client = get_llm_client("generator", skip_finetune=_needs_a_figure(question_types))
     # The SFT user turn is topic/difficulty/types only, so grounding a
     # fine-tune puts it off-distribution: it read the exemplar as content to
     # continue and emitted the exemplar's own questions against its new
@@ -681,17 +683,33 @@ _PASSAGE_TYPES: dict[int, list[str]] = {
 
 
 async def create_full_test(difficulty: str | None = None) -> dict:
-    """Assemble a complete 3-passage IELTS Academic Reading test."""
-    passages = await gather_llm(
-        "generator",
-        [
-            create_practice(
-                question_types=_PASSAGE_TYPES.get(i),
-                difficulty=difficulty or _DIFFICULTY_RAMP[i],
-            )
-            for i in range(_FULL_TEST_PASSAGES)
-        ],
+    """Assemble a complete 3-passage IELTS Academic Reading test.
+
+    The passage steered to a diagram is served hosted and the others by the
+    local checkpoint, so they are gathered as two groups running at once —
+    one list would queue the hosted passage behind ollama, which answers one
+    call at a time. Same reason as listening's create_full_test."""
+    def passage(index: int):
+        return create_practice(
+            question_types=_PASSAGE_TYPES.get(index),
+            difficulty=difficulty or _DIFFICULTY_RAMP[index],
+        )
+
+    indexes = list(range(_FULL_TEST_PASSAGES))
+    figure = [i for i in indexes if _needs_a_figure(_PASSAGE_TYPES.get(i))]
+    prose = [i for i in indexes if i not in figure]
+    groups = await asyncio.gather(
+        gather_llm("generator", [passage(i) for i in figure], skip_finetune=True),
+        gather_llm("generator", [passage(i) for i in prose]),
+        # A failure in one group otherwise leaves the other writing a passage
+        # into a test nobody will read.
+        return_exceptions=True,
     )
+    for group in groups:
+        if isinstance(group, BaseException):
+            raise group
+    done = dict(zip(figure, groups[0])) | dict(zip(prose, groups[1]))
+    passages = [done[i] for i in indexes]
 
     # Sequential, and only once every passage is back. Listening can compute its
     # offsets up front because a part is always ten questions; a reading passage

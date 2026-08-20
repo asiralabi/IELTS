@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import random
 import re
@@ -767,10 +768,32 @@ async def create_part(
 
 
 async def create_full_test(difficulty: str | None = None) -> dict:
-    """Assemble a complete 4-part / 40-question IELTS Listening test."""
-    parts = await gather_llm(
-        "generator", [create_part(n, difficulty) for n in (1, 2, 3, 4)]
+    """Assemble a complete 4-part / 40-question IELTS Listening test.
+
+    The figure parts are served hosted and the rest by the local checkpoint,
+    so the two halves genuinely overlap. Asking for all four in one
+    gather_llm would put the hosted pair in the local queue, which is
+    serialised because ollama answers one call at a time — and a hosted part
+    is the slow half of the test, measured at ~20 minutes against ~7 for a
+    local one."""
+    figure = sorted(_FIGURE_PARTS)
+    prose = [n for n in (1, 2, 3, 4) if n not in _FIGURE_PARTS]
+    groups = await asyncio.gather(
+        gather_llm(
+            "generator", [create_part(n, difficulty) for n in figure],
+            skip_finetune=True,
+        ),
+        gather_llm("generator", [create_part(n, difficulty) for n in prose]),
+        # Without this the first failure leaves the other half generating
+        # unattended, which surfaces later as a stray warning rather than as
+        # the error that actually ended the test.
+        return_exceptions=True,
     )
+    for group in groups:
+        if isinstance(group, BaseException):
+            raise group
+    done = dict(zip(figure, groups[0])) | dict(zip(prose, groups[1]))
+    parts = [done[n] for n in (1, 2, 3, 4)]
     return {
         "title": "IELTS Listening Practice Test",
         "kind": "full_listening_test",

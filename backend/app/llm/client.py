@@ -543,7 +543,10 @@ def set_llm_client(client: LLMClient | None) -> None:
 
 
 async def gather_llm(
-    task: str | None, coros: Iterable[Coroutine[Any, Any, Any]]
+    task: str | None,
+    coros: Iterable[Coroutine[Any, Any, Any]],
+    *,
+    skip_finetune: bool = False,
 ) -> list[Any]:
     """Run LLM calls concurrently only where the serving model actually is.
 
@@ -552,9 +555,11 @@ async def gather_llm(
     in a queue that counts against their own timeouts, turning a slow batch into
     a failing one. Hosted providers are genuinely concurrent and want the
     gather. Which of the two serves a task is a runtime setting, so no call site
-    can hard-code either shape.
+    can hard-code either shape. skip_finetune asks the same question of the
+    model a figure-bearing call is actually routed to, which is a different
+    one from the task's checkpoint.
     """
-    if not get_llm_client(task).serialised:
+    if not get_llm_client(task, skip_finetune=skip_finetune).serialised:
         return list(await asyncio.gather(*coros))
     queue = list(coros)
     results: list[Any] = []

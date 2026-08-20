@@ -230,6 +230,77 @@ class TestFigureWorkBypassesTheCheckpoint:
 
         assert requested[0] is bypasses
 
+    def test_a_full_test_lets_the_hosted_half_run_beside_the_local_one(
+        self, monkeypatch
+    ):
+        '''gather_llm serialises against the model it is told about, and the
+        local checkpoint answers one call at a time. Asked for all four parts
+        in one list the hosted pair would wait behind that queue — and a
+        hosted part is the slow half, ~20 minutes live against ~7 local.'''
+        asked: list[tuple[bool, list[int]]] = []
+
+        async def fake_part(number, difficulty=None, topic=None):
+            return {"part": number}
+
+        async def fake_gather(task, coros, *, skip_finetune=False):
+            parts = [await c for c in coros]
+            asked.append((skip_finetune, [p["part"] for p in parts]))
+            return parts
+
+        monkeypatch.setattr(listening_trainer, "create_part", fake_part)
+        monkeypatch.setattr(listening_trainer, "gather_llm", fake_gather)
+
+        result = asyncio.run(listening_trainer.create_full_test())
+
+        assert sorted(asked) == [(False, [3, 4]), (True, [1, 2])]
+        assert [p["part"] for p in result["parts"]] == [1, 2, 3, 4]
+
+    def test_a_paper_lets_its_diagram_passage_run_beside_the_others(
+        self, monkeypatch
+    ):
+        '''The same queue, on the reading side: one of the three passages is
+        steered to a diagram and served hosted, and it is also the slow one.'''
+        asked: list[tuple[bool, int]] = []
+
+        async def fake_practice(question_types=None, difficulty=None, topic=None):
+            return {"questions": [], "answer_key": {}}
+
+        async def fake_gather(task, coros, *, skip_finetune=False):
+            got = [await c for c in coros]
+            asked.append((skip_finetune, len(got)))
+            return got
+
+        monkeypatch.setattr(reading_trainer, "create_practice", fake_practice)
+        monkeypatch.setattr(reading_trainer, "gather_llm", fake_gather)
+
+        result = asyncio.run(reading_trainer.create_full_test())
+
+        assert sorted(asked) == [(False, 2), (True, 1)]
+        assert [p["passage_number"] for p in result["passages"]] == [1, 2, 3]
+
+    def test_one_half_failing_still_waits_for_the_other(
+        self, capture, monkeypatch
+    ):
+        '''A generation failure is routine. Left unawaited the other half
+        goes on writing into a test nobody will read, and surfaces later as a
+        stray warning instead of the error that ended the run.'''
+        capture(is_finetune=False)
+        finished: list[int] = []
+
+        async def fake_part(number, difficulty=None, topic=None):
+            if number == 1:
+                raise ValueError("the plan would not close")
+            await asyncio.sleep(0)
+            finished.append(number)
+            return {"part": number}
+
+        monkeypatch.setattr(listening_trainer, "create_part", fake_part)
+
+        with pytest.raises(ValueError, match="would not close"):
+            asyncio.run(listening_trainer.create_full_test())
+
+        assert 3 in finished and 4 in finished
+
     def test_the_papers_figure_passage_is_one_of_the_steered_ones(self):
         """_PASSAGE_TYPES is what puts a figure in a generated paper at all;
         if its steer ever stopped naming a figure type the paper would come
