@@ -108,6 +108,59 @@ def _runaway_ratio(text: str) -> float:
     return len(set(grams)) / len(grams)
 
 
+class _RunawayWatch:
+    """Accumulates a streamed reply, refusing one that stops making progress.
+
+    Shared by both streaming clients so the measured thresholds above have a
+    single home — a hosted reply runs on the same way a local one does, and a
+    second copy of this logic would drift from the numbers the diagnostics
+    re-measure.
+    """
+
+    def __init__(self, model: str) -> None:
+        self.model = model
+        self._pieces: list[str] = []
+        self._next_check = _RUNAWAY_MIN_CHARS
+        self.size = 0
+
+    @property
+    def text(self) -> str:
+        return "".join(self._pieces)
+
+    def add(self, piece: str) -> None:
+        if not piece:
+            return
+        self._pieces.append(piece)
+        self.size += len(piece)
+        if self.size > _RUNAWAY_MAX_CHARS:
+            raise RunawayGeneration(
+                f"{self.model} wrote {self.size} characters without finishing, "
+                "more than any reply it was trained on",
+                _ADVICE_REPEATING,
+            )
+        if self.size >= self._next_check:
+            self._next_check = self.size + _RUNAWAY_CHECK_EVERY
+            ratio = _runaway_ratio(self.text)
+            if ratio < _RUNAWAY_MIN_RATIO:
+                # Raising drops the connection, which is how the server learns
+                # to stop generating.
+                raise RunawayGeneration(
+                    f"{self.model} stopped saying anything new after "
+                    f"{self.size} characters — only {ratio:.0%} of its recent "
+                    "output was distinct",
+                    _ADVICE_REPEATING,
+                )
+
+    def finish(self, completed: bool) -> str:
+        if not completed:
+            raise RunawayGeneration(
+                f"{self.model} ended its reply after {self.size} characters "
+                "without a completion marker, so the reply is a fragment",
+                _ADVICE_STALLED,
+            )
+        return self.text
+
+
 def _extract_json(text: str) -> dict[str, Any]:
     cleaned = _strip_think(text)
     fence = _FENCE_RE.search(cleaned)
@@ -329,10 +382,8 @@ class OllamaClient(LLMClient):
         self, client: httpx.AsyncClient, payload: dict[str, Any], timeout: float
     ) -> str:
         """Accumulate a streamed reply, abandoning it if it stops progressing."""
-        pieces: list[str] = []
-        size = 0
+        watch = _RunawayWatch(self.model)
         finished = False
-        next_check = _RUNAWAY_MIN_CHARS
         async with client.stream(
             "POST", f"{self.base_url}/api/chat", json=payload, timeout=timeout
         ) as resp:
@@ -346,43 +397,16 @@ class OllamaClient(LLMClient):
                 # of the body rather than the status.
                 if chunk.get("error"):
                     raise httpx.HTTPError(f"{self.model}: {chunk['error']}")
-                piece = (chunk.get("message") or {}).get("content") or ""
-                if piece:
-                    pieces.append(piece)
-                    size += len(piece)
-                    if size > _RUNAWAY_MAX_CHARS:
-                        raise RunawayGeneration(
-                            f"{self.model} wrote {size} characters without "
-                            "finishing, more than any reply it was trained on",
-                            _ADVICE_REPEATING,
-                        )
-                    if size >= next_check:
-                        next_check = size + _RUNAWAY_CHECK_EVERY
-                        ratio = _runaway_ratio("".join(pieces))
-                        if ratio < _RUNAWAY_MIN_RATIO:
-                            # Leaving the context manager drops the connection,
-                            # which is how ollama learns to stop generating.
-                            raise RunawayGeneration(
-                                f"{self.model} stopped saying anything new after "
-                                f"{size} characters — only {ratio:.0%} of its "
-                                "recent output was distinct",
-                                _ADVICE_REPEATING,
-                            )
+                watch.add((chunk.get("message") or {}).get("content") or "")
                 if chunk.get("done"):
                     finished = True
                     break
-        if not finished:
-            # ollama ends the stream without a done chunk when the reply can no
-            # longer satisfy the JSON grammar — reliably, when the model writes
-            # an unescaped quote inside a string. Returning the fragment would
-            # surface as an unterminated-JSON error that spends the retry on the
-            # wrong complaint, so name it here where the cause is still known.
-            raise RunawayGeneration(
-                f"{self.model} ended its reply after {size} characters without "
-                "a completion marker, so the reply is a fragment",
-                _ADVICE_STALLED,
-            )
-        return "".join(pieces)
+        # ollama ends the stream without a done chunk when the reply can no
+        # longer satisfy the JSON grammar — reliably, when the model writes an
+        # unescaped quote inside a string. Returning the fragment would surface
+        # as an unterminated-JSON error that spends the retry on the wrong
+        # complaint, so it is named here where the cause is still known.
+        return watch.finish(finished)
 
 
 class AnthropicClient(LLMClient):
@@ -443,8 +467,24 @@ class OpenAIClient(LLMClient):
         }
         if json_mode:
             kwargs["response_format"] = {"type": "json_object"}
-        resp = await self.client.chat.completions.create(**kwargs)
-        return (resp.choices[0].message.content or "").strip()
+        # Streamed for the same reason ollama is, plus one the hosted side adds:
+        # a gateway in front of the model will abandon a request that stays
+        # silent too long. Measured against NVIDIA — an unstreamed part-2
+        # generation returned 504 after 302s, while the identical streamed
+        # request ran 564s and completed, because bytes kept arriving.
+        kwargs["stream"] = True
+        watch = _RunawayWatch(self.model)
+        completed = False
+        stream = await self.client.chat.completions.create(**kwargs)
+        async for event in stream:
+            if not event.choices:
+                continue
+            choice = event.choices[0]
+            watch.add(choice.delta.content or "")
+            if choice.finish_reason:
+                completed = True
+                break
+        return watch.finish(completed).strip()
 
 
 _override: LLMClient | None = None

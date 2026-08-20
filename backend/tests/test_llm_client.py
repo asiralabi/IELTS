@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from types import SimpleNamespace
 
 import pytest
 
@@ -17,6 +18,7 @@ from app.llm.client import (
     _extract_json,
     _runaway_ratio,
     gather_llm,
+    get_llm_client,
 )
 
 
@@ -559,3 +561,91 @@ class TestHostedClientTimeouts:
         monkeypatch.setattr(anthropic, "AsyncAnthropic", self._recorder(recorded))
         AnthropicClient()
         assert recorded["timeout"] == settings.llm_timeout
+
+
+class FakeOpenAIStream:
+    """openai.AsyncOpenAI stand-in yielding chat.completions chunks.
+
+    finish_reason=None reproduces a stream that just stops, which is what a
+    dropped connection looks like from this side.
+    """
+
+    def __init__(self, pieces: list[str], finish_reason: str | None = "stop") -> None:
+        self.pieces = list(pieces)
+        self.finish_reason = finish_reason
+        self.kwargs: dict = {}
+        self.chat = SimpleNamespace(completions=SimpleNamespace(create=self._create))
+
+    async def _create(self, **kwargs):
+        self.kwargs = kwargs
+        return self._events()
+
+    async def _events(self):
+        for piece in self.pieces:
+            yield SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        delta=SimpleNamespace(content=piece), finish_reason=None
+                    )
+                ]
+            )
+        # Providers send a usage-only trailer with no choices at all; it must
+        # not be read as the end of the reply.
+        yield SimpleNamespace(choices=[])
+        if self.finish_reason:
+            yield SimpleNamespace(
+                choices=[
+                    SimpleNamespace(
+                        delta=SimpleNamespace(content=""),
+                        finish_reason=self.finish_reason,
+                    )
+                ]
+            )
+
+
+class TestOpenAIStreaming:
+    """A gateway in front of a hosted model abandons a request that stays
+    silent: an unstreamed part-2 generation returned 504 after 302s, while the
+    identical streamed request ran 564s and completed. So this client streams,
+    which also puts it under the same runaway guard as the local one.
+    """
+
+    @staticmethod
+    def _client(monkeypatch, fake):
+        import openai
+
+        monkeypatch.setattr(openai, "AsyncOpenAI", lambda **kwargs: fake)
+        return OpenAIClient()
+
+    def test_it_asks_for_a_stream_and_joins_the_deltas(self, monkeypatch):
+        fake = FakeOpenAIStream(["{\"a\": ", "1}"])
+        client = self._client(monkeypatch, fake)
+
+        result = asyncio.run(client.complete("sys", [{"role": "user", "content": "x"}]))
+
+        assert result == '{"a": 1}'
+        assert fake.kwargs["stream"] is True
+
+    def test_a_stream_that_just_stops_is_a_fragment_not_a_reply(self, monkeypatch):
+        """Returning the fragment would surface as unterminated JSON and spend
+        the retry complaining about syntax instead of the truncation."""
+        fake = FakeOpenAIStream(["{\"a\": "], finish_reason=None)
+        client = self._client(monkeypatch, fake)
+
+        with pytest.raises(RunawayGeneration) as excinfo:
+            asyncio.run(client.complete("sys", [{"role": "user", "content": "x"}]))
+
+        assert "without a completion marker" in str(excinfo.value)
+
+    def test_a_repeating_stream_is_cut_off(self, monkeypatch):
+        """The guard was measured on the local model; the hosted one reaches it
+        now only because this client streams."""
+        fake = FakeOpenAIStream(["the same clause over and over. " * 40] * 30)
+        client = self._client(monkeypatch, fake)
+
+        with pytest.raises(RunawayGeneration) as excinfo:
+            asyncio.run(client.complete("sys", [{"role": "user", "content": "x"}]))
+
+        assert "distinct" in str(excinfo.value)
+        # Abandoned mid-flight rather than judged at the end.
+        assert fake.pieces
