@@ -207,6 +207,23 @@ Rules:
 }
 """
 
+DIAGRAM_RELABEL_SYSTEM = """You are an IELTS Academic Reading test writer. You are given one passage, one diagram-labelling question, and the answers already used by the other gaps on the same diagram. You must supply the answer for that one question.
+
+Two gaps on a diagram can never share an answer: they point at different parts of the figure, so one label cannot name both.
+
+Rules:
+- It must name the part the question describes. Read the question's description and give the name of the thing being described.
+- PREFER words the passage already uses, copied exactly. The student is told to choose words FROM THE PASSAGE.
+- If the passage never names that part, give the correct name for it anyway, in the plainest words a textbook would use. Do not stretch an unrelated phrase from the passage to fill the gap.
+- It must be different from every answer already used, and must not be a longer or shorter form of one of them.
+- ONE or TWO words. A noun or a noun phrase naming a thing — never a verdict like TRUE or NOT GIVEN, never a sentence, never a description.
+- If the question describes nothing identifiable at all, return an empty string. A wrong label is worse than a gap the caller can leave alone.
+- Return ONLY this JSON object:
+{
+  "answer": "<the label>"
+}
+"""
+
 PASSAGE_EXPANDER_SYSTEM = """You are an IELTS Academic Reading editor. You are given a short passage and asked to expand it to a target length while preserving all facts, claims, paragraph labels (A, B, C...), and existing information order.
 
 Rules:

@@ -20,6 +20,7 @@ from app.agents.answerability import (
 )
 from app.llm.client import gather_llm, get_llm_client
 from app.llm.prompts import (
+    DIAGRAM_RELABEL_SYSTEM,
     HEADINGS_WRITER_SYSTEM,
     NOTGIVEN_WRITER_SYSTEM,
     PASSAGE_EXPANDER_SYSTEM,
@@ -154,6 +155,7 @@ def validate_practice(
     judge_headings: bool = True,
     judge_notgiven: bool = True,
     judge_verbatim: bool = True,
+    judge_diagram: bool = True,
 ) -> str | None:
     """Reject a practice set a student could not fairly sit.
 
@@ -161,12 +163,13 @@ def validate_practice(
     corrective retry instead of reaching the student — or, during dataset
     export, becoming a training target that teaches the pathology.
 
-    `judge_headings=False`, `judge_notgiven=False` and `judge_verbatim=False`
-    are for the one caller that repairs those three things in code afterwards:
-    the model's own headings are discarded, its missing NOT GIVEN is written by
-    a second narrower call, and the passage is rewritten to name the answers
-    keyed against it — so a retry spent complaining about any of them buys
-    nothing. Every other caller judges them.
+    `judge_headings=False`, `judge_notgiven=False`, `judge_verbatim=False` and
+    `judge_diagram=False` are for the one caller that repairs those four things
+    in code afterwards: the model's own headings are discarded, its missing NOT
+    GIVEN is written by a second narrower call, the passage is rewritten to
+    name the answers keyed against it, and a diagram gap repeating another
+    gap's answer is re-keyed by a third — so a retry spent complaining about
+    any of them buys nothing. Every other caller judges them.
     """
     cross_section = cross_section_error(result, "reading")
     if cross_section:
@@ -279,6 +282,26 @@ def validate_practice(
             "unmarkable. Either reword the passage to contain the answer "
             "exactly, or key each gap to the exact words already written there."
         )
+
+    # Scoped to diagram labelling deliberately. A general no-repeats rule was
+    # measured and refuted: real Cambridge records repeat an answer 19.6% of
+    # the time in reading and 31.0% in listening. Two gaps on ONE diagram are
+    # different parts of one figure, which is the case where a repeat cannot
+    # be legitimate — and no corpus set has two diagram gaps at all, so this
+    # refuses nothing that was ever trained on.
+    if judge_diagram:
+        clashes = _duplicate_diagram_answers(result)
+        if clashes:
+            named = ", ".join(
+                f"Q{later} repeats Q{first}'s {answer!r}"
+                for first, later, answer in clashes
+            )
+            return (
+                f"two gaps on the same diagram are keyed the same answer: {named}. "
+                "Each gap points at a different part of the figure, so one label "
+                "cannot name both — key the repeated gap to the words the passage "
+                "uses for the part its question actually describes."
+            )
 
     tfng = [q for q in questions if qtype(q) in _TFNG_TYPES]
     if len(tfng) >= 4:
@@ -513,6 +536,165 @@ async def _write_notgiven(passage: str, used: list[str]) -> str | None:
     return str(reply.get("statement") or "").strip() or None
 
 
+# A diagram label is a name. Two words is what the gaps carry as their own
+# limit, and every label in the corpus fits it.
+_MAX_LABEL_WORDS = 2
+
+_DIAGRAM_TYPES = {canon("diagram_label_completion")}
+
+
+def _duplicate_diagram_answers(result: dict) -> list[tuple[str, str, str]]:
+    """(number kept, number repeating it, answer) for gaps keyed the same.
+
+    Two gaps point at different parts of the figure, so one label cannot name
+    both — whichever gap repeats an earlier answer is unanswerable, because the
+    student who writes the right label has still written a word already spoken
+    for. The FIRST use is treated as the true one and later ones as the fault:
+    nothing here can tell which is correct, and picking by position at least
+    makes the choice deterministic.
+
+    Scoped to diagram labelling and nothing wider. Measured 2026-08-23 over the
+    439-unit corpus and the real Cambridge records: a general no-repeats rule
+    is refuted outright — the exam itself repeats an answer in 19.6% of
+    Cambridge reading records and 31.0% of listening ones, and 22.9% of the
+    listening corpus does (one form asks for the same phone number twice).
+    """
+    answer_key = result.get("answer_key") or {}
+    seen: dict[str, str] = {}
+    clashes: list[tuple[str, str, str]] = []
+    numbered = [q for q in result.get("questions") or []
+                if isinstance(q, dict) and qtype(q) in _DIAGRAM_TYPES]
+    for q in sorted(numbered, key=lambda q: _safe_number(q.get("number"))):
+        number = str(q.get("number"))
+        words = _span_tokens(str(answer_key.get(number) or ""))
+        if not words:
+            continue
+        normalised = " ".join(words)
+        if normalised in seen:
+            clashes.append((seen[normalised], number, str(answer_key[number])))
+        else:
+            seen[normalised] = number
+    return clashes
+
+
+def _safe_number(value: object) -> int:
+    try:
+        return int(str(value))
+    except (TypeError, ValueError):
+        return 0
+
+
+async def _relabel_duplicate_gap(
+    passage: str, question: str, taken: list[str]
+) -> str | None:
+    """One short call for one label, in the idiom of the other repairs.
+
+    A regeneration costs a hosted passage of 14-25 minutes; naming one part is
+    a sub-task worth a few hundred tokens. Returns None whenever the reply is
+    unusable, so the caller can leave the set exactly as it found it.
+    """
+    used = "; ".join(sorted({t.strip() for t in taken if t.strip()}))
+    prompt = (
+        f"Passage:\n{passage}\n\n"
+        f"The question to answer:\n{question}\n\n"
+        f"Answers already used by other gaps on this diagram: {used}\n\n"
+        "Give the label for this one question only."
+    )
+    try:
+        reply = await get_llm_client("generator").complete_json(
+            DIAGRAM_RELABEL_SYSTEM,
+            [{"role": "user", "content": prompt}],
+            required_keys=("answer",),
+            max_tokens=128,
+        )
+    except Exception:
+        return None
+    answer = str(reply.get("answer") or "").strip()
+    words = _span_tokens(answer)
+    # Asked for a part and given a verdict: the checkpoint is trained mostly on
+    # true/false blocks and falls back to their vocabulary when it cannot
+    # answer. Measured live on the honey-bee passage, twice out of two.
+    if not words or " ".join(words).upper() in _NOTGIVEN_VERDICTS:
+        return None
+    if str(answer).strip().upper() in {"TRUE", "FALSE", "YES", "NO"}:
+        return None
+    # A label is a name, not a sentence. The gaps carry a two-word limit.
+    if len(words) > _MAX_LABEL_WORDS:
+        return None
+    return answer
+
+
+async def _repair_duplicate_diagram_answers(result: dict) -> list[tuple[str, str]]:
+    """Re-key a diagram gap that repeats another gap's answer.
+
+    Found live on 2026-08-23: a hive diagram keyed both "the area where the
+    bees store their food" and "the structure that regulates the hive's
+    temperature" as `Honeycomb`, the second of which is simply wrong. It is a
+    repair rather than a validator because refusing costs a whole hosted
+    passage, and `ad0e767` requires 3+ numbered parts so the offending question
+    cannot be dropped either.
+
+    A replacement is accepted only if it is a span of the passage and is not
+    itself already taken — otherwise the set is left as it was, which is no
+    worse than not having tried.
+
+    When the label is right but the passage never uses it, the passage is
+    rewritten to name it rather than the label being thrown away. Measured live
+    on the honey-bee paper: the duplicate was not carelessness but the model's
+    fallback for a gap whose part the passage never described (no "regulates",
+    no "ventilation", no "shaft" anywhere in 942 words). That is the same
+    defect `84c426c` fixed for keyed answers, so it takes the same cure — the
+    passage is ours to edit.
+    """
+    clashes = _duplicate_diagram_answers(result)
+    if not clashes:
+        return []
+
+    answer_key = result.get("answer_key") or {}
+    questions = {str(q.get("number")): q for q in result.get("questions") or []
+                 if isinstance(q, dict)}
+    passage = str(result.get("passage") or "")
+    repaired: list[tuple[str, str]] = []
+
+    for _, number, answer in clashes:
+        question = questions.get(number)
+        if question is None:
+            continue
+        taken = [str(v) for k, v in answer_key.items() if str(k) != number]
+        replacement = await _relabel_duplicate_gap(
+            passage, str(question.get("question") or ""), taken
+        )
+        if not replacement:
+            continue
+        # Judged exactly as the set will be judged: a replacement the passage
+        # never uses would trade one unanswerable gap for another.
+        trial = {**result, "answer_key": {**answer_key, number: replacement}}
+        if _duplicate_diagram_answers(trial):
+            continue
+        if any(n == number for n, _ in _non_verbatim_answers(trial)):
+            # The label is sound but unwritten. Put it in the passage, on the
+            # call `_expand_passage` already exists to make, and only keep the
+            # rewrite if it actually took.
+            expanded = await _expand_passage(
+                passage, str(result.get("title") or ""), [replacement]
+            )
+            if not expanded:
+                continue
+            trial = {**trial, "passage": expanded}
+            if any(n == number for n, _ in _non_verbatim_answers(trial)):
+                continue
+            # The rest of the set is keyed against the old passage, so nothing
+            # it already answered may stop being findable.
+            was = {n for n, _ in _non_verbatim_answers(result)}
+            if {n for n, _ in _non_verbatim_answers(trial)} - was - {number}:
+                continue
+            result["passage"] = expanded
+            passage = expanded
+        answer_key[number] = replacement
+        repaired.append((number, replacement))
+    return repaired
+
+
 def _blank_self_answering_cells(result: dict) -> list[tuple[str, str]]:
     """Rub out a grid cell that prints the very label its gap asks for.
 
@@ -653,6 +835,7 @@ async def create_practice(
             judge_headings=False,
             judge_notgiven=False,
             judge_verbatim=False,
+            judge_diagram=False,
         ),
         # A ~1200-word passage plus 8-13 questions carrying full options lists
         # is a 3.5-5k-token JSON object; LLM_MAX_TOKENS is 2048 locally. A
@@ -687,6 +870,10 @@ async def create_practice(
     # After the rebuild, so a statement is not written against a question the
     # rebuild is about to replace.
     await _repair_missing_notgiven(result)
+    # After the expansion, because the replacement label has to be a span of
+    # the passage the student is actually given, and before the blanking below,
+    # because a newly keyed label may be printed on the grid as well.
+    await _repair_duplicate_diagram_answers(result)
     # Last, because the passage expansion above can key a gap to wording the
     # grid also prints, and this erases the duplicate rather than the gap.
     _blank_self_answering_cells(result)
