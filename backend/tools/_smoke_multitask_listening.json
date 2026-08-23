@@ -1,0 +1,204 @@
+{
+  "blueprint": {
+    "section": "Part 2",
+    "topic": "A volunteer induction at a coastal wildlife reserve",
+    "difficulty": "medium",
+    "register": "informational monologue",
+    "question_type_plan": [
+      "multiple_choice",
+      "sentence_completion",
+      "map_labelling"
+    ],
+    "distractor_strategy": "speaker states then corrects a detail",
+    "answer_distribution": "answers spread across the script, with some near the beginning and others towards the end"
+  },
+  "title": "Volunteer Induction at Coastal Wildlife Reserve",
+  "audio_script": "SPEAKER: Good morning, everyone. Welcome to the volunteer induction session for our coastal wildlife reserve. My name is Sarah, and I'll be your guide today. Before we begin, please make yourselves comfortable. We have a few rules to cover first. Firstly, please note that this is a closed facility, so you must wear a badge with your name on it at all times when you're here. Secondly, we ask that you respect our animals and their habitats. Please keep noise levels down and avoid touching or feeding any of the creatures.\n\nNow, let's start with some basics. Our reserve covers an area of approximately 50 hectares, which is roughly equivalent to about 124 acres. The reserve itself is divided into three main areas: the visitor centre, where you'll find our cafe and shop; the animal enclosures, where we house a variety of species including dolphins, seals, and sea turtles; and the research station, where scientists conduct their work.\n\nThe cafe serves a range of refreshments, from sandwiches to cakes. The shop sells souvenirs related to the reserve, such as T-shirts and hats. We also have a gift shop that sells books on marine biology and other related topics. I hope you'll find something interesting there.\n\nMoving on, let's talk about our animal enclosures. We have several species of dolphins, including orcas and bottlenose dolphins. The orcas are kept in the main dolphin enclosure, which is a large tank that can hold up to 20 animals. The bottlenose dolphins are kept in smaller tanks, each capable of holding around 5-10 animals.\n\nThe seals live in a separate enclosure on the other side of the reserve. They have their own pool and habitat, which they seem to enjoy very much. We also have sea turtles that come in during the summer months when the water temperature is warmer. The sea turtle enclosure is a bit more challenging to maintain, as it requires careful monitoring of the water quality.\n\nNow, let's take a look at our map. As you can see from this map, we're situated on a small island off the coast of the mainland. We have a few roads that lead up to the reserve, but please note that parking is limited, so we ask that you walk or use public transportation if possible.\n\nThe main road leads straight to the visitor centre, where you'll find our cafe and shop. From there, it's about a 10-minute walk to the animal enclosures. The research station is located towards the back of the reserve, near the entrance to the sea turtle enclosure.\n\nI hope this gives you an idea of what we offer here at the coastal wildlife reserve. We're really proud of our team and the work they do to protect these incredible animals. Before we move on, I just want to ask: does anyone have any questions so far?\n\n(Silence)\n\nOkay, let's talk about our volunteer program. As you know, we're always looking for new volunteers to help out with various tasks around the reserve. We've had a lot of interest in our program recently, and I think that's great. What do you all think makes it such an attractive option?\n\n(Speakers discuss)\n\nWell, from what I can tell, it seems like everyone has something different to offer. Some people are interested in the marine biology aspect, while others might be more focused on the conservation work we do here.\n\nWe've had a lot of success with our volunteers in the past, and I think that's because they're really invested in what we do. They come back time and again, and it shows in their dedication to the cause.\n\nI'd like to give you an idea of some of the tasks that our volunteers get involved in. For example, we have a team that helps with data entry for our research projects. We also have another group that works on habitat restoration efforts around the reserve. And then there's always someone who's happy to help out with animal care or feeding.\n\nI think it's really important for us to give people a chance to get involved in something they're passionate about, and I think our volunteer program is a great way to do that. We've had some amazing volunteers come through here over the years, and I'm sure you'll have an opportunity to meet some of them during your induction.\n\nNow, let's talk about what we expect from our volunteers. As I mentioned earlier, we're looking for people who are willing to commit a few hours each week to help out with various tasks around the reserve. We also ask that they come prepared and wear appropriate clothing – no flip-flops or shorts, please.\n\nWe'll provide all necessary equipment and safety gear, but it's important that you know what you're getting into before you start. And finally, we ask that our volunteers show up on time for their shifts, as we have a lot of work to do around the reserve.\n\nI think that covers everything for today's induction session. I'd like to take a few minutes just to answer any questions you might have so far.\n\n(Speakers discuss)\n\nGreat – thanks for your patience, everyone. I hope this has given you all a good idea of what we offer here at the coastal wildlife reserve, and how our volunteer program can be a great way to get involved in conservation efforts.\n\nBefore we move on, I just want to remind you that if you have any questions or need further clarification on anything, please don't hesitate to ask. We're always happy to help, and we'll do our best to answer your questions as clearly as possible.\n\nOkay, well, I think that's all for today's induction session. Thank you again for joining us, and I hope you have a great day ahead.",
+  "speakers": [
+    {
+      "label": "SPEAKER",
+      "gender": "female",
+      "accent": "British",
+      "persona": "friendly, professional",
+      "wpm": 145,
+      "pause_ms": 200
+    }
+  ],
+  "visual": {
+    "kind": "plan",
+    "title": "Plan of the Coastal Wildlife Reserve",
+    "grid": [
+      [
+        "A",
+        "A",
+        "A",
+        "corridor",
+        "corridor",
+        "B",
+        "B",
+        "B"
+      ],
+      [
+        "corridor",
+        "corridor",
+        "corridor",
+        "corridor",
+        "corridor",
+        "corridor",
+        "corridor",
+        "corridor"
+      ],
+      [
+        "C",
+        "C",
+        "Reception",
+        "Reception",
+        "corridor",
+        "D",
+        "D",
+        "D"
+      ],
+      [
+        "corridor",
+        "corridor",
+        "corridor",
+        "corridor",
+        "corridor",
+        "corridor",
+        "corridor",
+        "corridor"
+      ],
+      [
+        "E",
+        "E",
+        "E",
+        "Cafe",
+        "Cafe",
+        "F",
+        "F",
+        "F"
+      ]
+    ],
+    "entrance": {
+      "side": "top",
+      "index": 3,
+      "label": "Main entrance"
+    }
+  },
+  "questions": [
+    {
+      "number": 11,
+      "type": "multiple_choice",
+      "question": "What is the area of the coastal wildlife reserve?",
+      "options": [
+        "5 hectares",
+        "20 hectares",
+        "50 hectares",
+        "100 hectares"
+      ]
+    },
+    {
+      "number": 12,
+      "type": "sentence_completion",
+      "question": "The cafe serves a range of refreshments, including _______.",
+      "word_limit": 3
+    },
+    {
+      "number": 13,
+      "type": "map_labelling",
+      "question": "Where is the visitor centre located?",
+      "word_limit": 0
+    },
+    {
+      "number": 14,
+      "type": "multiple_choice",
+      "question": "How many animals can be held in the main dolphin enclosure?",
+      "options": [
+        "5-10 animals",
+        "10-20 animals",
+        "20-30 animals",
+        "30-40 animals"
+      ]
+    },
+    {
+      "number": 15,
+      "type": "sentence_completion",
+      "question": "The research station is located near the entrance to the _______.",
+      "word_limit": 3
+    },
+    {
+      "number": 16,
+      "type": "map_labelling",
+      "question": "Where are the animal enclosures located?",
+      "word_limit": 0
+    },
+    {
+      "number": 17,
+      "type": "multiple_choice",
+      "question": "What is the name of the main road that leads to the visitor centre?",
+      "options": [
+        "Main Road A",
+        "Visitor Centre Road B",
+        "Cafe Road C",
+        "Shop Road D"
+      ]
+    },
+    {
+      "number": 18,
+      "type": "sentence_completion",
+      "question": "The gift shop sells books on _______.",
+      "word_limit": 3
+    },
+    {
+      "number": 19,
+      "type": "map_labelling",
+      "question": "Where is the sea turtle enclosure located?",
+      "word_limit": 0
+    },
+    {
+      "number": 20,
+      "type": "multiple_choice",
+      "question": "What are some of the tasks that our volunteers get involved in?",
+      "options": [
+        "Data entry and habitat restoration",
+        "Animal care and feeding",
+        "Research and conservation work",
+        "All of the above"
+      ]
+    }
+  ],
+  "answer_key": {
+    "11": "50 hectares",
+    "12": "sandwiches to cakes",
+    "13": "A",
+    "14": "10-20 animals",
+    "15": "sea turtle enclosure",
+    "16": "B",
+    "17": "Visitor Centre Road B",
+    "18": "marine biology",
+    "19": "F",
+    "20": "All of the above"
+  },
+  "accepted_variants": {
+    "11": [
+      "fifty hectares"
+    ],
+    "14": [
+      "twenty animals"
+    ],
+    "15": [],
+    "17": []
+  },
+  "answer_positions": {
+    "11": "approximately 50 hectares",
+    "12": "refreshments, from sandwiches to cakes",
+    "13": "the visitor centre",
+    "14": "can hold up to 20 animals",
+    "15": "near the entrance to the sea turtle enclosure",
+    "16": "B",
+    "17": "Visitor Centre Road B",
+    "18": "books on marine biology and other related topics",
+    "19": "F",
+    "20": "Data entry and habitat restoration, animal care and feeding"
+  }
+}
