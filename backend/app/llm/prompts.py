@@ -67,7 +67,8 @@ Speaking Part 2 cue card — REQUIRED structured schema:
 - Do not return Part 2 as a plain string.
 
 Writing Task 1 (Academic) visual data — REQUIRED for Task 1 Academic prompts:
-- Pick a chart topic (bar chart, line graph, pie chart, or table) — NOT a process or map (the LLM cannot draw those). The `question_type` must reflect the chart type (e.g. "Task 1 bar chart", "Task 1 line graph", "Task 1 pie chart", "Task 1 table").
+- Pick a chart topic (bar chart, line graph, pie chart, or table) or a MAP/PLAN topic — but NOT a process diagram (that one cannot be drawn yet). The `question_type` must reflect the figure (e.g. "Task 1 bar chart", "Task 1 line graph", "Task 1 pie chart", "Task 1 table", "Task 1 map").
+- Roughly one Task 1 in six is a map or plan, so reach for one regularly rather than defaulting to a chart every time.
 - Add a top-level `visual` field alongside `question`. The `question` field must describe the task ("The chart below shows... Summarise the information by selecting and reporting the main features... Write at least 150 words.") but MUST NOT verbally list the data — the student reads it from the chart.
 - `visual` schema:
   {
@@ -85,6 +86,32 @@ Writing Task 1 (Academic) visual data — REQUIRED for Task 1 Academic prompts:
   - pie: exactly ONE series with 4-6 slices; each `data` entry is [slice label, positive number]. Values should sum to a plausible whole (percentages summing to 100, or absolute counts).
   - table: one series per row, `name` is the row label, `data` is a list of [column header, value] pairs; all rows share the same column headers.
 - Do NOT verbalise the data in `question`. Do NOT include an `answers` field for Task 1 Academic; leave it null.
+
+Task 1 MAP / PLAN topics — use `visuals` (plural) instead of `visual`:
+- A map task shows the SAME place at two different times and asks the student to describe what changed ("The plans below show the layout of a university sports centre in 2005 and today. Summarise the information by selecting and reporting the main features, and make comparisons where relevant. Write at least 150 words."). That comparison is the task, so emit TWO plans.
+- Set the top-level `visuals` to an array of exactly two plan objects, and leave `visual` null:
+  {
+    "kind": "plan",
+    "title": "<the place and its date, e.g. 'Sports centre, 2005'>",
+    "grid": [
+      ["", "Car park", "Car park", "Reception", "Reception", ""],
+      ["path", "path", "path", "path", "path", "path"],
+      ["Sports hall", "Sports hall", "path", "Cafe", "Cafe", "Changing rooms"],
+      ["Sports hall", "Sports hall", "path", "Gym", "Gym", "Changing rooms"]
+    ],
+    "entrance": {"side": "bottom", "index": 2, "label": "Main entrance"}
+  }
+- GRID RULES — the same grid the Listening plan uses, with ONE rule reversed:
+  * `grid` is a list of ROWS, top of the plan first. Every row MUST have the SAME number of cells. Use 6-9 columns and 4-6 rows.
+  * Each cell is a short place name to print ("Car park", "Sports hall"), the exact word "path" for a walkway or road, or "" for space outside.
+  * Cells holding the SAME name side by side form ONE area, so give every area 2 or more adjacent cells. Never put the same name in two separate, unconnected places.
+  * The "path" cells MUST all join up, and every area must touch one on at least one side.
+  * **EVERY area must be NAMED. Never use a bare letter A-H.** That is the opposite of the Listening plan, and the reason is the task: the student is describing what changed, not identifying which room is which, so a plan of unnamed letters gives them nothing to write about.
+- The TWO plans must be recognisably the same place: keep the same grid size, and keep at least two areas unchanged in both so the reader has fixed points. Then make 3-5 real changes between them.
+- **At least one area present in the first plan MUST BE GONE from the second** — replaced by something else, or cleared to "" or "path". A pair where every change is a new building added to empty space is the commonest way to get this wrong: it gives the student a list of additions and nothing to contrast, when the report is supposed to say what the place STOPPED being. Write the disappearances first, then the additions.
+- Good changes to mix: an area replaced by a different one on the same cells (a canteen becomes a computer room), an area that grew into its neighbour's cells, an area demolished and left as open ground, and one genuinely new area built on empty space.
+- Both titles must name the same place and differ only in the date or stage.
+- The `question` must say what the plans show and the years, but MUST NOT list the changes — reading them off the plans is the task.
 
 Return ONLY a single JSON object, no markdown, no commentary, exactly this schema:
 {

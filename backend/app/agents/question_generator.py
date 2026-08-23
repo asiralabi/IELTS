@@ -2,6 +2,7 @@ import json
 import logging
 from typing import Any
 
+from app.agents._plan import comparison_error, normalize_plan
 from app.llm.client import get_llm_client
 from app.llm.prompts import QUESTION_GENERATOR_SYSTEM
 from app.rag.retriever import retrieve_context
@@ -45,6 +46,41 @@ def _is_task1_academic(section: str, question_type: str | None) -> bool:
     if "general" in qt or "letter" in qt:
         return False
     return True
+
+
+
+def _task1_figure_problem(result: dict) -> str | None:
+    """What is wrong with a Task 1 Academic figure, or None if it is usable.
+
+    Task 1 is a describing task, so the figure IS the content: a task without
+    one asks the student to summarise nothing. A chart carries its numbers in
+    `visual`; a map carries two plans in `visuals`, because the exam always
+    shows the same place at two times and asks what changed.
+    """
+    plans = result.get("visuals")
+    if plans:
+        problem = comparison_error(plans)
+        if problem:
+            return problem
+        cleaned = [normalize_plan(plan) for plan in plans]
+        if not all(cleaned):
+            return "a Task 1 map plan came back with nothing drawable on its grid"
+        # Normalising can merge a stray duplicate area, so the pair is judged
+        # again on what will actually be drawn rather than on what was sent.
+        after = comparison_error(cleaned)
+        if after:
+            return after
+        result["visuals"] = cleaned
+        result["visual"] = None
+        return None
+
+    if not result.get("visual"):
+        return (
+            "This is Writing Task 1 Academic — it must carry a figure: either the "
+            "top-level `visual` chart object, or `visuals` holding the two plans "
+            "of a map task, as described in the system prompt."
+        )
+    return None
 
 
 def _validate_cue_card(question) -> str | None:
@@ -114,11 +150,10 @@ async def generate(
     # still fails, raise ValueError so the endpoint returns a 502.
     # ------------------------------------------------------------------
     problems: list[str] = []
-    if is_task1_academic and not result.get("visual"):
-        problems.append(
-            "This is Writing Task 1 Academic — the top-level `visual` field must be "
-            "present and non-null, containing the chart schema described in the system prompt."
-        )
+    if is_task1_academic:
+        figure = _task1_figure_problem(result)
+        if figure:
+            problems.append(figure)
     if is_task2:
         t2 = str(result.get("task2_type") or "").strip().lower()
         if t2 not in _TASK2_TYPES:
@@ -152,10 +187,10 @@ async def generate(
             required_keys=("section", "question_type", "question"),
         )
         # Re-check after retry; raise cleanly if still bad.
-        if is_task1_academic and not result.get("visual"):
-            raise ValueError(
-                "Writing Task 1 Academic requires a non-null `visual` chart payload"
-            )
+        if is_task1_academic:
+            figure = _task1_figure_problem(result)
+            if figure:
+                raise ValueError(f"Writing Task 1 Academic: {figure}")
         if is_task2:
             t2 = str(result.get("task2_type") or "").strip().lower()
             if t2 not in _TASK2_TYPES:

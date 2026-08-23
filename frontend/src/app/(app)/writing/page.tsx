@@ -34,7 +34,21 @@ function isVisual(value: unknown): value is Visual {
   if (kind === "chart") {
     return Array.isArray((value as { series?: unknown }).series);
   }
+  if (kind === "plan") {
+    return Array.isArray((value as { grid?: unknown }).grid);
+  }
   return false;
+}
+
+// A Task 1 map is the same place at two times, so it arrives as a pair rather
+// than in `visual`. Anything that is not a usable pair is dropped whole: one
+// plan of a two-plan task has nothing to compare against.
+function isPlanPair(value: unknown): value is Visual[] {
+  return (
+    Array.isArray(value) &&
+    value.length === 2 &&
+    value.every((v) => isVisual(v) && (v as { kind?: unknown }).kind === "plan")
+  );
 }
 
 type Phase = "write" | "marking" | "feedback" | "error";
@@ -49,6 +63,7 @@ export default function WritingPage() {
   const [taskType, setTaskType] = React.useState<TaskType>("task2");
   const [prompt, setPrompt] = React.useState("");
   const [visual, setVisual] = React.useState<Visual | null>(null);
+  const [visuals, setVisuals] = React.useState<Visual[] | null>(null);
   const [essay, setEssay] = React.useState("");
   const [phase, setPhase] = React.useState<Phase>("write");
   const [result, setResult] = React.useState<WritingResult | null>(null);
@@ -70,6 +85,7 @@ export default function WritingPage() {
         if (cancelled) return;
         setPrompt(t.prompt);
         setVisual(t.visual ?? null);
+        setVisuals(isPlanPair(t.visuals) ? t.visuals : null);
         setTaskType(taskNum === 1 ? "task1" : "task2");
       } catch (err) {
         if (cancelled) return;
@@ -114,8 +130,9 @@ export default function WritingPage() {
         (typeof q.prompt === "string" && (q.prompt as string)) ||
         JSON.stringify(q);
       setPrompt(text);
-      const rawVisual = (q as Record<string, unknown>).visual;
-      setVisual(isVisual(rawVisual) ? rawVisual : null);
+      const raw = q as Record<string, unknown>;
+      setVisual(isVisual(raw.visual) ? raw.visual : null);
+      setVisuals(isPlanPair(raw.visuals) ? raw.visuals : null);
       toast.success("New prompt generated!");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not generate a prompt.");
@@ -141,6 +158,7 @@ export default function WritingPage() {
         prompt: prompt.trim(),
         essay: essay.trim(),
         visual: visual,
+        visuals: visuals,
       });
       setResult(res);
       setPhase("feedback");
@@ -171,12 +189,14 @@ export default function WritingPage() {
     setEssay("");
     setSeconds(0);
     setVisual(null);
+    setVisuals(null);
     setPrompt("");
   };
 
   const editPrompt = (next: string) => {
     setPrompt(next);
     if (visual) setVisual(null);
+    if (visuals) setVisuals(null);
   };
 
   const taskNumForNav = taskParam ? Number(taskParam) : null;
@@ -294,7 +314,9 @@ export default function WritingPage() {
               </div>
             )}
 
-            {!focusMode && visual && <Visuals visual={visual} />}
+            {!focusMode && (visual || visuals) && (
+              <Visuals visual={visual ?? undefined} visuals={visuals ?? undefined} />
+            )}
 
             {!focusMode && (
               <Textarea

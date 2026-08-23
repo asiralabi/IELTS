@@ -7,6 +7,7 @@ from functools import partial
 
 from app.agents._marking import mark_answers, mark_full_test
 from app.agents._numbering import renumber, renumber_checked
+from app.agents._plan import normalize_plan
 from app.agents.answerability import (
     MAP_TYPES,
     canon,
@@ -629,166 +630,17 @@ def _clampi(value: float, lo: int, hi: int) -> int:
     return max(lo, min(hi, int(round(value))))
 
 
-_PLAN_MAX_COLS = 12
-_PLAN_MAX_ROWS = 10
-_PLAN_SIDES = ("top", "bottom", "left", "right")
-
-
-def _plan_cell(value: object) -> str:
-    text = str(value or "").strip()
-    if not text:
-        return ""
-    if len(text) == 1 and text.isalpha():
-        return text.upper()
-    if text.lower() == "corridor":
-        return "corridor"
-    return text
-
-
 def _normalize_plan_visual(result: dict) -> None:
-    """Clean a generated floor plan in place so it always renders legibly.
+    """Clean this part's floor plan in place, dropping it if nothing is left.
 
-    The grid says only which room owns which cell, so walls, doors and room
-    shapes are derived downstream and cannot come out overlapping or off-page.
-    What the model still gets wrong is bookkeeping: ragged rows, casing, and
-    above all writing one room in two unconnected places, which leaves the
-    question with two rooms to point at instead of one.
+    The plan itself is shared with Reading and Writing, which draw the same
+    grid with no questions around it; only the "put it back on the set"
+    half belongs here.
     """
     visual = result.get("visual")
     if not isinstance(visual, dict) or visual.get("kind") != "plan":
         return
-
-    rows = [row for row in (visual.get("grid") or []) if isinstance(row, list)]
-    if not rows:
-        result["visual"] = None
-        return
-
-    width = min(_PLAN_MAX_COLS, max((len(row) for row in rows), default=0))
-    grid = [
-        [_plan_cell(row[c] if c < len(row) else "") for c in range(width)]
-        for row in rows[:_PLAN_MAX_ROWS]
-    ]
-    if not width or not any(cell for row in grid for cell in row):
-        result["visual"] = None
-        return
-
-    _split_repeated_rooms(grid)
-    visual["grid"] = grid
-    entrance = _plan_entrance(visual.get("entrance"), grid)
-    if entrance:
-        visual["entrance"] = entrance
-    else:
-        visual.pop("entrance", None)
-
-
-def _split_repeated_rooms(grid: list[list[str]]) -> None:
-    """Leave one region per room name.
-
-    A letter written in two unconnected places gives the question two rooms to
-    point at, so the smaller copy is folded into whatever surrounds it.
-    Corridors are exempt — several separate walkways are a legitimate plan.
-    """
-    rows, cols = len(grid), len(grid[0])
-    seen = [[False] * cols for _ in range(rows)]
-    groups: dict[str, list[list[tuple[int, int]]]] = {}
-    for r in range(rows):
-        for c in range(cols):
-            value = grid[r][c]
-            if seen[r][c] or not value or value == "corridor":
-                continue
-            cells: list[tuple[int, int]] = []
-            stack = [(r, c)]
-            seen[r][c] = True
-            while stack:
-                cr, cc = stack.pop()
-                cells.append((cr, cc))
-                for nr, nc in ((cr - 1, cc), (cr + 1, cc), (cr, cc - 1), (cr, cc + 1)):
-                    if not (0 <= nr < rows and 0 <= nc < cols):
-                        continue
-                    if seen[nr][nc] or grid[nr][nc] != value:
-                        continue
-                    seen[nr][nc] = True
-                    stack.append((nr, nc))
-            groups.setdefault(value, []).append(cells)
-
-    for value, regions in groups.items():
-        if len(regions) < 2:
-            continue
-        regions.sort(key=len, reverse=True)
-        for cells in regions[1:]:
-            replacement = _surrounding_room(grid, cells, value)
-            for r, c in cells:
-                grid[r][c] = replacement
-
-
-def _surrounding_room(
-    grid: list[list[str]], cells: list[tuple[int, int]], exclude: str
-) -> str:
-    """The room the given cells are most enclosed by, so absorbing them keeps
-    the plan solid rather than punching a hole in it."""
-    rows, cols = len(grid), len(grid[0])
-    inside = set(cells)
-    counts: Counter[str] = Counter()
-    for r, c in cells:
-        for nr, nc in ((r - 1, c), (r + 1, c), (r, c - 1), (r, c + 1)):
-            if not (0 <= nr < rows and 0 <= nc < cols) or (nr, nc) in inside:
-                continue
-            neighbour = grid[nr][nc]
-            if neighbour and neighbour != exclude:
-                counts[neighbour] += 1
-    if not counts:
-        return "corridor"
-    return max(sorted(counts), key=lambda name: counts[name])
-
-
-def _plan_edge(grid: list[list[str]], side: str, index: int) -> str:
-    if side == "top":
-        return grid[0][index]
-    if side == "bottom":
-        return grid[-1][index]
-    if side == "left":
-        return grid[index][0]
-    return grid[index][-1]
-
-
-def _plan_entrance(entrance: object, grid: list[list[str]]) -> dict | None:
-    """Put the way in against the walkway.
-
-    An entrance opening straight into a room reads as a mistake on a floor
-    plan — the corridor is what the recording walks the student down — so the
-    stated position is nudged to the nearest corridor before anything else.
-    """
-    rows, cols = len(grid), len(grid[0])
-    data = entrance if isinstance(entrance, dict) else {}
-    side = str(data.get("side") or "").strip().lower()
-    if side not in _PLAN_SIDES:
-        side = "bottom"
-
-    def along(name: str) -> int:
-        return cols if name in ("top", "bottom") else rows
-
-    want = _clampi(_num(data.get("index"), along(side) / 2), 0, along(side) - 1)
-
-    def nearest(name: str, wanted: str | None) -> int | None:
-        order = sorted(range(along(name)), key=lambda i: (abs(i - want), i))
-        for i in order:
-            cell = _plan_edge(grid, name, i)
-            if cell and (wanted is None or cell == wanted):
-                return i
-        return None
-
-    for name in (side, *(s for s in _PLAN_SIDES if s != side)):
-        index = nearest(name, "corridor")
-        if index is not None:
-            side = name
-            break
-    else:
-        index = nearest(side, None)
-        if index is None:
-            return None
-
-    label = str(data.get("label") or "").strip() or "Main entrance"
-    return {"side": side, "index": index, "label": label}
+    result["visual"] = normalize_plan(visual)
 
 
 def _validate_full_test_part(

@@ -2,6 +2,7 @@ from typing import Any
 
 from app.llm.client import get_llm_client
 from app.llm.prompts import WRITING_EXAMINER_SYSTEM
+from app.agents._plan import named_areas
 from app.rag.retriever import retrieve_context
 
 CRITERION_KEYS = (
@@ -81,11 +82,46 @@ def format_chart_data(visual: dict | None) -> str:
     return "\n".join(lines)
 
 
+def format_plan_data(plans: object) -> str:
+    """Render a Task 1 map as plain text: the areas, and what changed.
+
+    The examiner marks Task Achievement against what the student was shown, so
+    it has to be shown the same thing. A grid of cells does not read as prose,
+    and the drawing is not the point anyway — what matters is which areas each
+    plan holds and which of them changed, because that is what the report is
+    supposed to say. Silently returns "" on anything unusable, like its chart
+    sibling above.
+    """
+    if not isinstance(plans, list) or len(plans) != 2:
+        return ""
+    if not all(isinstance(p, dict) and p.get("kind") == "plan" for p in plans):
+        return ""
+
+    lines: list[str] = []
+    sets = []
+    for plan in plans:
+        areas = named_areas(plan)
+        sets.append(set(areas))
+        title = str(plan.get("title") or "").strip() or "plan"
+        lines.append(f"{title}: " + (", ".join(areas) if areas else "(nothing named)"))
+
+    before, after = sets
+    kept = sorted(before & after)
+    gone = sorted(before - after)
+    added = sorted(after - before)
+    lines.append("")
+    lines.append(f"Present in both: {', '.join(kept) if kept else 'nothing'}")
+    lines.append(f"Gone by the second plan: {', '.join(gone) if gone else 'nothing'}")
+    lines.append(f"New in the second plan: {', '.join(added) if added else 'nothing'}")
+    return "\n".join(lines)
+
+
 async def evaluate(
     task_type: str,
     prompt_text: str,
     essay: str,
     visual: dict | None = None,
+    visuals: list | None = None,
 ) -> dict:
     context = retrieve_context(f"IELTS writing {task_type} band descriptors")
     system = WRITING_EXAMINER_SYSTEM.format(
@@ -97,11 +133,19 @@ async def evaluate(
         else "Writing Task 1 (report/letter, 150+ words expected)"
     )
     chart_block = format_chart_data(visual)
+    plan_block = format_plan_data(visuals)
     parts = [f"Task type: {task_label}", "", f"Task prompt:\n{prompt_text}"]
     if chart_block:
         parts.append("")
         parts.append("CHART DATA (the exact figures shown to the student):")
         parts.append(chart_block)
+    if plan_block:
+        parts.append("")
+        parts.append(
+            "MAP DATA (the two plans shown to the student, and what changed "
+            "between them):"
+        )
+        parts.append(plan_block)
     parts.append("")
     parts.append(f"Candidate response:\n{essay}")
     user_msg = "\n".join(parts)

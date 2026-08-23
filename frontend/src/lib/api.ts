@@ -218,6 +218,7 @@ export const api = {
     prompt: string;
     essay: string;
     visual?: Visual | null;
+    visuals?: Visual[] | null;
   }) =>
     request<WritingResult>("/writing/submit", { method: "POST", body: payload, slow: true }),
   writingHistory: () => request<WritingHistoryItem[]>("/writing/history"),

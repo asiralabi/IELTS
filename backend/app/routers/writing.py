@@ -27,12 +27,16 @@ class WritingSubmitRequest(BaseModel):
     prompt: str
     essay: str = Field(min_length=50)
     visual: dict[str, Any] | None = None
+    # A Task 1 map is two plans of one place, so it arrives as a list rather
+    # than in `visual`. Both are carried: a chart task still sends `visual`.
+    visuals: list[dict[str, Any]] | None = None
 
 
 class WritingTaskAnswer(BaseModel):
     prompt: str
     essay: str = Field(min_length=50)
     visual: dict[str, Any] | None = None
+    visuals: list[dict[str, Any]] | None = None
 
 
 class WritingFullTestRequest(BaseModel):
@@ -48,7 +52,11 @@ async def submit_essay(
 ) -> dict:
     try:
         result = await writing_examiner.evaluate(
-            payload.task_type, payload.prompt, payload.essay, payload.visual
+            payload.task_type,
+            payload.prompt,
+            payload.essay,
+            payload.visual,
+            payload.visuals,
         )
     except ValueError:
         raise HTTPException(status_code=502, detail="LLM returned invalid output")
@@ -58,6 +66,8 @@ async def submit_essay(
         # exact chart that was graded — the model column is a JSON blob so no
         # schema migration is needed.
         result = {**result, "visual": payload.visual}
+    if payload.visuals is not None:
+        result = {**result, "visuals": payload.visuals}
 
     submission = WritingSubmission(
         user_id=user.id,
@@ -135,7 +145,9 @@ async def submit_full_test(
     try:
         outcomes = await asyncio.gather(
             *(
-                writing_examiner.evaluate(key, a.prompt, a.essay, a.visual)
+                writing_examiner.evaluate(
+                    key, a.prompt, a.essay, a.visual, a.visuals
+                )
                 for key, a in answered
             )
         )
@@ -146,6 +158,8 @@ async def submit_full_test(
     for (key, answer), result in zip(answered, outcomes):
         if answer.visual is not None:
             result = {**result, "visual": answer.visual}
+        if answer.visuals is not None:
+            result = {**result, "visuals": answer.visuals}
         submission = WritingSubmission(
             user_id=user.id,
             task_type=key,
