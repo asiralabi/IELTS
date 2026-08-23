@@ -9,11 +9,13 @@ from app.agents._marking import mark_answers, mark_full_test
 from app.agents._numbering import renumber
 from app.agents.answerability import (
     GAP_FILL_TYPES,
+    GAP_MARKER,
     canon,
     cross_section_error,
     dangling_structure_error,
     qtype,
     self_answering_error,
+    visual_slots,
     word_limit_error,
 )
 from app.llm.client import gather_llm, get_llm_client
@@ -511,6 +513,52 @@ async def _write_notgiven(passage: str, used: list[str]) -> str | None:
     return str(reply.get("statement") or "").strip() or None
 
 
+def _blank_self_answering_cells(result: dict) -> list[tuple[str, str]]:
+    """Rub out a grid cell that prints the very label its gap asks for.
+
+    A diagram plan draws the parts and leaves `__n__` where the student writes
+    one in. The teacher's habit is to print that part's name in a second cell
+    as well, so the answer to "the part that supports the fabric" is legible on
+    the figure beside the gap and the question tests nothing. This is the same
+    self-answering shape `unlettered_map_error` refuses on the listening plan,
+    but it cannot be refused here: three raw hosted samples did it three times
+    out of three, so a hard check would make the path ungeneratable.
+
+    Deterministic and local — the duplicate is blanked, never the gap, and the
+    grids are sparse enough that a hole reads as unlabelled rather than broken.
+    Returns the (question number, erased label) pairs for the caller to log.
+    """
+    visual = result.get("visual")
+    if not isinstance(visual, dict) or str(visual.get("kind", "")).lower() != "plan":
+        return []
+    grid = visual.get("grid")
+    if not isinstance(grid, list):
+        return []
+
+    printed: dict[str, list[tuple[int, int]]] = {}
+    for r, row in enumerate(grid):
+        if not isinstance(row, list):
+            continue
+        for c, cell in enumerate(row):
+            if not isinstance(cell, str) or GAP_MARKER.search(cell):
+                continue
+            words = _span_tokens(cell)
+            if words:
+                printed.setdefault(" ".join(words), []).append((r, c))
+
+    answer_key = result.get("answer_key") or {}
+    erased: list[tuple[str, str]] = []
+    for number in sorted(visual_slots(visual), key=lambda n: int(n)):
+        answer = str(answer_key.get(number) or "").strip()
+        words = _span_tokens(answer)
+        if not words:
+            continue
+        for r, c in printed.get(" ".join(words), []):
+            grid[r][c] = ""
+            erased.append((number, answer))
+    return erased
+
+
 async def _repair_missing_notgiven(result: dict) -> None:
     """Give a NOT-GIVEN-less true/false block a real NOT GIVEN.
 
@@ -639,6 +687,9 @@ async def create_practice(
     # After the rebuild, so a statement is not written against a question the
     # rebuild is about to replace.
     await _repair_missing_notgiven(result)
+    # Last, because the passage expansion above can key a gap to wording the
+    # grid also prints, and this erases the duplicate rather than the gap.
+    _blank_self_answering_cells(result)
     # Both rules were skipped on the way in on the promise that they would be
     # satisfied here. Nothing else can fail this, so a complaint means a repair
     # did not take and the set must not reach a student.
