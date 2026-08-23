@@ -6,7 +6,7 @@ from collections import Counter
 from functools import partial
 
 from app.agents._marking import mark_answers, mark_full_test
-from app.agents._numbering import renumber
+from app.agents._numbering import renumber, renumber_checked
 from app.agents.answerability import (
     MAP_TYPES,
     canon,
@@ -874,7 +874,10 @@ async def create_part(
         if expanded and len(expanded.split()) > len(script.split()):
             result["audio_script"] = expanded
 
-    _renumber(result, (part_number - 1) * 10)
+    # Checked: the only step a part takes after the gate above, and the one
+    # that shipped a reading diagram numbered against the wrong questions.
+    renumber_checked(result, (part_number - 1) * 10,
+                     _validate_full_test_part)
     _normalize_plan_visual(result)
     result["part"] = part_number
     return result

@@ -33,6 +33,36 @@ def _relabel(text: str, old: str, new: str) -> str:
     )
 
 
+# Question numbers appear inside the validators' own complaints, so a
+# before/after comparison has to mask them: the same objection about a
+# different number is the same objection.
+_DIGITS = re.compile(r"\d+")
+
+
+def renumber_checked(result: dict, offset: int, validate) -> dict:
+    """Renumber, and refuse a set the renumbering itself broke.
+
+    A part is validated where it is generated and renumbered somewhere else, so
+    until now nothing checked the result of the move. That is exactly how a
+    `plan` grid left at local numbering reached a live paper: every passage had
+    passed at full strictness, and the only step after that gate was the one
+    that broke them. Re-running the section's own validator afterwards closes
+    the whole class, not just the grid.
+
+    Differential on purpose. The baseline is taken immediately before the move,
+    so a complaint the set already carried is never blamed on renumbering and
+    a paper is never discarded for a reason that predates it.
+    """
+    before = validate(result)
+    renumber(result, offset)
+    after = validate(result)
+    if after and _DIGITS.sub("#", after) != _DIGITS.sub("#", before or ""):
+        raise ValueError(
+            f"renumbering to offset {offset} broke this set: {after}"
+        )
+    return result
+
+
 def renumber(result: dict, offset: int) -> dict:
     """Shift one part's questions to global numbering, in place.
 

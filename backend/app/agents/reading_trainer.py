@@ -6,7 +6,7 @@ from collections import Counter
 from functools import partial
 
 from app.agents._marking import mark_answers, mark_full_test
-from app.agents._numbering import renumber
+from app.agents._numbering import renumber_checked
 from app.agents.answerability import (
     GAP_FILL_TYPES,
     GAP_MARKER,
@@ -992,7 +992,9 @@ async def create_full_test(difficulty: str | None = None) -> dict:
     # passage 1 has said how long it is.
     offset = 0
     for number, passage in enumerate(passages, start=1):
-        renumber(passage, offset)
+        # Checked, because this is the only step a passage takes after the gate
+        # in create_practice — anything wrong here would otherwise ship.
+        renumber_checked(passage, offset, validate_practice)
         offset += len(passage.get("questions") or [])
         passage["passage_number"] = number
 
