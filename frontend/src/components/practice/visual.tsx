@@ -1,5 +1,6 @@
 "use client";
 
+import { Fragment } from "react";
 import type { ReactNode } from "react";
 import { API_URL } from "@/lib/api";
 import type {
@@ -1278,6 +1279,14 @@ function PieChart({ visual }: { visual: VisualChart }) {
 const BLANK_RE = /^__(\d+)__$/;
 
 function ChartTable({ visual }: { visual: VisualChart }) {
+  // A real IELTS form groups its own field/value pairs under headings —
+  // "Membership Details: type, fee, facilities" then "Personal Details: name,
+  // address, phone" — so each row carries DIFFERENT column headers. Rendered
+  // as a grid keyed on the first row's headers, every later row matches
+  // nothing and its cells vanish: one live paper hid Q4-Q8 of Part 1 that way,
+  // leaving five questions with no box to write in.
+  if (isFormShaped(visual)) return <ChartFormTable visual={visual} />;
+
   let headers = deriveHeaders(visual);
   let cornerLabel = "";
   // The model often emits the row category as BOTH the row name and the first
@@ -1321,6 +1330,68 @@ function ChartTable({ visual }: { visual: VisualChart }) {
                 );
               })}
             </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// True when the rows do not agree on their columns, i.e. some row names a
+// header the first row never mentions. A grid cannot show that without
+// dropping cells; a field/value list shows all of it.
+function isFormShaped(visual: VisualChart): boolean {
+  const rows = visual.series ?? [];
+  if (rows.length < 2) return false;
+  const headersOf = (row: VisualChartSeries) =>
+    row.data
+      .filter((p): p is [string, number] => Array.isArray(p))
+      .map((p) => String(p[0]));
+  const first = new Set(headersOf(rows[0]));
+  if (first.size === 0) return false;
+  return rows
+    .slice(1)
+    .some((row) => headersOf(row).some((h) => !first.has(h)));
+}
+
+// Each row becomes a heading followed by its own field/value lines, which is
+// how the exam prints a form. Nothing is looked up across rows, so no gap can
+// be dropped for failing to match another row's column.
+function ChartFormTable({ visual }: { visual: VisualChart }) {
+  const [fieldLabel, valueLabel] = (visual.x_label ?? "Field, Value")
+    .split(",")
+    .map((s) => s.trim());
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-left text-xs">
+        <thead className="text-muted-foreground">
+          <tr>
+            <th className="px-2 py-1.5 font-medium">{fieldLabel || "Field"}</th>
+            <th className="px-2 py-1.5">{valueLabel || "Value"}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {(visual.series ?? []).map((row, ri) => (
+            <Fragment key={ri}>
+              <tr className="border-t border-border/60">
+                <td
+                  colSpan={2}
+                  className="px-2 pb-1 pt-2.5 font-semibold text-foreground"
+                >
+                  {row.name}
+                </td>
+              </tr>
+              {row.data
+                .filter((p): p is [string, number] => Array.isArray(p))
+                .map((point, pi) => (
+                  <tr key={`${ri}-${pi}`}>
+                    <td className="px-2 py-1.5 pl-5">{String(point[0])}</td>
+                    <td className="px-2 py-1.5 tabular-nums">
+                      {renderCell(point[1])}
+                    </td>
+                  </tr>
+                ))}
+            </Fragment>
           ))}
         </tbody>
       </table>
