@@ -7,6 +7,7 @@ import type {
   Visual,
   VisualChart,
   VisualChartSeries,
+  VisualFlow,
   VisualMap,
   VisualPlan,
 } from "@/lib/types";
@@ -73,7 +74,107 @@ export function VisualBlock({
   if (visual.kind === "map") {
     return <MapBlock visual={visual} className={className} />;
   }
+  if (visual.kind === "flow") {
+    return <FlowBlock visual={visual} className={className} />;
+  }
   return <ChartBlock visual={visual} className={className} />;
+}
+
+// ---------------------------------------------------------------------------
+// Flow chart renderer — the payload carries only the ORDER of the stages, so
+// the boxes and the arrows between them are derived here. That is the same
+// bargain the floor plan strikes with its grid: a chart cannot come back with
+// a box pointing at nothing, because nothing in the payload points at all.
+//
+// Laid out in HTML rather than SVG on purpose. A step is a sentence of
+// unpredictable length and the exam prints it wrapped inside its box; SVG
+// would need the wrapping measured by hand, which is what `wrapPlanText` does
+// for the plan's two-word room names and would not survive a full clause.
+
+// A gap the student writes into, mid-sentence, as the trainers emit it.
+const FLOW_GAP_RE = /__(\d+)__/g;
+
+function FlowBlock({
+  visual,
+  className,
+}: {
+  visual: VisualFlow;
+  className?: string;
+}) {
+  const steps = (Array.isArray(visual.steps) ? visual.steps : [])
+    .map((step) => (typeof step === "string" ? step.trim() : ""))
+    .filter(Boolean);
+  if (steps.length === 0) return null;
+
+  return (
+    <figure
+      className={cn("glass rounded-[20px] p-4 shadow-soft", className)}
+      aria-label={`Flow chart: ${visual.title}`}
+    >
+      {visual.title && (
+        <figcaption className="mb-3 text-sm font-medium">
+          {visual.title}
+        </figcaption>
+      )}
+      {/* An ordered list, because that is what a flow chart is — the stages in
+          sequence — and it reads that way to a screen reader too. The arrow
+          lives inside its own <li> rather than between them: an <ol> may only
+          hold <li>, and a bare <div> there is invalid even though browsers
+          tolerate it. */}
+      <ol className="mx-auto flex max-w-[460px] flex-col items-stretch">
+        {steps.map((step, i) => (
+          <li key={i}>
+            {i > 0 && <FlowArrow />}
+            <div className="rounded-xl border border-border/70 bg-muted/40 px-3 py-2 text-center text-xs leading-relaxed">
+              {flowStepContent(step)}
+            </div>
+          </li>
+        ))}
+      </ol>
+    </figure>
+  );
+}
+
+function FlowArrow() {
+  return (
+    <div aria-hidden className="flex justify-center py-1 text-muted-foreground">
+      <svg width="12" height="18" viewBox="0 0 12 18" role="presentation">
+        <line
+          x1="6"
+          y1="0"
+          x2="6"
+          y2="12"
+          stroke="currentColor"
+          strokeWidth="1.5"
+        />
+        <path d="M6 18 L1.5 11 L10.5 11 Z" fill="currentColor" />
+      </svg>
+    </div>
+  );
+}
+
+// The gap is printed the way the plan prints its numbered parts — the number,
+// then a run of dots — so a student meets the same mark on both figures.
+function flowStepContent(step: string): ReactNode {
+  const parts: ReactNode[] = [];
+  let last = 0;
+  FLOW_GAP_RE.lastIndex = 0;
+  let match = FLOW_GAP_RE.exec(step);
+  while (match !== null) {
+    if (match.index > last) parts.push(step.slice(last, match.index));
+    parts.push(
+      <span
+        key={`${match.index}-${match[1]}`}
+        className="mx-0.5 whitespace-nowrap font-semibold text-foreground"
+      >
+        {match[1]} {"·".repeat(8)}
+      </span>
+    );
+    last = match.index + match[0].length;
+    match = FLOW_GAP_RE.exec(step);
+  }
+  if (last < step.length) parts.push(step.slice(last));
+  return parts.length > 0 ? parts : step;
 }
 
 // ---------------------------------------------------------------------------

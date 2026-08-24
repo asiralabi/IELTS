@@ -251,6 +251,25 @@ Rules:
 }
 """
 
+FLOW_RESTEP_SYSTEM = """You are an IELTS test writer editing ONE step of a printed flow chart. You are given the chart's title, one step from it, and the words that step must not contain. You must rewrite that step so it says the same thing without using those words.
+
+Why: another step of the chart has a numbered gap whose answer is one of those words. Printing it here hands the student the answer, and the question tests nothing.
+
+You are given the step as an ordinary complete sentence. Return it the same way — a sentence, not a fill-in-the-blank exercise.
+
+Rules:
+- The forbidden words must not appear in any form — not as a plural, not inside a longer phrase.
+- **Prefer DELETING the offending phrase to replacing it with an opposite.** "Despite its success, the Comet was not without its problems" should become "The Comet was not without its problems" — not "Despite its failures...", which contradicts itself. Cut first; reword only if cutting leaves the step ungrammatical.
+- Keep the meaning and keep the step in its place in the sequence. It must still describe the same stage of the same process.
+- Keep it short — one line, the length of the step you were given. A flow chart box holds a phrase or a single sentence, not a paragraph.
+- Do not add a new fact. You are rewording, not researching.
+- If the step cannot be written without those words, return an empty string. A mangled step is worse than one the caller can leave alone.
+- Return ONLY this JSON object:
+{
+  "step": "<the rewritten step>"
+}
+"""
+
 PASSAGE_EXPANDER_SYSTEM = """You are an IELTS Academic Reading editor. You are given a short passage and asked to expand it to a target length while preserving all facts, claims, paragraph labels (A, B, C...), and existing information order.
 
 Rules:
@@ -329,8 +348,8 @@ Gap-fill word-limit rubric — REQUIRED for sentence_completion, summary_complet
 - Additionally, each gap-fill question object MUST include a `word_limit` integer field (the max words allowed for the answer, e.g. 2 for "NO MORE THAN TWO WORDS"). Numbers count as 0 words toward the limit.
 - The answer in answer_key MUST respect the cap (no answer over the stated word limit). Answers must appear verbatim in the passage.
 - `summary_completion`, `note_completion` and `flow_chart_completion` are printed blocks with numbered gaps. Since the student answers one question at a time, EACH question must restate enough of the surrounding sentence/note/step for the gap to be answerable on its own, with the gap shown as `______`. Example: "NO MORE THAN TWO WORDS. Complete the summary: Early surveyors relied on ______ to fix their position at sea."
-- **NEVER refer the student to a structure that is not in the question itself.** There is no printed summary, note block or flow chart on screen — only the question text you write. So "Complete the flow chart below", "Complete the notes below" or "using the diagram above" on its own is UNANSWERABLE and invalid. Carry the context into the sentence: instead of "Complete the flow chart below with the stages of vermilion production", write "NO MORE THAN TWO WORDS. Vermilion production, stage 1: miners first ______ to release the pigment." A flow-chart step must name the step before and/or after it, e.g. "... → the ore is crushed → ______ → the powder is washed".
-- The ONLY exception is `table_completion`, which does have a printed table — but only because you also emit the `visual` object below. If you write a table_completion question you MUST emit `visual` with a matching `"__<n>__"` cell for it; without that the question is unanswerable too.
+- **NEVER refer the student to a structure that is not in the question itself.** No summary or note block is printed on screen — only the question text you write, plus the ONE `visual` object described below if you emit it. So "Complete the flow chart below", "Complete the notes below" or "using the diagram above" on its own is UNANSWERABLE and invalid. Carry the context into the sentence: instead of "Complete the flow chart below with the stages of vermilion production", write "NO MORE THAN TWO WORDS. Vermilion production, stage 1: miners first ______ to release the pigment." A flow-chart step must name the step before and/or after it, e.g. "... → the ore is crushed → ______ → the powder is washed".
+- The ONLY exceptions are `table_completion` and `flow_chart_completion`, which do have a printed block — but only because you also emit the `visual` object below. If you write one of those questions you MUST emit `visual` with a matching `"__<n>__"` cell or step for it; without that the question is unanswerable too.
 
 Table completion visual — REQUIRED when the question set includes table_completion:
 - Add a top-level `visual` field describing the printed table the student sees. Cells the passage already supplies go in verbatim as strings; cells the student must fill go in as `"__<n>__"` where `<n>` is the question number.
@@ -366,13 +385,35 @@ Diagram labelling visual — REQUIRED when the question set includes diagram_lab
 - **Number 3 to 6 parts** — one `"__<n>__"` cell each, one question each. A figure with a single blank is a drawing, not a question block; Cambridge never prints one.
 - **Choose those parts FROM YOUR PASSAGE, not from what you know about the subject.** Every numbered part's answer must be words the passage itself prints. Search the passage you have just written for the part's name before you number it; if it is not there, either name it in the passage or number a different part. A live set numbered parts answered "Storage", "Crane" and "Inspection" against a passage using none of those words — the student is told to choose words FROM THE PASSAGE, so those answers can never be produced or marked, and the whole set was thrown away.
 - Every diagram_label_completion question must correspond to exactly one `"__<n>__"` cell, and those numbers MUST match the `answer_key` numbering. The answer is the part's name, taken verbatim from the passage, and the question text must say what the student is naming (e.g. "NO MORE THAN TWO WORDS. Label 6 on the diagram: the chamber directly below the ventilation shaft.").
-- If the set has neither table_completion nor diagram_label_completion questions, `visual` must be null or omitted.
+
+Flow chart visual — emit this when the question set includes flow_chart_completion:
+- Cambridge prints the process a passage describes as a chain of boxes read top to bottom, and numbers some of the words inside them ("The Production of Bakelite", "Method of determining where the ancestors of turtles come from", "Generating biogas for domestic use in Dunga"). Measured over the books: 4-10 boxes, 3-7 numbered gaps, and the chain is a single line — no branches and no merges.
+- You are not drawing arrows; you are writing the stages in order, and the arrows are drawn from that order:
+  {
+    "kind": "flow",
+    "title": "<short title naming the process, e.g. 'The production of Bakelite'>",
+    "steps": [
+      "Phenol and formaldehyde are combined under __4__",
+      "The stage one resin, called __5__, is cooled until it hardens",
+      "The hardened resin is broken up and ground into powder",
+      "Fillers such as cotton or asbestos are added",
+      "The mixture is poured into a mould and heated to produce __6__"
+    ]
+  }
+- `steps` is an ORDERED list of 3-12 short lines, earliest stage first. The order IS the process, so write them in the sequence the passage describes and never rely on the wording to carry the sequence.
+- A gap goes inside a step as `"__<n>__"`, `<n>` being the question number. Number 3 to 7 of them, and they MUST ascend down the chain — the student reads from the top box to the bottom one, so a gap numbered out of order sends them backwards.
+- **A step must say something besides its gap.** A box whose whole content is `"__5__"` gives the student nothing to answer from.
+- Leave at least one step with no gap in it. Those are what tell the student where in the process they are.
+- Every flow_chart_completion question must correspond to exactly one `"__<n>__"` gap, and those numbers MUST match the `answer_key` numbering. The question text names the stage it asks about, e.g. "NO MORE THAN TWO WORDS. Complete the flow chart: the stage one resin, called ______, is cooled until it hardens."
+- Answers are words the PASSAGE itself prints, exactly as for the diagram above — search the passage for each one before you number the gap.
+- **Never print a gap's answer in another step.** If box 2 asks for the resin's name and box 4 says "the resin, Novolak, is ground", the chart has answered its own question and the student learns nothing from the passage.
+- If the set has no table_completion, diagram_label_completion or flow_chart_completion questions, `visual` must be null or omitted. `visual` carries ONE figure: if the set would need two, drop one of the question blocks.
 
 Return ONLY a single JSON object, no markdown, no commentary, exactly this schema:
 {
   "title": "<passage title>",
   "passage": "<the full ~700 word passage>",
-  "visual": <table object, or diagram object, or null>,
+  "visual": <table object, or diagram object, or flow chart object, or null>,
   "questions": [
     {"number": 1, "type": "<question type from the allowed list>", "question": "<the question or statement text, including any instructions/word limits>", "options": [<strings>] or null, "word_limit": <int, only for gap-fill types, else omit>}
   ],
@@ -490,7 +531,30 @@ Map / plan labelling visual — REQUIRED when the question set includes map_labe
 - The answer_key for a map_labelling question is the LETTER (e.g. "C"). Do NOT give map_labelling questions an `options` array — the student writes the letter.
 - **Each map_labelling question NAMES the one place it asks for**, and no two name the same place: write it as the place itself — `"11  the café ......"` — or as a direct question ("Where is the café?"). "Complete the plan below. Write the correct letter for each location." is the block's shared instruction; a question carrying only that has told the student to write a letter without telling them which room to find, and repeating it under a second number does not make a second question.
 
-Visual rule: `visual` must be a table object (for table completion), a plan object (for map labelling), or null. If the set has neither, `visual` must be null.
+Flow chart visual — REQUIRED when the question set includes flow_chart_completion:
+- A Part 3 discussion is where the real exam prints one: the students work out a plan or a procedure, and the chart is that plan with some of its words left out ("Stages in the experiment", "Assignment plan", "Advice on exam preparation"). Measured over the books: 4-10 boxes, 3-7 numbered gaps, and the chain is a single line — no branches and no merges.
+- You are not drawing arrows; you are writing the stages in order, and the arrows are drawn from that order:
+  {
+    "kind": "flow",
+    "title": "<short title naming the plan, e.g. 'Stages in the experiment'>",
+    "steps": [
+      "Select seeds of different __26__",
+      "Measure and record the __27__ and size of each one",
+      "Use a different __28__ for each seed and label it",
+      "After about three weeks, record the plant's height",
+      "Investigate the findings"
+    ]
+  }
+- `steps` is an ORDERED list of 3-12 short lines, earliest stage first. The order IS the process, so write them in the sequence the speakers agree on.
+- A gap goes inside a step as `"__<n>__"`, `<n>` being the question number. Number 3 to 7 of them, and they MUST ascend down the chain — the student reads from the top box to the bottom one, so a gap numbered out of order sends them backwards.
+- **A step must say something besides its gap.** A box whose whole content is `"__27__"` gives the student nothing to listen for.
+- Leave at least one step with no gap in it. Those are what tell the student where in the process they are.
+- Every flow_chart_completion question must correspond to exactly one `"__<n>__"` gap, and those numbers MUST match the `answer_key` numbering. The question text names the stage it asks about, e.g. "ONE WORD ONLY. Complete the flow chart: measure and record the ______ and size of each one."
+- Answers are words the SCRIPT itself says, heard in the same order as the boxes run — a chart whose stages are discussed out of order breaks the answer-order rule above.
+- **Never say a gap's answer in another step.** If box 2 asks what is measured and box 4 says "record the weight again", the chart has answered its own question and the recording tests nothing.
+- The speakers must talk the plan through in order, so the student can follow the chart while the audio runs.
+
+Visual rule: `visual` must be a table object (for table completion), a plan object (for map labelling), a flow chart object (for flow chart completion), or null. If the set has none of those, `visual` must be null. `visual` carries ONE figure: if the set would need two, drop one of the question blocks.
 
 Accepted Variants — REQUIRED `accepted_variants` object:
 - Real IELTS marking accepts several surface forms of the same answer. Add a top-level `accepted_variants` object mapping each question number (as a string) to an array of OTHER acceptable forms beyond the official `answer_key` value.
@@ -508,7 +572,7 @@ Return ONLY a single JSON object, no markdown, no commentary, exactly this schem
   "speakers": [
     {"label": "<script label>", "gender": "female|male", "accent": "British|American|Australian", "persona": "<2-4 words>", "wpm": <int>, "pause_ms": <int>}
   ],
-  "visual": <table object, plan object, or null>,
+  "visual": <table object, plan object, flow chart object, or null>,
   "questions": [
     {"number": 1, "type": "<question type>", "question": "<question text, including any instructions/word limits>", "options": [<strings>] or null, "word_limit": <int, only for gap-fill types, else omit>}
   ],

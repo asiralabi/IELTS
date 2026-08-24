@@ -4,7 +4,7 @@ which cell — so these cover the bookkeeping the renderer cannot fix for itself
 
 from app.agents.answerability import unlettered_map_error, unnamed_place_error
 from app.agents import reading_trainer
-from app.agents.listening_trainer import _normalize_plan_visual
+from app.agents.listening_trainer import _normalize_figure
 
 
 def _plan(**overrides):
@@ -26,7 +26,7 @@ def test_a_ragged_grid_is_squared_off():
     """Rows of different lengths would leave the building with a torn edge."""
     result = _plan(grid=[["A", "A", "corridor"], ["B"], ["C", "C"]])
 
-    _normalize_plan_visual(result)
+    _normalize_figure(result)
 
     assert [len(row) for row in result["visual"]["grid"]] == [3, 3, 3]
     assert result["visual"]["grid"][1] == ["B", "", ""]
@@ -37,7 +37,7 @@ def test_room_letters_are_upper_cased():
     the letter the student writes matching no room on the plan."""
     result = _plan(grid=[["a", "a", "corridor", "b"]])
 
-    _normalize_plan_visual(result)
+    _normalize_figure(result)
 
     assert result["visual"]["grid"][0] == ["A", "A", "corridor", "B"]
 
@@ -50,7 +50,7 @@ def test_a_room_written_in_two_places_is_absorbed_into_its_surroundings():
         ["Cafe", "Cafe", "Cafe", "A"],
     ])
 
-    _normalize_plan_visual(result)
+    _normalize_figure(result)
 
     grid = result["visual"]["grid"]
     assert grid[2][3] == "Cafe"
@@ -65,7 +65,7 @@ def test_separate_corridors_are_left_alone():
         ["Hall", "Hall", "Hall", "Hall"],
     ])
 
-    _normalize_plan_visual(result)
+    _normalize_figure(result)
 
     grid = result["visual"]["grid"]
     assert grid[0] == ["corridor", "A", "A", "corridor"]
@@ -81,7 +81,7 @@ def test_the_entrance_slides_along_to_the_nearest_corridor():
         entrance={"side": "top", "index": 0, "label": "Way in"},
     )
 
-    _normalize_plan_visual(result)
+    _normalize_figure(result)
 
     assert result["visual"]["entrance"] == {
         "side": "top",
@@ -100,7 +100,7 @@ def test_an_entrance_on_a_side_with_no_corridor_moves_to_one_that_has():
         entrance={"side": "top", "index": 2},
     )
 
-    _normalize_plan_visual(result)
+    _normalize_figure(result)
 
     entrance = result["visual"]["entrance"]
     assert entrance["side"] in ("left", "right")
@@ -111,7 +111,7 @@ def test_an_empty_grid_drops_the_visual():
     """A plan with nothing on it renders as an empty box; better to show none."""
     result = _plan(grid=[["", ""], ["", ""]])
 
-    _normalize_plan_visual(result)
+    _normalize_figure(result)
 
     assert result["visual"] is None
 
@@ -119,7 +119,7 @@ def test_an_empty_grid_drops_the_visual():
 def test_a_visual_that_is_not_a_plan_is_untouched():
     result = {"visual": {"kind": "chart", "chart_type": "table", "series": []}}
 
-    _normalize_plan_visual(result)
+    _normalize_figure(result)
 
     assert result["visual"]["kind"] == "chart"
 

@@ -138,7 +138,25 @@ export interface VisualPlan {
   entrance?: { side: "top" | "bottom" | "left" | "right"; index?: number; label?: string };
 }
 
-export type Visual = VisualImage | VisualChart | VisualMap | VisualPlan;
+/** A flow chart given as an ordered list of steps rather than boxes and arrows.
+ *
+ * The steps ARE the process: the renderer draws one box per step, top to
+ * bottom, and an arrow between each pair, so a chart can never come back with
+ * a box pointing at nothing. A step may carry `__<n>__` where question N's
+ * answer goes, which renders as the numbered gap the exam prints.
+ */
+export interface VisualFlow {
+  kind: "flow";
+  title: string;
+  steps: string[];
+}
+
+export type Visual =
+  | VisualImage
+  | VisualChart
+  | VisualMap
+  | VisualPlan
+  | VisualFlow;
 
 export interface PracticeQuestion {
   id?: string;

@@ -13,6 +13,11 @@ returned.
 
 import re
 
+# The mid-sentence gap a flow chart puts in a step. Imported rather than
+# restated so the renumbering and the validator can never disagree about what
+# counts as a gap.
+from app.agents._flow import FLOW_GAP_RE
+
 # A table cell the student writes into, as the trainers emit it.
 BLANK_RE = re.compile(r"^__(\d+)__$")
 
@@ -125,4 +130,19 @@ def renumber(result: dict, offset: int) -> dict:
                 if m:
                     old_n = m.group(1)
                     row[i] = f"__{mapping.get(old_n, old_n)}__"
+
+        # A flow chart's gaps sit inside a sentence rather than owning a whole
+        # cell, so they are substituted in place instead of matched from the
+        # start. Same failure if missed as the grid had: the chain would number
+        # its boxes 1, 2, 3 beside questions 14, 15, 16.
+        steps = visual.get("steps")
+        if isinstance(steps, list):
+            visual["steps"] = [
+                FLOW_GAP_RE.sub(
+                    lambda m: f"__{mapping.get(m.group(1), m.group(1))}__",
+                    str(step),
+                )
+                if isinstance(step, str) else step
+                for step in steps
+            ]
     return result

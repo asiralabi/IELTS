@@ -94,6 +94,26 @@ def test_finetune_is_not_grounded(capture, name):
     assert "band descriptor snippet" not in turn
 
 
+def test_a_full_test_part_reaches_the_flow_chart_repair(capture, monkeypatch):
+    """Part 3 is the one that always carries a chart, and a part is renumbered
+    on the way out — so the repair has to run on the numbers the student will
+    see, not the local ones the model wrote. A guard nothing calls is a guard
+    that does not exist."""
+    capture(is_finetune=False)
+    ran = []
+
+    async def spy(result):
+        ran.append(result)
+        return []
+
+    monkeypatch.setattr(listening_trainer, "repair_self_answering_steps", spy)
+
+    asyncio.run(listening_trainer.create_part(3, topic="a research project"))
+
+    assert ran, "create_part never reached the flow chart repair"
+    assert [str(q.get("number")) for q in ran[0]["questions"]][0] == "21"
+
+
 @pytest.mark.parametrize("name", list(CALLS), ids=list(CALLS))
 def test_general_model_keeps_its_grounding(capture, name):
     """Distillation pins the hosted teacher, which was never fine-tuned — it
@@ -178,8 +198,8 @@ class TestFigureWorkBypassesTheCheckpoint:
 
     @pytest.mark.parametrize(
         "part_number, bypasses",
-        [(1, True), (2, True), (3, False), (4, False)],
-        ids=["part 1 table", "part 2 plan", "part 3 none", "part 4 none"],
+        [(1, True), (2, True), (3, True), (4, False)],
+        ids=["part 1 table", "part 2 plan", "part 3 flow chart", "part 4 none"],
     )
     def test_only_the_listening_parts_carrying_a_figure_bypass_it(
         self, requested, part_number, bypasses
@@ -193,10 +213,11 @@ class TestFigureWorkBypassesTheCheckpoint:
         [
             (["map_labelling"], True),
             (["Map Labelling", "multiple_choice"], True),
+            (["flow_chart_completion"], True),
             (["form_completion", "short_answer"], False),
             (None, False),
         ],
-        ids=["map", "display spelling", "prose only", "unsteered"],
+        ids=["map", "display spelling", "flow chart", "prose only", "unsteered"],
     )
     def test_a_listening_set_bypasses_it_only_when_steered_to_a_plan(
         self, requested, question_types, bypasses
@@ -252,7 +273,9 @@ class TestFigureWorkBypassesTheCheckpoint:
 
         result = asyncio.run(listening_trainer.create_full_test())
 
-        assert sorted(asked) == [(False, [3, 4]), (True, [1, 2])]
+        # Part 3 joined the hosted half when its flow chart landed, leaving
+        # part 4 the only one the checkpoint still writes.
+        assert sorted(asked) == [(False, [4]), (True, [1, 2, 3])]
         assert [p["part"] for p in result["parts"]] == [1, 2, 3, 4]
 
     def test_a_paper_lets_its_diagram_passage_run_beside_the_others(
@@ -302,17 +325,34 @@ class TestFigureWorkBypassesTheCheckpoint:
         assert 3 in finished and 4 in finished
 
     def test_the_papers_figure_passage_is_one_of_the_steered_ones(self):
-        """_PASSAGE_TYPES is what puts a figure in a generated paper at all;
+        """_passage_types() is what puts a figure in a generated paper at all;
         if its steer ever stopped naming a figure type the paper would come
-        back figureless and still pass every structural check."""
-        steered = set(reading_trainer._PASSAGE_TYPES)
+        back figureless and still pass every structural check.
 
-        assert steered, "no passage is steered to a figure"
-        for index in steered:
-            types = reading_trainer._PASSAGE_TYPES[index]
-            assert reading_trainer._FIGURE_TYPES.intersection(
-                reading_trainer.canon(t) for t in types
-            )
+        Drawn repeatedly because the figure is now chosen per paper — a steer
+        that named a figure type only some of the time would show up here as a
+        flake rather than as a failure, which is the worst way to learn it."""
+        for _ in range(40):
+            steer = reading_trainer._passage_types()
+            assert steer, "no passage is steered to a figure"
+            for index, types in steer.items():
+                assert reading_trainer._FIGURE_TYPES.intersection(
+                    reading_trainer.canon(t) for t in types
+                ), f"passage {index} is steered to {types}, none of them a figure"
+
+    def test_both_figures_are_reachable_in_a_paper(self):
+        """The diagram was the only figure a paper could carry until the flow
+        chart landed. A per-paper choice that collapsed back to one value would
+        leave the new figure live-untested forever and nothing else would say
+        so."""
+        drawn = {
+            t
+            for _ in range(200)
+            for t in reading_trainer._passage_types()[1]
+            if reading_trainer.canon(t) in reading_trainer._FIGURE_TYPES
+        }
+
+        assert drawn == set(reading_trainer._PASSAGE_FIGURES)
 
 
 def test_full_test_part_requires_ten_questions():

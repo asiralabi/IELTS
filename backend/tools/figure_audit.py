@@ -1,10 +1,19 @@
-"""Audit the reading passage `_diag_plan_live.py reading` just wrote.
+"""Audit the reading passage a live figure harness just wrote.
 
-That harness only reports `reading_has_visual` — it does not check the thing
-`84c426c` fixes (the answers being words the passage never used), nor the one
-still-open defect (the grid printing the very label it asks the student to
-supply). Both are read off the saved JSON here, so no second hosted call is
-paid for.
+`_diag_plan_live.py reading` only reports `reading_has_visual` — it does not
+check the thing `84c426c` fixes (the answers being words the passage never
+used), nor the one still-open defect (the figure printing the very label it
+asks the student to supply). Both are read off the saved JSON here, so no
+second hosted call is paid for.
+
+Handles the grid figure and the flow chart, and REFUSES anything else rather
+than reporting a clean audit of a figure it cannot read. That is not caution
+for its own sake: this harness scored a paper 23/23 on 2026-08-23 while the
+diagram beside it was numbered against the wrong questions, because it checked
+that a visual existed rather than that the figure answered for itself. A check
+that cannot fail proves nothing.
+
+Usage: PYTHONIOENCODING=utf-8 python tools/figure_audit.py [saved.json]
 """
 import json
 import sys
@@ -12,6 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from app.agents._flow import flow_steps, self_answering_steps  # noqa: E402
 from app.agents.answerability import GAP_FILL_TYPES, qtype  # noqa: E402
 from app.agents.reading_trainer import (  # noqa: E402
     _non_verbatim_answers,
@@ -38,20 +48,40 @@ def main() -> int:
     print(f"questions={len(questions)} types={sorted({qtype(q) for q in questions})}")
 
     print("\n--- 84c426c: are the keyed answers words the passage uses? ---")
-    missing = _non_verbatim_answers(result)
     gapfill = [q for q in questions if qtype(q) in GAP_FILL_TYPES]
-    print(f"gap-fill questions={len(gapfill)}  non-verbatim answers={len(missing)}"
-          f"  (validator refuses at >=2)")
-    for number, answer in missing:
-        print(f"  MISSING  Q{number} = {answer!r}")
-    if not missing:
-        print("  every gap-fill answer appears in the passage")
+    if not passage.strip():
+        # `_non_verbatim_answers` returns [] on an empty passage, so without
+        # this the line below reads "every gap-fill answer appears in the
+        # passage" for a listening set that has no passage at all. That is a
+        # check that cannot fail, printed in green.
+        missing = []
+        print("  NOT CHECKED — this set has no passage. A listening set keys "
+              "its answers to the script, which this audit does not read.")
+    else:
+        missing = _non_verbatim_answers(result)
+        print(f"gap-fill questions={len(gapfill)}  non-verbatim answers={len(missing)}"
+              f"  (validator refuses at >=2)")
+        for number, answer in missing:
+            print(f"  MISSING  Q{number} = {answer!r}")
+        if not missing:
+            print("  every gap-fill answer appears in the passage")
 
-    print("\n--- open issue: does the grid print the answer it asks for? ---")
+    print("\n--- open issue: does the figure print the answer it asks for? ---")
     if not isinstance(visual, dict):
         print("  no visual on the set")
         return 1
-    print(f"  kind={visual.get('kind')!r} title={visual.get('title')!r}")
+    kind = str(visual.get("kind") or "").lower()
+    print(f"  kind={kind!r} title={visual.get('title')!r}")
+
+    if kind == "flow":
+        selfanswering = audit_flow(visual, answer_key)
+        print(f"\nnon_verbatim={len(missing)} self_answering={len(selfanswering)}")
+        return 0 if not missing and not selfanswering else 1
+    if kind != "plan":
+        print(f"  CANNOT AUDIT a {kind!r} figure — this tool reads a grid or a "
+              "flow chart. Refusing rather than reporting a clean run.")
+        return 2
+
     grid = visual.get("grid") or []
     for row in grid:
         print("    " + " | ".join(f"{c or '.':^18}" for c in row))
@@ -83,6 +113,27 @@ def main() -> int:
 
     print(f"\nnon_verbatim={len(missing)} self_answering={len(selfanswering)}")
     return 0 if not missing and not selfanswering else 1
+
+
+def audit_flow(visual: dict, answer_key: dict) -> list[tuple[str, str, int]]:
+    """A box printing another box's answer — the flow chart's version of the
+    self-answering grid cell. Returns the (gap, answer, box number) triples.
+
+    Not refused by `flow_error` on purpose: the grid figure had the identical
+    failure and a hard check would have made that path ungeneratable — three
+    hosted samples self-answered three times out of three — so the guard there
+    is a repair. Whether a chart needs the same is a live measurement, and this
+    is where it is taken.
+    """
+    for i, step in enumerate(flow_steps(visual), start=1):
+        print(f"    {i:>2}. {step}")
+    out = self_answering_steps(visual, answer_key)
+    if out:
+        for gap, answer, box in out:
+            print(f"  SELF-ANSWERING  gap {gap} = {answer!r} printed in box {box}")
+    else:
+        print("  no keyed answer is printed in another box")
+    return out
 
 
 if __name__ == "__main__":

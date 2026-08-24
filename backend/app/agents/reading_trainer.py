@@ -5,6 +5,11 @@ import re
 from collections import Counter
 from functools import partial
 
+from app.agents._flow import (
+    flow_error,
+    normalize_flow,
+    repair_self_answering_steps,
+)
 from app.agents._marking import mark_answers, mark_full_test
 from app.agents._numbering import renumber_checked
 from app.agents.answerability import (
@@ -86,7 +91,18 @@ _HEADING_PREFIX = re.compile(r"^\s*[ivx]+\s*[.)]\s+", re.IGNORECASE)
 _TFNG_TYPES = {canon("true_false_notgiven"), canon("yes_no_notgiven")}
 
 # Question types whose answers are read off a printed figure.
-_FIGURE_TYPES = {canon("table_completion"), canon("diagram_label_completion")}
+#
+# flow_chart_completion is here even though the checkpoint can write one: 6 of
+# the 227 corpus sets do, and every one inlines its own gap with no figure at
+# all. That inline form stays valid — it is what those 6 records train and what
+# `dangling_completions` still accepts — but a student who asks for a flow
+# chart should get the chart the exam prints, and only the general model can
+# draw it.
+_FIGURE_TYPES = {
+    canon("table_completion"),
+    canon("diagram_label_completion"),
+    canon("flow_chart_completion"),
+}
 
 # Every spelling of the verdict the corpus uses.
 _NOTGIVEN_VERDICTS = {"NOT GIVEN", "NOTGIVEN", "NG"}
@@ -333,6 +349,14 @@ def validate_practice(
             "the grid and write one question for each, or drop the diagram "
             "and use another question type."
         )
+
+    # Only a chart that IS emitted is judged. 6 of the 227 corpus sets write
+    # flow_chart_completion questions and every one of them inlines its own gap
+    # with no figure at all, so requiring the chart would invalidate the
+    # checkpoint's own trained output for no student-visible gain.
+    broken_flow = flow_error(result.get("visual"), questions, answer_key)
+    if broken_flow:
+        return broken_flow
     return None
 
 
@@ -877,6 +901,15 @@ async def create_practice(
     # Last, because the passage expansion above can key a gap to wording the
     # grid also prints, and this erases the duplicate rather than the gap.
     _blank_self_answering_cells(result)
+    # Drops an empty box and folds `___6___` to the one gap form the renderer
+    # reads. Before the gate below, so the gate judges what ships.
+    if isinstance(result.get("visual"), dict) and result["visual"].get("kind") == "flow":
+        result["visual"] = normalize_flow(result["visual"])
+    # Last on the chart, for the same reason `_blank_self_answering_cells` is
+    # last on the grid: the passage expansion above can key a gap to wording a
+    # box also prints. The box is reworded rather than the gap re-keyed —
+    # 'success' was the right answer for its gap; the later box was the fault.
+    await repair_self_answering_steps(result)
     # Both rules were skipped on the way in on the promise that they would be
     # satisfied here. Nothing else can fail this, so a complaint means a repair
     # did not take and the set must not reach a student.
@@ -951,10 +984,20 @@ _DIFFICULTY_RAMP = ("easy", "medium", "hard")
 
 # A Cambridge paper prints a figure on roughly one passage, and the default type
 # mix never reaches for one, so a paper generated without a steer carries none.
-# Asking passage 2 for a labelled diagram is where the real papers put theirs.
-_PASSAGE_TYPES: dict[int, list[str]] = {
-    1: ["diagram_label_completion", "true_false_notgiven", "multiple_choice"],
-}
+# Asking passage 2 for one is where the real papers put theirs.
+#
+# Which figure varies by paper in the books: 6 of the 77 parsed reading
+# sections print a flow chart rather than a labelled diagram
+# (`tools/_diag_flow_chart_shape.py`), so it is drawn per paper rather than
+# fixed. Both are figure types, so the routing and the cost are the same either
+# way and only the shape of passage 2 changes.
+_PASSAGE_FIGURES = ("diagram_label_completion", "flow_chart_completion")
+
+
+def _passage_types() -> dict[int, list[str]]:
+    return {
+        1: [random.choice(_PASSAGE_FIGURES), "true_false_notgiven", "multiple_choice"],
+    }
 
 
 async def create_full_test(difficulty: str | None = None) -> dict:
@@ -964,14 +1007,18 @@ async def create_full_test(difficulty: str | None = None) -> dict:
     local checkpoint, so they are gathered as two groups running at once —
     one list would queue the hosted passage behind ollama, which answers one
     call at a time. Same reason as listening's create_full_test."""
+    # Drawn once and reused, so the passage that is routed hosted is the same
+    # passage that is asked for a figure.
+    steer = _passage_types()
+
     def passage(index: int):
         return create_practice(
-            question_types=_PASSAGE_TYPES.get(index),
+            question_types=steer.get(index),
             difficulty=difficulty or _DIFFICULTY_RAMP[index],
         )
 
     indexes = list(range(_FULL_TEST_PASSAGES))
-    figure = [i for i in indexes if _needs_a_figure(_PASSAGE_TYPES.get(i))]
+    figure = [i for i in indexes if _needs_a_figure(steer.get(i))]
     prose = [i for i in indexes if i not in figure]
     groups = await asyncio.gather(
         gather_llm("generator", [passage(i) for i in figure], skip_finetune=True),

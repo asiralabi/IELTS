@@ -5,6 +5,11 @@ import re
 from collections import Counter
 from functools import partial
 
+from app.agents._flow import (
+    flow_error,
+    normalize_flow,
+    repair_self_answering_steps,
+)
 from app.agents._marking import mark_answers, mark_full_test
 from app.agents._numbering import renumber, renumber_checked
 from app.agents._plan import normalize_plan
@@ -107,11 +112,15 @@ _PART_SPECS: dict[int, dict[str, str]] = {
             "Label each distinct speaker."
         ),
         "figure": (
-            "Use a matching block, a flow_chart_completion block tracing the "
-            "stages of the project the speakers discuss, and AT MOST 4 "
-            "multiple_choice. No figure is needed — set `visual` to null."
+            "Include a flow_chart_completion block so a FLOW CHART is shown: "
+            "emit the `visual` flow object tracing the stages of the project "
+            "the speakers discuss, as an ordered list of short steps with 3-7 "
+            "of them carrying a `__<n>__` gap, ascending down the chain. The "
+            "speakers must talk the plan through in that order. Fill the "
+            "remaining questions with a matching block and AT MOST 4 "
+            "multiple_choice."
         ),
-        "types": "multiple_choice, matching",
+        "types": "flow_chart_completion, multiple_choice, matching",
     },
     4: {
         "format": (
@@ -131,8 +140,17 @@ _PART_SPECS: dict[int, dict[str, str]] = {
 # Parts whose spec calls for a figure. The generator checkpoint cannot draw one
 # — its corpus encodes a part's figure through question types alone and never
 # describes the figure itself — so these parts go to the general model, which
-# reads the grid schema out of the system prompt.
-_FIGURE_PARTS = frozenset({1, 2})
+# reads the figure schema out of the system prompt.
+#
+# Part 3 joined them when the flow chart landed. It is the strongest case of
+# the three: 0 of the 212 listening SFT sets write a flow_chart_completion
+# question at all, so the checkpoint has never seen one, while 6 of the real
+# Cambridge Part 3s print a chart.
+_FIGURE_PARTS = frozenset({1, 2, 3})
+
+# The same rule stated as question types, for the single-part path where the
+# student names the type instead of the part.
+_FIGURE_ASK = MAP_TYPES | {canon("flow_chart_completion")}
 
 
 def _finetune_user_message(
@@ -250,6 +268,10 @@ def validate_part(
     if unlettered:
         return unlettered
 
+    broken_flow = flow_error(result.get("visual"), questions, answer_key)
+    if broken_flow:
+        return broken_flow
+
     unnamed = unnamed_place_error(questions)
     if unnamed:
         return unnamed
@@ -304,13 +326,14 @@ async def create_practice(
     difficulty: str | None = None,
     topic: str | None = None,
 ) -> dict:
-    # A student can ask for map labelling on a single part just as part 2 of a
-    # full test asks for it, and the checkpoint cannot draw the plan either
-    # way — so the same routing applies. See _FIGURE_PARTS.
+    # A student can ask for map labelling or a flow chart on a single part just
+    # as parts 2 and 3 of a full test ask for them, and the checkpoint cannot
+    # draw either figure that way either — so the same routing applies. See
+    # _FIGURE_PARTS.
     client = get_llm_client(
         "generator",
         skip_finetune=bool(
-            MAP_TYPES.intersection(canon(t) for t in question_types or ())
+            _FIGURE_ASK.intersection(canon(t) for t in question_types or ())
         ),
     )
     if client.is_finetune:
@@ -376,7 +399,9 @@ async def create_practice(
         if expanded and len(expanded.split()) > len(script.split()):
             result["audio_script"] = expanded
 
-    _normalize_plan_visual(result)
+    _normalize_figure(result)
+    # After the normalisation, so the rewrite sees the boxes the student will.
+    await repair_self_answering_steps(result)
     return result
 
 
@@ -630,17 +655,20 @@ def _clampi(value: float, lo: int, hi: int) -> int:
     return max(lo, min(hi, int(round(value))))
 
 
-def _normalize_plan_visual(result: dict) -> None:
-    """Clean this part's floor plan in place, dropping it if nothing is left.
+def _normalize_figure(result: dict) -> None:
+    """Clean this part's figure in place, dropping it if nothing is left.
 
-    The plan itself is shared with Reading and Writing, which draw the same
-    grid with no questions around it; only the "put it back on the set"
-    half belongs here.
+    The plan and the flow chart are both shared with Reading, which draws the
+    same shapes with a passage around them instead of a script; only the "put
+    it back on the set" half belongs here.
     """
     visual = result.get("visual")
-    if not isinstance(visual, dict) or visual.get("kind") != "plan":
+    if not isinstance(visual, dict):
         return
-    result["visual"] = normalize_plan(visual)
+    if visual.get("kind") == "plan":
+        result["visual"] = normalize_plan(visual)
+    elif visual.get("kind") == "flow":
+        result["visual"] = normalize_flow(visual)
 
 
 def _validate_full_test_part(
@@ -730,7 +758,11 @@ async def create_part(
     # that shipped a reading diagram numbered against the wrong questions.
     renumber_checked(result, (part_number - 1) * 10,
                      _validate_full_test_part)
-    _normalize_plan_visual(result)
+    _normalize_figure(result)
+    # After the renumbering, because the gap numbers it compares against are
+    # the ones the part now carries, and after the normalisation, so the
+    # rewrite sees the boxes the student will.
+    await repair_self_answering_steps(result)
     result["part"] = part_number
     return result
 
