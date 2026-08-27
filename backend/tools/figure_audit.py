@@ -21,6 +21,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from app.agents._diagram import (  # noqa: E402
+    diagram_texts,
+    is_diagram,
+    self_answering_labels,
+)
 from app.agents._flow import flow_steps, self_answering_steps  # noqa: E402
 from app.agents.answerability import GAP_FILL_TYPES, qtype  # noqa: E402
 from app.agents.reading_trainer import (  # noqa: E402
@@ -113,6 +118,27 @@ def main() -> int:
 
     print(f"\nnon_verbatim={len(missing)} self_answering={len(selfanswering)}")
     return 0 if not missing and not selfanswering else 1
+
+
+def audit_diagram(visual: dict, answer_key: dict) -> list[tuple[str, str, str]]:
+    """A drawn figure printing the answer it asks for.
+
+    The third costume of the same defect, after the grid cell and the flow box.
+    A diagram carries orientation labels beside its numbered ones -- "Thread
+    guide" and "Bobbin" sit on the sewing machine so the student knows which
+    way up it is -- and nothing stops one of them being the very word another
+    gap is keyed to.
+    """
+    print(f"  layout={visual.get('layout')!r}")
+    for line in diagram_texts(visual):
+        print(f"    {line}")
+    hits = self_answering_labels(visual, answer_key)
+    if hits:
+        for gap, answer, where in hits:
+            print(f"  SELF-ANSWERING  Q{gap} = {answer!r} printed in {where!r}")
+    else:
+        print("  no keyed answer is printed on the figure")
+    return hits
 
 
 def audit_flow(visual: dict, answer_key: dict) -> list[tuple[str, str, int]]:

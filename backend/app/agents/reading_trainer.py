@@ -5,6 +5,12 @@ import re
 from collections import Counter
 from functools import partial
 
+from app.agents._diagram import (
+    blank_self_answering_labels,
+    diagram_error,
+    is_diagram,
+    normalize_diagram,
+)
 from app.agents._flow import (
     flow_error,
     normalize_flow,
@@ -357,6 +363,10 @@ def validate_practice(
     broken_flow = flow_error(result.get("visual"), questions, answer_key)
     if broken_flow:
         return broken_flow
+
+    broken_diagram = diagram_error(result.get("visual"), questions, answer_key)
+    if broken_diagram:
+        return broken_diagram
     return None
 
 
@@ -901,10 +911,17 @@ async def create_practice(
     # Last, because the passage expansion above can key a gap to wording the
     # grid also prints, and this erases the duplicate rather than the gap.
     _blank_self_answering_cells(result)
+    # The drawn figure's version of the same rule, and deterministic for the
+    # same reason: a callout is a noun phrase, so there is nothing to reword.
+    blank_self_answering_labels(result)
     # Drops an empty box and folds `___6___` to the one gap form the renderer
     # reads. Before the gate below, so the gate judges what ships.
     if isinstance(result.get("visual"), dict) and result["visual"].get("kind") == "flow":
         result["visual"] = normalize_flow(result["visual"])
+    # Settles the diagram's vocabulary — slugged ids, a known form, one gap
+    # spelling — before the gate below judges what ships.
+    if is_diagram(result.get("visual")):
+        result["visual"] = normalize_diagram(result["visual"])
     # Last on the chart, for the same reason `_blank_self_answering_cells` is
     # last on the grid: the passage expansion above can key a gap to wording a
     # box also prints. The box is reworded rather than the gap re-keyed —

@@ -151,12 +151,56 @@ export interface VisualFlow {
   steps: string[];
 }
 
+/** One part of a labelled diagram: a drawn shape, not a placed one.
+ *
+ * `form` names a shape the renderer knows how to draw; `id` is what a callout
+ * points at. No part carries a coordinate — where it lands comes from the
+ * layout and from its position in the list, which is why a generated diagram
+ * can never overlap itself or fall off the canvas.
+ */
+export interface VisualDiagramPart {
+  id: string;
+  form: string;
+  name?: string;
+  /** Apparatus only: hang this part off the side of `to` instead of stacking it. */
+  attach?: "left" | "right" | "top" | "bottom";
+  to?: string;
+  /** Tree only: the node this one descends from. */
+  parent?: string;
+}
+
+/** A callout: the text the exam prints at the end of a leader line. */
+export interface VisualDiagramLabel {
+  at: string;
+  text: string;
+  side?: "left" | "right" | "top" | "bottom";
+}
+
+/** A labelled diagram — the figure IELTS prints for `diagram_label_completion`.
+ *
+ * The payload states what the parts ARE and what order they sit in; every
+ * coordinate, every leader line and every label position is derived by the
+ * renderer. `layout` picks which derivation runs: an apparatus stacks its
+ * parts into an assembly, a section bands them top to bottom, a cycle sends
+ * them clockwise, a tree hangs them off their parents, and a panel lays them
+ * across a device face. Part names and callout text may carry `__<n>__`, which
+ * renders as the numbered blank the student writes into.
+ */
+export interface VisualDiagram {
+  kind: "diagram";
+  title: string;
+  layout: "apparatus" | "layers" | "cycle" | "tree" | "panel";
+  parts: VisualDiagramPart[];
+  labels: VisualDiagramLabel[];
+}
+
 export type Visual =
   | VisualImage
   | VisualChart
   | VisualMap
   | VisualPlan
-  | VisualFlow;
+  | VisualFlow
+  | VisualDiagram;
 
 export interface PracticeQuestion {
   id?: string;

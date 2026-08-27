@@ -5,6 +5,7 @@ import re
 from collections import Counter
 from functools import partial
 
+from app.agents._diagram import diagram_error, is_diagram, normalize_diagram
 from app.agents._flow import (
     flow_error,
     normalize_flow,
@@ -271,6 +272,15 @@ def validate_part(
     broken_flow = flow_error(result.get("visual"), questions, answer_key)
     if broken_flow:
         return broken_flow
+
+    # Listening does not ASK for a drawn diagram yet — Part 2 always calls for
+    # the grid plan. The check is wired anyway because `_diagram` is shared
+    # with Reading and a figure that reached a part unvalidated is exactly how
+    # the grid's renumbering bug survived: the guard costs nothing until the
+    # day a part spec starts asking, and then it is already there.
+    broken_diagram = diagram_error(result.get("visual"), questions, answer_key)
+    if broken_diagram:
+        return broken_diagram
 
     unnamed = unnamed_place_error(questions)
     if unnamed:
@@ -669,6 +679,8 @@ def _normalize_figure(result: dict) -> None:
         result["visual"] = normalize_plan(visual)
     elif visual.get("kind") == "flow":
         result["visual"] = normalize_flow(visual)
+    elif is_diagram(visual):
+        result["visual"] = normalize_diagram(visual)
 
 
 def _validate_full_test_part(

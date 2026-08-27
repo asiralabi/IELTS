@@ -3,6 +3,7 @@
 import { Fragment } from "react";
 import type { ReactNode } from "react";
 import { API_URL } from "@/lib/api";
+import { DiagramBlock } from "@/components/practice/diagram";
 import type {
   Visual,
   VisualChart,
@@ -76,6 +77,9 @@ export function VisualBlock({
   }
   if (visual.kind === "flow") {
     return <FlowBlock visual={visual} className={className} />;
+  }
+  if (visual.kind === "diagram") {
+    return <DiagramBlock visual={visual} className={className} />;
   }
   return <ChartBlock visual={visual} className={className} />;
 }

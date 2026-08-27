@@ -366,25 +366,47 @@ Table completion visual — REQUIRED when the question set includes table_comple
 - Every table_completion question must correspond to exactly one `"__<n>__"` cell, and those numbers MUST match the `answer_key` numbering.
 
 Diagram labelling visual — REQUIRED when the question set includes diagram_label_completion:
-- Cambridge Reading papers regularly print a labelled figure — a cross-section through soil or rock, a cut-away of a device, the levels of a building — and number some of its parts for the student to name from the passage.
-- Give that figure as a GRID OF PARTS. You are not drawing shapes; you are colouring in a grid, and the outlines are worked out from it:
+- Cambridge Reading papers regularly print a labelled figure and number some of its parts for the student to name from the passage: a cut-away of a device ("An Undersea Turbine", "How a boat is lifted on the Falkirk Wheel"), a cross-section through rock or soil, the stages of a cycle, a classification of types.
+- You are NOT drawing the picture. You state what the parts ARE and what ORDER they sit in; the shapes, the positions, the connecting lines and the leader lines to each label are all worked out from that. Nothing you write can come out overlapping or off the page.
+- FIRST choose the `layout` that matches what the passage describes:
+  * `apparatus` — a machine, device, organ or structure seen in cross-section. Parts stack top to bottom into one assembly. USE THIS WHEN IN DOUBT.
+  * `layers` — strata: rock, soil, water, atmosphere, tissue. Bands run across, top of the section down.
+  * `cycle` — a process that returns to its start (a water cycle, a life cycle, an operational cycle). Stages run clockwise.
+  * `tree` — a classification: a thing that divides into named types and sub-types.
+  * `panel` — the controls on the front of a device (switches, dials, indicators).
+- The schema:
   {
-    "kind": "plan",
+    "kind": "diagram",
     "title": "<short figure title, e.g. 'Cross-section of a termite mound'>",
-    "grid": [
-      ["Outer wall", "Ventilation shaft", "Outer wall"],
-      ["Outer wall", "__6__", "Outer wall"],
-      ["Fungus garden", "Fungus garden", "__7__"]
+    "layout": "apparatus",
+    "parts": [
+      {"id": "chimney", "form": "column", "name": "Ventilation shaft"},
+      {"id": "nest",    "form": "chamber", "name": "__6__"},
+      {"id": "garden",  "form": "chamber", "name": "Fungus garden"},
+      {"id": "floor",   "form": "ground",  "name": "Soil"},
+      {"id": "tunnel",  "form": "pipe", "attach": "left", "to": "nest"}
+    ],
+    "labels": [
+      {"at": "garden", "text": "__7__", "side": "right"},
+      {"at": "tunnel", "text": "__8__", "side": "left"}
     ]
   }
-  - `grid` is a list of ROWS, drawn top of the figure first. Every row MUST have the SAME number of cells. Use 3-6 columns and 3-6 rows.
-  - Each cell is either a short part name printed on the figure, `"__<n>__"` for a part the student must name, or "" for empty space outside the figure.
-  - Cells holding the SAME value side by side form ONE part, so give each part 2 or more adjacent cells where its real shape allows. Never place the same value in two separate, unconnected places.
-  - Lay the parts out the way they genuinely sit — depth going down the rows for a cross-section, order of flow for a cut-away — so the figure teaches the student something the passage confirms.
-  - Do NOT emit `entrance` for a Reading diagram; that field is for building plans.
-- **Number 3 to 6 parts** — one `"__<n>__"` cell each, one question each. A figure with a single blank is a drawing, not a question block; Cambridge never prints one.
-- **Choose those parts FROM YOUR PASSAGE, not from what you know about the subject.** Every numbered part's answer must be words the passage itself prints. Search the passage you have just written for the part's name before you number it; if it is not there, either name it in the passage or number a different part. A live set numbered parts answered "Storage", "Crane" and "Inspection" against a passage using none of those words — the student is told to choose words FROM THE PASSAGE, so those answers can never be produced or marked, and the whole set was thrown away.
-- Every diagram_label_completion question must correspond to exactly one `"__<n>__"` cell, and those numbers MUST match the `answer_key` numbering. The answer is the part's name, taken verbatim from the passage, and the question text must say what the student is naming (e.g. "NO MORE THAN TWO WORDS. Label 6 on the diagram: the chamber directly below the ventilation shaft.").
+- `parts` is an ORDERED list, 2-12 of them, written in the order they physically sit: top of the drawing down for `apparatus` and `layers`, clockwise from the first stage for `cycle`, left to right for `panel`. That order IS the geometry.
+- `id` is a short lowercase tag used only to point a label at a part. `name` is what is PRINTED on the part itself, and may be omitted.
+- `form` picks the shape drawn. Use the nearest one:
+  * apparatus: `chamber` (a vessel), `column` (a tower, shaft or stem), `tank` (a cylinder), `dome`, `funnel` (a cone or hopper), `pipe` (a narrow connector), `disc` (a wheel or pulley), `rotor` (blades), `coil` (a spring or element), `valve`, `platform` (a deck or shelf), `liquid`, `ground` (the floor or sea bed), `box` for anything else.
+  * layers: `rock`, `soil`, `sand`, `clay`, `water`, `air`, `band`.
+  * panel: `button`, `dial`, `switch`, `light`, `display`, `slot`, `gauge`.
+  * cycle and tree take no form.
+- `attach` + `to` hang a part off the SIDE of another one instead of stacking it — a pipe leaving a chamber, a cable running off a tower. Use it sparingly; `to` must be the `id` of a part you listed.
+- For `tree`, give every part except the root a `parent` naming the `id` it descends from, instead of `attach`/`to`.
+- `labels` are the callouts printed at the end of a leader line. `at` must be the `id` of a part you listed. `side` is a hint only — a side that is already taken is moved for you.
+- **Number 3 to 6 parts.** A numbered part is written `"__<n>__"` — either as the part's `name` or as a callout's `text`, never both — with `<n>` the question number. A figure with a single blank is a drawing, not a question block; Cambridge never prints one.
+- Give the figure some parts that are NOT numbered and carry a real printed `name`. Those are what orient the student ("Thread guide", "Sea bed", "Fungus garden"). A figure where every part is a blank tells them nothing about what they are looking at.
+- A callout is a LABEL, not a sentence: at most 6 words.
+- **Never print a gap's answer anywhere else on the figure.** If part 6 is the blank for "ventilation shaft", no other part's name and no other callout may contain those words — the figure would have answered its own question.
+- **Choose the numbered parts FROM YOUR PASSAGE, not from what you know about the subject.** Every numbered part's answer must be words the passage itself prints. Search the passage you have just written for the part's name before you number it; if it is not there, either name it in the passage or number a different part. A live set numbered parts answered "Storage", "Crane" and "Inspection" against a passage using none of those words — the student is told to choose words FROM THE PASSAGE, so those answers can never be produced or marked, and the whole set was thrown away.
+- Every diagram_label_completion question must correspond to exactly one `"__<n>__"` on the figure, and those numbers MUST match the `answer_key` numbering. The answer is the part's name, taken verbatim from the passage, and the question text must say what the student is naming (e.g. "NO MORE THAN TWO WORDS. Label 6 on the diagram: the chamber directly below the ventilation shaft.").
 
 Flow chart visual — emit this when the question set includes flow_chart_completion:
 - Cambridge prints the process a passage describes as a chain of boxes read top to bottom, and numbers some of the words inside them ("The Production of Bakelite", "Method of determining where the ancestors of turtles come from", "Generating biogas for domestic use in Dunga"). Measured over the books: 4-10 boxes, 3-7 numbered gaps, and the chain is a single line — no branches and no merges.

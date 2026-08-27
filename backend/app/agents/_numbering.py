@@ -16,6 +16,7 @@ import re
 # The mid-sentence gap a flow chart puts in a step. Imported rather than
 # restated so the renumbering and the validator can never disagree about what
 # counts as a gap.
+from app.agents._diagram import renumber_diagram
 from app.agents._flow import FLOW_GAP_RE
 
 # A table cell the student writes into, as the trainers emit it.
@@ -145,4 +146,9 @@ def renumber(result: dict, offset: int) -> dict:
                 if isinstance(step, str) else step
                 for step in steps
             ]
+
+        # The drawn diagram carries its gaps in two places -- a part's printed
+        # name and a callout's text -- and both move. Same failure class as the
+        # grid's: a leader line pointing at "1 ........" beside question 14.
+        renumber_diagram(visual, mapping)
     return result
