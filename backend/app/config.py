@@ -32,6 +32,20 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_base_url: str = "https://api.openai.com/v1"
     openai_model: str = "gpt-4o-mini"
+    # Reasoning models spend their token budget thinking BEFORE they write, and
+    # a budget too small to cover both comes back with `finish_reason="length"`
+    # and an EMPTY `content` -- which reaches the app as "No JSON object found
+    # in response: ''". Measured 2026-08-27 on gpt-oss-120b, one 900-word
+    # script asked for at max_tokens=16384:
+    #
+    #   default (high)  10793 completion tokens, 43145 chars of reasoning, 72s
+    #   medium           1552 completion tokens,  1703 chars of reasoning, 12s
+    #   low              1934 completion tokens,    75 chars of reasoning, 13s
+    #                    ^ and the LONGEST answer of the three
+    #
+    # Blank means the parameter is not sent at all, because a model that does
+    # not know it answers 400. Set it per provider in .env.
+    openai_reasoning_effort: str = ""
     llm_temperature: float = 0.4
     # 2048 was cutting off 650-900 word IELTS passages mid-JSON; 4096 gives
     # comfortable headroom for a full passage + 8-13 questions + answer key.

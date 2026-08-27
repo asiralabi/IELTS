@@ -467,6 +467,12 @@ class OpenAIClient(LLMClient):
         }
         if json_mode:
             kwargs["response_format"] = {"type": "json_object"}
+        # A reasoning model thinks before it writes, out of the SAME budget.
+        # Left at its default, gpt-oss-120b spent every one of 2048 tokens
+        # reasoning and returned empty content, which the app saw as "No JSON
+        # object found in response". See `openai_reasoning_effort`.
+        if settings.openai_reasoning_effort:
+            kwargs["reasoning_effort"] = settings.openai_reasoning_effort
         # Streamed for the same reason ollama is, plus one the hosted side adds:
         # a gateway in front of the model will abandon a request that stays
         # silent too long. Measured against NVIDIA — an unstreamed part-2
