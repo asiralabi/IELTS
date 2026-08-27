@@ -217,12 +217,148 @@ LIVE_SOLAR_HEATER = {
     ]
 }
 
+# The first two figures Listening Part 2 ever produced, live on 2026-08-27,
+# once Part 2 started choosing between the plan and the diagram per paper.
+# Reading's live figure carries its gaps in the part names; these carry them in
+# callouts, so between them the render check covers both ways a gap reaches the
+# page.
+LIVE_DISHWASHER = {
+    "kind": "diagram",
+    "title": "Compact Countertop Dishwasher – CT‑D500",
+    "layout": "apparatus",
+    "parts": [
+        {
+            "id": "shell",
+            "form": "box",
+            "name": "Outer Shell"
+        },
+        {
+            "id": "inlet",
+            "form": "valve",
+            "name": ""
+        },
+        {
+            "id": "prepump",
+            "form": "box",
+            "name": ""
+        },
+        {
+            "id": "sprayarm",
+            "form": "disc",
+            "name": ""
+        },
+        {
+            "id": "detergent",
+            "form": "box",
+            "name": ""
+        },
+        {
+            "id": "heater",
+            "form": "coil",
+            "name": ""
+        },
+        {
+            "id": "drain",
+            "form": "box",
+            "name": ""
+        },
+        {
+            "id": "control",
+            "form": "box",
+            "name": "Control Board"
+        }
+    ],
+    "labels": [
+        {
+            "at": "inlet",
+            "text": "__11__",
+            "side": ""
+        },
+        {
+            "at": "prepump",
+            "text": "__12__",
+            "side": ""
+        },
+        {
+            "at": "sprayarm",
+            "text": "__13__",
+            "side": ""
+        },
+        {
+            "at": "heater",
+            "text": "__14__",
+            "side": ""
+        },
+        {
+            "at": "drain",
+            "text": "__15__",
+            "side": ""
+        }
+    ]
+}
+
+LIVE_THERMOSTAT = {
+    "kind": "diagram",
+    "title": "SmartHome Thermostat Front Panel",
+    "layout": "panel",
+    "parts": [
+        {
+            "id": "power",
+            "form": "button",
+            "name": ""
+        },
+        {
+            "id": "display",
+            "form": "button",
+            "name": "Display screen"
+        },
+        {
+            "id": "wifi",
+            "form": "button",
+            "name": ""
+        },
+        {
+            "id": "dial",
+            "form": "dial",
+            "name": ""
+        },
+        {
+            "id": "buttons",
+            "form": "button",
+            "name": "Control buttons"
+        },
+        {
+            "id": "sensor",
+            "form": "button",
+            "name": "Sensor array"
+        }
+    ],
+    "labels": [
+        {
+            "at": "power",
+            "text": "__11__",
+            "side": ""
+        },
+        {
+            "at": "wifi",
+            "text": "__12__",
+            "side": ""
+        },
+        {
+            "at": "dial",
+            "text": "__13__",
+            "side": ""
+        }
+    ]
+}
+
 # The listening full-test fixture holds four parts and a part holds one
 # figure, so the six layouts are proven over two passes rather than four of
 # them being proven and two sitting in this file unrendered.
 BATCHES = (
     (UNDERSEA_TURBINE, SEWING_MACHINE, AIRPORT_STRATA, OPERATIONAL_CYCLE),
-    (DUNG_BEETLES, WATER_HEATER, LIVE_SOLAR_HEATER),
+    (DUNG_BEETLES, WATER_HEATER, LIVE_SOLAR_HEATER, LIVE_DISHWASHER),
+    (LIVE_THERMOSTAT,),
 )
 
 # What each figure must have on screen once it is drawn. Gap numbers are
@@ -242,6 +378,14 @@ EXPECT = {
                      "Temperature"],
     LIVE_SOLAR_HEATER["title"]: ["1", "2", "3", "Heat exchanger", "Control unit",
                     "Insulated tank"],
+    LIVE_DISHWASHER["title"]: [
+        lb["text"].strip("_") for lb in LIVE_DISHWASHER["labels"]
+        if lb["text"].startswith("__")
+    ],
+    LIVE_THERMOSTAT["title"]: [
+        lb["text"].strip("_") for lb in LIVE_THERMOSTAT["labels"]
+        if lb["text"].startswith("__")
+    ],
 }
 
 

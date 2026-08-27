@@ -427,3 +427,71 @@ def blank_self_answering_labels(result: dict) -> list[tuple[str, str, str]]:
         lb for lb in diagram_labels(visual) if _text(lb.get("text")) not in guilty
     ]
     return [h for h in hits if h[2] in guilty]
+
+
+# A labelled figure is worth printing only if it asks about several parts.
+# Cambridge never prints one with a single blank, and all 5 figure-bearing
+# corpus sets carry 3 or 4. One label is a figure drawn for its own sake rather
+# than a question block -- and `ad0e767` needs 3+ numbered items anyway, so a
+# sparse figure cannot simply have its odd question dropped.
+MIN_LABELS = 3
+
+
+def sparse_diagram_error(labelling_questions: list) -> str | None:
+    """Reject a figure that numbers too few of its parts to be worth drawing.
+
+    Takes the QUESTIONS rather than the figure, because this is a judgement
+    about the question block: a set that asks about two parts is the fault
+    whether or not the drawing itself is fine. Shared by both trainers so the
+    reading and listening thresholds cannot drift apart.
+    """
+    count = len(labelling_questions or [])
+    if not count or count >= MIN_LABELS:
+        return None
+    return (
+        f"the diagram carries only {count} numbered part(s); a labelled figure "
+        f"is worth printing only if it asks about at least {MIN_LABELS} of "
+        "them. Number that many parts on the figure and write one question for "
+        "each, or drop the diagram and use another question type."
+    )
+
+
+def inaudible_diagram_error(
+    visual: object, answer_key: dict, script: str
+) -> str | None:
+    """Reject a listening diagram whose answer the recording never says.
+
+    A Listening gap-fill answer is words the student HEARS. Reading has enforced
+    that against its passage since `84c426c` (`_non_verbatim_answers`); the
+    listening side has never had the rule at all, for any question type.
+
+    Scoped to the drawn diagram on purpose, and narrowly:
+
+    * this is the failure the diagram schema itself invites. `id` is an
+      internal tag written as a lowercase slug, and it sits in the payload
+      right beside the answer -- a live Part 2 keyed 'grouphead' and
+      'steamwand' off the ids of parts the script calls "group head" and
+      "steam wand", which a student can never write.
+    * a rule scoped to a question type that did not exist yesterday cannot
+      refuse a set that worked before it, so it needs no corpus measurement to
+      be safe. The GENERAL listening verbatim rule does, and is not built here.
+
+    Matched on padded whole words after `norm`, the same way every other
+    figure check in this module matches.
+    """
+    if not is_diagram(visual) or not script:
+        return None
+    heard = f" {norm(script)} "
+    for gap in diagram_gaps(visual):
+        answer = _text((answer_key or {}).get(gap))
+        want = norm(answer)
+        if not want or f" {want} " in heard:
+            continue
+        return (
+            f"the answer to diagram gap {gap} is {answer!r}, which the script "
+            "never says. A Listening answer is words the student HEARS, so key "
+            "each numbered part to the wording the speaker actually uses — "
+            "never to the part's `id`, which is an internal tag and not "
+            "something anyone says aloud."
+        )
+    return None

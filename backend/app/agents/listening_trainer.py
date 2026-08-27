@@ -5,7 +5,14 @@ import re
 from collections import Counter
 from functools import partial
 
-from app.agents._diagram import diagram_error, is_diagram, normalize_diagram
+from app.agents._diagram import (
+    blank_self_answering_labels,
+    diagram_error,
+    inaudible_diagram_error,
+    is_diagram,
+    normalize_diagram,
+    sparse_diagram_error,
+)
 from app.agents._flow import (
     flow_error,
     normalize_flow,
@@ -147,11 +154,64 @@ _PART_SPECS: dict[int, dict[str, str]] = {
 # the three: 0 of the 212 listening SFT sets write a flow_chart_completion
 # question at all, so the checkpoint has never seen one, while 6 of the real
 # Cambridge Part 3s print a chart.
+# The other figure Part 2 can print. The spec is a whole alternative rather
+# than a swapped `figure` line, because the talk itself has to change: a
+# monologue about a site gives the student nowhere to hang a cross-section, and
+# a monologue about a device gives them nowhere to put a floor plan.
+_PART2_DIAGRAM: dict[str, str] = {
+    "format": (
+        "Part 2: a single-speaker monologue about a DEVICE, an appliance or a "
+        "piece of equipment — a demonstration, an induction talk, or a "
+        "how-it-works segment. The speaker walks through the object part by "
+        "part. Label turns 'SPEAKER:'."
+    ),
+    "figure": (
+        "Include a diagram_label_completion block so a DIAGRAM is shown: emit "
+        "the `visual` diagram object for the equipment the speaker describes, "
+        "choosing the layout that fits it, with 3-6 of its parts numbered "
+        "`__<n>__` and the rest carrying printed names that orient the "
+        "student. The speaker must walk the parts through in the order they "
+        "are listed. Fill the remaining questions with sentence_completion or "
+        "short_answer, plus AT MOST 2 multiple_choice."
+    ),
+    "types": "diagram_label_completion, multiple_choice, short_answer",
+}
+
+# How often Part 2 draws the diagram instead of the plan.
+#
+# Measured over the 77 parsed Cambridge tests
+# (`tools/_diag_listening_part2_figures.py`): Part 2 prints 16 figures — 10
+# maps, 5 plans and **1 diagram**, so the exam's own rate is 6.2%.
+#
+# Shipped higher than measured, deliberately. At 1 paper in 16 a student
+# practising twenty listening papers would meet an equipment diagram about
+# once, and labelling a device from a monologue is a distinct skill from
+# finding a room on a plan. A practice generator is judged on coverage, not on
+# reproducing the exam's own sampling. One in four keeps the plan clearly
+# dominant, which is the part of the measurement that matters.
+_PART2_DIAGRAM_SHARE = 0.25
+
+
+def _part_spec(part_number: int) -> dict[str, str]:
+    """This paper's spec for one part, drawn fresh each time it is asked.
+
+    Only Part 2 varies, and it varies per paper the way reading passage 2 does
+    in `reading_trainer._passage_types`: both figures route hosted and cost the
+    same, so nothing downstream has to know which one was drawn.
+    """
+    if part_number == 2 and random.random() < _PART2_DIAGRAM_SHARE:
+        return _PART2_DIAGRAM
+    return _PART_SPECS[part_number]
+
+
 _FIGURE_PARTS = frozenset({1, 2, 3})
 
 # The same rule stated as question types, for the single-part path where the
 # student names the type instead of the part.
-_FIGURE_ASK = MAP_TYPES | {canon("flow_chart_completion")}
+_FIGURE_ASK = MAP_TYPES | {
+    canon("flow_chart_completion"),
+    canon("diagram_label_completion"),
+}
 
 
 def _finetune_user_message(
@@ -281,6 +341,19 @@ def validate_part(
     broken_diagram = diagram_error(result.get("visual"), questions, answer_key)
     if broken_diagram:
         return broken_diagram
+
+    sparse = sparse_diagram_error(
+        [q for q in questions
+         if isinstance(q, dict) and qtype(q) == canon("diagram_label_completion")]
+    )
+    if sparse:
+        return sparse
+
+    inaudible = inaudible_diagram_error(
+        result.get("visual"), answer_key, str(result.get("audio_script") or "")
+    )
+    if inaudible:
+        return inaudible
 
     unnamed = unnamed_place_error(questions)
     if unnamed:
@@ -412,6 +485,13 @@ async def create_practice(
     _normalize_figure(result)
     # After the normalisation, so the rewrite sees the boxes the student will.
     await repair_self_answering_steps(result)
+    # The drawn figure's version of the same rule. Live Part 2, 2026-08-27:
+    # the model named every part AND gave each one a numbered callout, so the
+    # espresso machine printed "Water Tank" beside the blank keyed 'water
+    # tank', four times over, and the part validated clean. The prompt already
+    # says a part is named OR numbered, never both -- which is exactly why this
+    # is fixed in code.
+    _blank_diagram_answers(result)
     return result
 
 
@@ -683,6 +763,18 @@ def _normalize_figure(result: dict) -> None:
         result["visual"] = normalize_diagram(visual)
 
 
+def _blank_diagram_answers(result: dict) -> None:
+    """Rub out figure text that prints the answer to one of its own gaps.
+
+    Deterministic and cheap, so it runs on every part rather than only when
+    something suspects a problem. `diagram_error` deliberately does NOT refuse
+    this -- refusing costs a whole regeneration for a fault one deletion fixes,
+    the same bargain `_blank_self_answering_cells` strikes on the grid.
+    """
+    if is_diagram(result.get("visual")):
+        blank_self_answering_labels(result)
+
+
 def _validate_full_test_part(
     result: dict, *, judge_structure: bool = True, judge_matching: bool = True
 ) -> str | None:
@@ -711,7 +803,7 @@ async def create_part(
     topic: str | None = None,
 ) -> dict:
     """Generate ONE part of a full test (10 questions), globally renumbered."""
-    spec = _PART_SPECS[part_number]
+    spec = _part_spec(part_number)
     client = get_llm_client(
         "generator", skip_finetune=part_number in _FIGURE_PARTS
     )
@@ -775,6 +867,7 @@ async def create_part(
     # the ones the part now carries, and after the normalisation, so the
     # rewrite sees the boxes the student will.
     await repair_self_answering_steps(result)
+    _blank_diagram_answers(result)
     result["part"] = part_number
     return result
 

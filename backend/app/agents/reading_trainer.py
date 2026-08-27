@@ -10,6 +10,7 @@ from app.agents._diagram import (
     diagram_error,
     is_diagram,
     normalize_diagram,
+    sparse_diagram_error,
 )
 from app.agents._flow import (
     flow_error,
@@ -71,11 +72,6 @@ _READING_BAND_TABLE: list[tuple[int, float]] = [
 # exactly 3, so enforcing the prompt's own number would reject 11.5% of the data
 # the checkpoint was trained on. 3 is the floor the corpus actually observes.
 _MIN_HEADINGS_BLOCK = 3
-
-# A labelled diagram numbers several parts; Cambridge never prints one with a
-# single blank, and all 5 figure-bearing corpus sets carry 3 or 4. One label
-# is a figure drawn for its own sake rather than a question block.
-_MIN_DIAGRAM_LABELS = 3
 
 # Every offered heading was written for a real paragraph, so the distractors are
 # simply the headings of the paragraphs left unkeyed. Two is the corpus shape:
@@ -346,15 +342,9 @@ def validate_practice(
     if self_answering:
         return self_answering
 
-    labels = by_type.get(canon("diagram_label_completion")) or []
-    if labels and len(labels) < _MIN_DIAGRAM_LABELS:
-        return (
-            f"the diagram carries only {len(labels)} numbered part(s); a "
-            "labelled figure is worth printing only if it asks about at "
-            f"least {_MIN_DIAGRAM_LABELS} of them. Number that many parts on "
-            "the grid and write one question for each, or drop the diagram "
-            "and use another question type."
-        )
+    sparse = sparse_diagram_error(by_type.get(canon("diagram_label_completion")))
+    if sparse:
+        return sparse
 
     # Only a chart that IS emitted is judged. 6 of the 227 corpus sets write
     # flow_chart_completion questions and every one of them inlines its own gap

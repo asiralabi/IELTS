@@ -488,7 +488,7 @@ Audio Performance Instructions — REQUIRED `speakers` array:
 - Give the two speakers in a two-person conversation contrasting genders where natural, so they are easy to tell apart.
 
 Question requirements:
-- Produce 8-13 questions using the requested question types. If none specified, mix 2-3 of: form_completion, note_completion, table_completion, flow_chart_completion, summary_completion, multiple_choice, map_labelling, sentence_completion, short_answer, matching.
+- Produce 8-13 questions using the requested question types. If none specified, mix 2-3 of: form_completion, note_completion, table_completion, flow_chart_completion, summary_completion, multiple_choice, map_labelling, diagram_label_completion, sentence_completion, short_answer, matching.
 - **EVERY question object MUST have non-empty `question` text that stands on its own.** Never emit a question whose text is "" and never rely on the previous question's text to carry the instructions. If a block of questions shares a rubric, repeat that rubric (or the relevant part of it) in each question's text — but the rubric ALONE is never a question. Each one must also carry the particular thing it asks for: the field being filled, the gap being completed, or the place being located. Two questions whose text is identical are one question printed twice.
 - **EVERY `multiple_choice` and `matching` question MUST carry its own complete `options` array**, repeated in full on each question of the block. The student sees each question independently; options are not inherited from a previous question.
 - **A `matching` question is ONE pair.** Its answer_key value is a SINGLE option from its own `options` array. Never key a question with the whole mapping ("Room A: café, Room B: library, ..."): the student has one box to write in, so only one answer can be marked. Five things to match means five numbered questions, one pair each.
@@ -496,6 +496,7 @@ Question requirements:
 - **Answer order constraint (STRICT)**: All answers MUST appear in the same order as they occur in the transcript. Question number N's answer must be heard AFTER question N-1's answer in the script. Never reorder.
 - Questions must follow the order information appears in the script.
 - Map labelling: describe the map/plan layout in the question text so it can be rendered, with lettered locations A-H.
+- Diagram labelling: the talk is about a device or piece of equipment, and each question names the part it asks the student to write in; see the diagram rules below.
 - Every answer must be unambiguously verifiable from the script alone; distractors must be resolved by the script (the corrected value is the answer).
 
 Gap-fill word-limit rubric — REQUIRED for form_completion, note_completion, table_completion, flow_chart_completion, summary_completion, sentence_completion, short_answer:
@@ -576,7 +577,50 @@ Flow chart visual — REQUIRED when the question set includes flow_chart_complet
 - **Never say a gap's answer in another step.** If box 2 asks what is measured and box 4 says "record the weight again", the chart has answered its own question and the recording tests nothing.
 - The speakers must talk the plan through in order, so the student can follow the chart while the audio runs.
 
-Visual rule: `visual` must be a table object (for table completion), a plan object (for map labelling), a flow chart object (for flow chart completion), or null. If the set has none of those, `visual` must be null. `visual` carries ONE figure: if the set would need two, drop one of the question blocks.
+Diagram labelling visual — REQUIRED when the question set includes diagram_label_completion:
+- Part 2 is where the real exam prints one. The talk is about a DEVICE, an appliance or a piece of equipment rather than a place, and the figure is that object with some of its parts numbered ("Water Heater": electricity indicator, on/off switch, reset button, time control, warning indicator). Measured over the books it is rarer than the plan — 1 of the 16 Part 2 figures — so reach for it only when the scenario is genuinely about a thing rather than a site.
+- You are NOT drawing the picture. You state what the parts ARE and what ORDER they sit in; the shapes, the positions and the leader lines to each label are all worked out from that. Nothing you write can come out overlapping or off the page.
+- FIRST choose the `layout` that matches what the speaker describes:
+  * `apparatus` — a machine, device or structure seen in cross-section. Parts stack top to bottom into one assembly. USE THIS WHEN IN DOUBT.
+  * `panel` — the controls on the front of a device (switches, dials, indicators, displays).
+  * `cycle` — a process that returns to its start.
+  * `layers` — strata or stacked levels.
+  * `tree` — a classification into named types.
+- The schema:
+  {
+    "kind": "diagram",
+    "title": "<short figure title, e.g. 'Water Heater'>",
+    "layout": "panel",
+    "parts": [
+      {"id": "power",  "form": "light",  "name": "Electricity indicator"},
+      {"id": "onoff",  "form": "switch"},
+      {"id": "reset",  "form": "button"},
+      {"id": "timer",  "form": "dial"},
+      {"id": "temp",   "form": "gauge",  "name": "Temperature"}
+    ],
+    "labels": [
+      {"at": "onoff", "text": "__12__"},
+      {"at": "reset", "text": "__13__"},
+      {"at": "timer", "text": "__14__"}
+    ]
+  }
+- `parts` is an ORDERED list, 2-12 of them, written in the order they physically sit: top of the drawing down for `apparatus` and `layers`, left to right for `panel`, clockwise from the first stage for `cycle`. That order IS the geometry.
+- `id` is a short lowercase tag used only to point a label at a part. `name` is what is PRINTED on the part itself, and may be omitted.
+- `form` picks the shape drawn. Use the nearest one:
+  * apparatus: `chamber` (a vessel), `column` (a tower, shaft or stem), `tank` (a cylinder), `dome`, `funnel` (a cone or hopper), `pipe` (a narrow connector), `disc` (a wheel or pulley), `rotor` (blades), `coil` (a spring or element), `valve`, `platform` (a deck or shelf), `liquid`, `ground` (the floor), `box` for anything else.
+  * panel: `button`, `dial`, `switch`, `light`, `display`, `slot`, `gauge`.
+  * layers: `rock`, `soil`, `sand`, `clay`, `water`, `air`, `band`.
+  * cycle and tree take no form.
+- `attach` + `to` hang a part off the SIDE of another one instead of stacking it — a pipe leaving a chamber, a cable running off a tower. `to` must be the `id` of a part you listed. For `tree`, give every part except the root a `parent` naming the `id` it descends from.
+- `labels` are the callouts printed at the end of a leader line. `at` must be the `id` of a part you listed. `side` is a hint only — a side that is already taken is moved for you.
+- **Number 3 to 6 parts.** A numbered part is written `"__<n>__"` — either as the part's `name` or as a callout's `text`, never both — with `<n>` the question number. A figure with a single blank is a drawing, not a question block.
+- Give the figure some parts that are NOT numbered and carry a real printed `name`. Those are what orient the student. A figure where every part is a blank tells them nothing about what they are looking at.
+- A callout is a LABEL, not a sentence: at most 6 words.
+- **Never print a gap's answer anywhere else on the figure.** If part 12 is the blank for "on/off switch", no other part's name and no other callout may contain those words — the figure would have answered its own question.
+- Every diagram_label_completion question must correspond to exactly one `"__<n>__"` on the figure, and those numbers MUST match the `answer_key` numbering. The question text names the part it asks about, e.g. "NO MORE THAN TWO WORDS. Label 12 on the diagram: the control the speaker says must be pressed first."
+- Answers are words the SCRIPT itself says, heard in the same order as the numbers run. **The speaker must walk through the device part by part, in the order the parts are listed**, so the student can follow the drawing while the audio runs — the answer-order rule above applies to a diagram exactly as it does to a flow chart.
+
+Visual rule: `visual` must be a table object (for table completion), a plan object (for map labelling), a flow chart object (for flow chart completion), a diagram object (for diagram labelling), or null. If the set has none of those, `visual` must be null. `visual` carries ONE figure: if the set would need two, drop one of the question blocks.
 
 Accepted Variants — REQUIRED `accepted_variants` object:
 - Real IELTS marking accepts several surface forms of the same answer. Add a top-level `accepted_variants` object mapping each question number (as a string) to an array of OTHER acceptable forms beyond the official `answer_key` value.
@@ -594,7 +638,7 @@ Return ONLY a single JSON object, no markdown, no commentary, exactly this schem
   "speakers": [
     {"label": "<script label>", "gender": "female|male", "accent": "British|American|Australian", "persona": "<2-4 words>", "wpm": <int>, "pause_ms": <int>}
   ],
-  "visual": <table object, plan object, flow chart object, or null>,
+  "visual": <table object, plan object, flow chart object, diagram object, or null>,
   "questions": [
     {"number": 1, "type": "<question type>", "question": "<question text, including any instructions/word limits>", "options": [<strings>] or null, "word_limit": <int, only for gap-fill types, else omit>}
   ],
