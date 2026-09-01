@@ -1,11 +1,19 @@
 import asyncio
 import json
+import logging
 import random
 import re
 from collections import Counter
 from functools import partial
 
+from app.agents._figure_pass import (
+    redraw_diagram,
+    repair_dangling_completions,
+    repair_self_answering_callouts,
+)
 from app.agents._diagram import (
+    gap_the_named_answers,
+    blank_gapped_part_names,
     blank_self_answering_labels,
     diagram_error,
     is_diagram,
@@ -18,15 +26,25 @@ from app.agents._flow import (
     repair_self_answering_steps,
 )
 from app.agents._marking import mark_answers, mark_full_test
+from app.agents._notes import (
+    blank_self_answering_lines,
+    is_notes,
+    normalize_notes,
+    notes_error,
+)
 from app.agents._numbering import renumber_checked
 from app.agents.answerability import (
-    GAP_FILL_TYPES,
     GAP_MARKER,
+    RefusedSet,
+    absent_answers,
     canon,
+    chart_transcription_error,
     cross_section_error,
     dangling_structure_error,
+    loose_stem,
     qtype,
     self_answering_error,
+    span_tokens,
     visual_slots,
     word_limit_error,
 )
@@ -39,12 +57,21 @@ from app.llm.prompts import (
     READING_EVALUATOR_SYSTEM,
     READING_TRAINER_SYSTEM,
 )
+from app.rag.figures import family_to_ground, figure_conventions
 from app.rag.retriever import retrieve_context
+
+logger = logging.getLogger(__name__)
 
 # Real IELTS passages are 650-900 words. qwen3:4b tends to short-generate;
 # anything under this floor triggers an expansion pass so students still get
 # exam-realistic length.
 _MIN_PASSAGE_WORDS = 550
+
+# How many times the passage expansion is asked to write in the wording an
+# answer is keyed to. Three, matching listening's `_EXPAND_TRIES`, and for the
+# same reason: each round is told what is STILL missing, so the attempts are
+# corrective rather than three rolls of one die.
+_EXPAND_TRIES = 3
 
 
 # Academic Reading is marked on its own conversion table — it is harder than
@@ -100,35 +127,36 @@ _TFNG_TYPES = {canon("true_false_notgiven"), canon("yes_no_notgiven")}
 # `dangling_completions` still accepts — but a student who asks for a flow
 # chart should get the chart the exam prints, and only the general model can
 # draw it.
+# `note_completion` and `summary_completion` joined on 2026-08-27, when the
+# engine learned to draw the printed block those rubrics name. They are the
+# same case as the flow chart above and not a stricter one: a set that inlines
+# its own note gaps stays valid, and an unsteered set still goes to the
+# checkpoint, because `_needs_a_figure` only fires on an EXPLICIT request. But
+# a student who asks for a notes block should be given one, and only the
+# general model can write it.
+#
+# 🔬 Live 2026-08-27, before this: asked point-blank for note_completion,
+# reading returned a valid set with NO block at all in 294s — the checkpoint,
+# doing exactly what its corpus taught it.
 _FIGURE_TYPES = {
     canon("table_completion"),
     canon("diagram_label_completion"),
     canon("flow_chart_completion"),
+    canon("map_labelling"),
+    canon("chart_completion"),
+    canon("note_completion"),
+    canon("summary_completion"),
 }
 
 # Every spelling of the verdict the corpus uses.
 _NOTGIVEN_VERDICTS = {"NOT GIVEN", "NOTGIVEN", "NG"}
 
-_ARTICLES = {"a", "an", "the"}
 
-
-def _span_tokens(text: str) -> list[str]:
-    """Words of `text` reduced to a comparable form: punctuation and casing
-    dropped, "per cent"/"%" folded to one spelling, leading article stripped
-    (the gap usually already supplies it).
-    """
-    lowered = str(text).lower().replace("per cent", "percent").replace("%", " percent ")
-    words = re.sub(r"[^a-z0-9]+", " ", lowered).split()
-    while words and words[0] in _ARTICLES:
-        words = words[1:]
-    return words
-
-
-def _loose_stem(word: str) -> str:
-    for suffix in ("ing", "ed", "es", "s"):
-        if len(word) > 4 and word.endswith(suffix):
-            return word[: -len(suffix)]
-    return word
+# Both moved to answerability so Listening can ask the same question of its
+# script that Reading asks of its passage. Kept under their private names here
+# because every call site below and `tools/figure_audit.py` import them by it.
+_span_tokens = span_tokens
+_loose_stem = loose_stem
 
 
 def _non_verbatim_answers(result: dict) -> list[tuple[str, str]]:
@@ -140,31 +168,16 @@ def _non_verbatim_answers(result: dict) -> list[tuple[str, str]]:
     reading "gaining attention" keyed as "more attention", or "functionality
     and community" keyed as "functionality community".
     """
-    passage = _span_tokens(result.get("passage") or "")
-    if not passage:
-        return []
-    haystack = f" {' '.join(passage)} "
-    stemmed = f" {' '.join(_loose_stem(w) for w in passage)} "
-    answer_key = result.get("answer_key") or {}
-    missing: list[tuple[str, str]] = []
-    for q in result.get("questions") or []:
-        if not isinstance(q, dict) or qtype(q) not in GAP_FILL_TYPES:
-            continue
-        # A question carrying its own word box is answered from the box.
-        if isinstance(q.get("options"), list) and q["options"]:
-            continue
-        answer = answer_key.get(str(q.get("number")))
-        if answer is None:
-            continue
-        for cand in (str(answer).split(";") if ";" in str(answer) else [str(answer)]):
-            words = _span_tokens(cand)
-            if not words:
-                continue
-            span = f" {' '.join(words)} "
-            span_stemmed = f" {' '.join(_loose_stem(w) for w in words)} "
-            if span not in haystack and span_stemmed not in stemmed:
-                missing.append((str(q.get("number")), cand.strip()))
-    return missing
+    return absent_answers(
+        result.get("passage") or "",
+        result.get("questions") or [],
+        result.get("answer_key") or {},
+        # Reading does NOT skip figures. Measured over both corpora: numeric
+        # answers are 45.1% of what a verbatim rule flags in listening and 0%
+        # of what it flags in reading, because a passage spells its numbers out
+        # where a speaker says them aloud.
+        skip_numeric=False,
+    )
 
 
 def validate_practice(
@@ -174,6 +187,7 @@ def validate_practice(
     judge_notgiven: bool = True,
     judge_verbatim: bool = True,
     judge_diagram: bool = True,
+    judge_structure: bool = True,
 ) -> str | None:
     """Reject a practice set a student could not fairly sit.
 
@@ -188,10 +202,25 @@ def validate_practice(
     name the answers keyed against it, and a diagram gap repeating another
     gap's answer is re-keyed by a third — so a retry spent complaining about
     any of them buys nothing. Every other caller judges them.
+
+    `judge_structure=False` says the same about a completion item that shows
+    no gap. Listening has skipped it on the way in since the repair was
+    written; reading kept judging it with no repair behind the gate, so the
+    complaint cost a ~4k-token regeneration and then refused the set anyway —
+    two of the three refusals in the 36-set sweep of 2026-09-01. Export keeps
+    the default: it has no repair pass, so a record that dangles must not
+    become a training target.
     """
     cross_section = cross_section_error(result, "reading")
     if cross_section:
         return cross_section
+
+    # A chart prints every value it holds, so a question keyed to one of them
+    # is answered with the passage covered up. Two live sets wrote nine and
+    # five of those and both validated clean.
+    transcription = chart_transcription_error(result)
+    if transcription:
+        return transcription
 
     questions = result.get("questions") or []
     answer_key = result.get("answer_key") or {}
@@ -275,12 +304,13 @@ def validate_practice(
                     "correct choices across the options"
                 )
 
-    dangling = dangling_structure_error(
-        questions, result.get("visual"),
-        "Ore is crushed, then ______, then washed.",
-    )
-    if dangling:
-        return dangling
+    if judge_structure:
+        dangling = dangling_structure_error(
+            questions, result.get("visual"),
+            "Ore is crushed, then ______, then washed.",
+        )
+        if dangling:
+            return dangling
 
     over_limit = word_limit_error(result)
     if over_limit:
@@ -354,9 +384,19 @@ def validate_practice(
     if broken_flow:
         return broken_flow
 
-    broken_diagram = diagram_error(result.get("visual"), questions, answer_key)
+    # `after_repairs` rides on the same flag for the same reason: the caller
+    # that switches it off is the one whose repair pipeline redraws the figure
+    # afterwards, and a retry spent complaining about what the redraw fixes
+    # buys nothing.
+    broken_diagram = diagram_error(
+        result.get("visual"), questions, answer_key, after_repairs=judge_diagram
+    )
     if broken_diagram:
         return broken_diagram
+
+    broken_notes = notes_error(result.get("visual"), questions, answer_key)
+    if broken_notes:
+        return broken_notes
     return None
 
 
@@ -625,7 +665,16 @@ async def _relabel_duplicate_gap(
         "Give the label for this one question only."
     )
     try:
-        reply = await get_llm_client("generator").complete_json(
+        # Hosted, like every other call about a figure. The generator's SFT
+        # corpus never mentions one, so the checkpoint answers this in its
+        # trained shape rather than with a label — which is why the repair kept
+        # failing and the whole set was thrown away. Found live 2026-08-28: a
+        # canal-lock diagram keyed two gaps 'gate', the repair did not take,
+        # and `validate_practice` raised on the set it was supposed to save.
+        # Same fault as `_flow._rewrite_step` and `_figure_pass`.
+        reply = await get_llm_client(
+            "generator", skip_finetune=True
+        ).complete_json(
             DIAGRAM_RELABEL_SYSTEM,
             [{"role": "user", "content": prompt}],
             required_keys=("answer",),
@@ -688,12 +737,24 @@ async def _repair_duplicate_diagram_answers(result: dict) -> list[tuple[str, str
         replacement = await _relabel_duplicate_gap(
             passage, str(question.get("question") or ""), taken
         )
+        # Logged at every exit, because this repair is the difference between
+        # a usable set and a discarded hosted generation, and when it does not
+        # take there is nothing in the output to say which guard stopped it.
+        # A canal-lock passage keyed two gaps 'gate' on three separate live
+        # runs and the set died silently each time.
         if not replacement:
+            logger.info(
+                "diagram relabel: no usable replacement for gap %s (taken: %s)",
+                number, taken,
+            )
             continue
         # Judged exactly as the set will be judged: a replacement the passage
         # never uses would trade one unanswerable gap for another.
         trial = {**result, "answer_key": {**answer_key, number: replacement}}
         if _duplicate_diagram_answers(trial):
+            logger.info(
+                "diagram relabel: %r still clashes for gap %s", replacement, number
+            )
             continue
         if any(n == number for n, _ in _non_verbatim_answers(trial)):
             # The label is sound but unwritten. Put it in the passage, on the
@@ -850,6 +911,21 @@ async def create_practice(
                 + context
             )
 
+    # The passage exemplar grounds the PROSE. Nothing grounded the FIGURE, so
+    # every convention the exam follows had to be written into the system
+    # prompt by hand — and one of them was written WRONG and stood for weeks,
+    # which is what made every generated figure contextless. These are the
+    # conventions distilled from the books' own figure pages
+    # (`tools/build_figure_knowledge.py`), fetched only when the request
+    # actually asks for a figure. Outside the `is_finetune` branch above: the
+    # checkpoint is skipped for figure work anyway, so the one request that
+    # needs this most would never have reached it.
+    figures = figure_conventions(
+        family_to_ground(question_types) or "", module="reading", subject=topic or ""
+    )
+    if figures:
+        parts.append(figures)
+
     result = await client.complete_json(
         READING_TRAINER_SYSTEM,
         [{"role": "user", "content": "\n".join(parts)}],
@@ -860,6 +936,7 @@ async def create_practice(
             judge_notgiven=False,
             judge_verbatim=False,
             judge_diagram=False,
+            judge_structure=False,
         ),
         # A ~1200-word passage plus 8-13 questions carrying full options lists
         # is a 3.5-5k-token JSON object; LLM_MAX_TOKENS is 2048 locally. A
@@ -877,16 +954,40 @@ async def create_practice(
     # about different halves of the subject, and the student is told to choose
     # words FROM THE PASSAGE. The passage is ours to edit, so the vocabulary is
     # written into it rather than the whole set being thrown away.
-    passage = str(result.get("passage") or "")
-    missing = [answer for _, answer in _non_verbatim_answers(result)]
-    if passage and (len(passage.split()) < _MIN_PASSAGE_WORDS or missing):
+    #
+    # 🔬 Live 2026-09-01, `r_table_r2`: three answers were paraphrases of the
+    # passage — it said "administrative archives", "divinatory rituals",
+    # "historical narrative" and the key read 'administrative records',
+    # 'divination', 'historical chronicles'. The expansion ran, came back
+    # LONGER, wrote none of them in, and was kept anyway: the test below used
+    # to accept `longer` on its own. So the one repair that could have saved
+    # the set reported success, and the gate refused it for the same three
+    # answers. Judged on what it was CALLED for now, and retried like every
+    # other repair in this codebase, each round told what is still absent.
+    for _ in range(_EXPAND_TRIES):
+        passage = str(result.get("passage") or "")
+        missing = [answer for _, answer in _non_verbatim_answers(result)]
+        short = len(passage.split()) < _MIN_PASSAGE_WORDS
+        if not passage or (not missing and not short):
+            break
         expanded = await _expand_passage(
             passage, str(result.get("title") or ""), missing)
-        if expanded:
-            trial = {**result, "passage": expanded}
-            longer = len(expanded.split()) > len(passage.split())
-            if longer or len(_non_verbatim_answers(trial)) < len(missing):
-                result["passage"] = expanded
+        if not expanded:
+            break
+        trial = {**result, "passage": expanded}
+        still = len(_non_verbatim_answers(trial))
+        longer = len(expanded.split()) > len(passage.split())
+        gained_answers = still < len(missing)
+        gained_length = short and longer
+        if not gained_answers and not gained_length:
+            # Nothing to show for the call. Another identical one has nothing
+            # new to work from, and this is exactly where `r_table_r2` was
+            # kept: longer, and every keyed wording still absent.
+            break
+        # Never a regression: an expansion that unfinds an answer it did not
+        # come for is worse than the passage it replaces.
+        if still <= len(missing):
+            result["passage"] = expanded
 
     # After the expansion, so the headings describe the paragraphs the student
     # is given rather than the shorter ones they were written from.
@@ -894,6 +995,11 @@ async def create_practice(
     # After the rebuild, so a statement is not written against a question the
     # rebuild is about to replace.
     await _repair_missing_notgiven(result)
+    # Skipped on the way in on the promise it would be repaired here. Before
+    # the figure work below, because `redraw_diagram` is handed the questions
+    # as the statement of WHICH part each gap sits on, and a question that
+    # still reads "Complete the diagram below." tells it nothing.
+    await repair_dangling_completions(result, str(result.get("passage") or ""))
     # After the expansion, because the replacement label has to be a span of
     # the passage the student is actually given, and before the blanking below,
     # because a newly keyed label may be printed on the grid as well.
@@ -901,9 +1007,34 @@ async def create_practice(
     # Last, because the passage expansion above can key a gap to wording the
     # grid also prints, and this erases the duplicate rather than the gap.
     _blank_self_answering_cells(result)
-    # The drawn figure's version of the same rule, and deterministic for the
-    # same reason: a callout is a noun phrase, so there is nothing to reword.
+    # Draws the figure again in a call that does nothing else. Before the
+    # self-answer cleanups below, because a redraw replaces the whole figure
+    # and would strand any fix made to the one it replaces.
+    # Before the redraw, deliberately: a printed answer whose question has no
+    # gap is cured by making that name the gap, and a figure that becomes legal
+    # here may skip the redraw altogether. Deterministic — the answer names
+    # exactly one part, so there is nothing to infer.
+    named_gaps = gap_the_named_answers(result)
+    if named_gaps:
+        logger.info("gapped the parts printing their own answer: %s",
+                    ", ".join(f"{pid}=__{n}__" for pid, n in named_gaps))
+    await redraw_diagram(result, str(result.get("passage") or ""))
+    # The drawn figure's version of the same rule. Deletion still handles the
+    # orientation names, which carry no gap of their own and so can simply go.
     blank_self_answering_labels(result)
+    # A callout carrying its own gap cannot be deleted without orphaning a
+    # question, and now that it holds a clause there IS something to reword.
+    await repair_self_answering_callouts(result)
+    # 🔬 LAST, after the rewrite above. `repair_self_answering_callouts`
+    # rewords a callout through the model, and the wording it comes back
+    # with can be the subject form this repair exists for — "The __1__
+    # holds the beans" against a part still printing "Hopper". Run before
+    # the rewrite it saw the old text, missed that, and the gate refused
+    # the set: 3 of the 9 failures in the 36-set sweep of 2026-08-29.
+    blank_gapped_part_names(result)
+    # And the printed block's, which only ever blanks a HEADING — a notes line
+    # is content, so deleting one would take the student's context with it.
+    blank_self_answering_lines(result)
     # Drops an empty box and folds `___6___` to the one gap form the renderer
     # reads. Before the gate below, so the gate judges what ships.
     if isinstance(result.get("visual"), dict) and result["visual"].get("kind") == "flow":
@@ -912,6 +1043,8 @@ async def create_practice(
     # spelling — before the gate below judges what ships.
     if is_diagram(result.get("visual")):
         result["visual"] = normalize_diagram(result["visual"])
+    if is_notes(result.get("visual")):
+        result["visual"] = normalize_notes(result["visual"])
     # Last on the chart, for the same reason `_blank_self_answering_cells` is
     # last on the grid: the passage expansion above can key a gap to wording a
     # box also prints. The box is reworded rather than the gap re-keyed —
@@ -922,7 +1055,8 @@ async def create_practice(
     # did not take and the set must not reach a student.
     problem = validate_practice(result)
     if problem:
-        raise ValueError(f"the repaired reading set is invalid: {problem}")
+        raise RefusedSet(
+            f"the repaired reading set is invalid: {problem}", result)
 
     return result
 

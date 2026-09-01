@@ -58,12 +58,23 @@ UNDERSEA_TURBINE = {
         {"id": "seabed", "form": "ground", "name": "Sea bed"},
         {"id": "cable", "form": "pipe", "attach": "left", "to": "tower"},
     ],
+    # Verbatim from the book, which is the point of this fixture: these are the
+    # callouts Cambridge prints around this figure, including the one that
+    # carries TWO blanks. A gutter sized for "Thread guide" printed each of
+    # them as a single line running off the page.
     "labels": [
-        {"at": "rotor", "text": "__23__", "side": "right"},
-        {"at": "housing", "text": "__24__", "side": "right"},
-        {"at": "tower", "text": "Whole tower can be raised", "side": "left"},
-        {"at": "cable", "text": "__25__", "side": "left"},
-        {"at": "seabed", "text": "__26__", "side": "right"},
+        {"at": "rotor",
+         "text": "Sea life not in danger due to the fact that blades are "
+                 "comparatively __23__",
+         "side": "right"},
+        {"at": "tower",
+         "text": "Whole tower can be raised for __24__ and the extraction of "
+                 "seaweed from the blades",
+         "side": "left"},
+        {"at": "cable",
+         "text": "Air bubbles result from the __25__ behind blades. This is "
+                 "known as __26__",
+         "side": "left"},
     ],
 }
 
@@ -86,11 +97,11 @@ SEWING_MACHINE = {
         {"id": "wheel", "form": "disc", "attach": "right", "to": "arm"},
     ],
     "labels": [
-        {"at": "spool", "text": "__1__", "side": "left"},
-        {"at": "needle", "text": "__2__", "side": "left"},
-        {"at": "plate", "text": "__3__", "side": "right"},
-        {"at": "wheel", "text": "__4__", "side": "right"},
-        {"at": "base", "text": "__5__", "side": "left"},
+        {"at": "spool", "text": "Thread unwinds from the __1__ at the top", "side": "left"},
+        {"at": "needle", "text": "The __2__ carries the thread through the fabric", "side": "left"},
+        {"at": "plate", "text": "Fabric is fed across the __3__", "side": "right"},
+        {"at": "wheel", "text": "Turning the __4__ moves the needle by hand", "side": "right"},
+        {"at": "base", "text": "The motor sits inside the __5__", "side": "left"},
     ],
 }
 
@@ -352,13 +363,177 @@ LIVE_THERMOSTAT = {
     ]
 }
 
+# A `scene` — the layout added on 2026-08-27 after checking what the exam
+# actually draws. The official Cambridge sample places its features in TWO
+# dimensions and puts each blank AT its feature; `apparatus` stacks everything
+# in one centred column, so a fire extinguisher and a Ferris wheel came out as
+# the same tower of vessels.
+FIRE_EXTINGUISHER = {
+    "kind": "diagram",
+    "title": "Fire extinguisher",
+    "layout": "scene",
+    "parts": [
+        {"id": "handle", "form": "handle", "col": 1, "row": 0},
+        {"id": "body", "form": "canister", "col": 1, "row": 1, "h": 2, "name": "Body"},
+        {"id": "hose", "form": "hose", "col": 2, "row": 1},
+        {"id": "nozzle", "form": "nozzle", "col": 3, "row": 1},
+        {"id": "floor", "form": "ground", "col": 0, "row": 3, "w": 5},
+    ],
+    "labels": [
+        {"at": "handle", "text": "__27__"},
+        {"at": "nozzle", "text": "__28__"},
+        {"at": "hose", "text": "__29__"},
+    ],
+}
+
+# What the model ACTUALLY drew once it had the scene vocabulary, live on
+# 2026-08-27. Kept because a real figure is shaped differently from a
+# hand-built one: this one places five parts across three rows, numbers four of
+# them through callouts and one through a part's name, and stands the whole
+# thing on a ground line.
+LIVE_VERTICAL_FARM = {
+    "kind": "diagram",
+    "title": "Cross‑section of a vertical farm",
+    "layout": "scene",
+    "parts": [
+        {
+            "id": "leds",
+            "form": "panel",
+            "name": "",
+            "col": 1,
+            "row": 0
+        },
+        {
+            "id": "drip",
+            "form": "pipe",
+            "name": "",
+            "col": 1,
+            "row": 1
+        },
+        {
+            "id": "vent",
+            "form": "box",
+            "name": "__4__",
+            "col": 1,
+            "row": 2
+        },
+        {
+            "id": "control",
+            "form": "box",
+            "name": "",
+            "col": 2,
+            "row": 2
+        },
+        {
+            "id": "ground",
+            "form": "ground",
+            "name": "",
+            "col": 0,
+            "row": 3,
+            "w": 4
+        }
+    ],
+    "labels": [
+        {
+            "at": "leds",
+            "text": "__1__",
+            "side": ""
+        },
+        {
+            "at": "drip",
+            "text": "__2__",
+            "side": ""
+        },
+        {
+            "at": "vent",
+            "text": "__3__",
+            "side": ""
+        },
+        {
+            "at": "control",
+            "text": "__5__",
+            "side": ""
+        }
+    ]
+}
+
+# A CROSS-SECTION: parts drawn inside another part, joined by a pipe. This is
+# what `in` and `links` are for, and what the figure could not express before —
+# every "cross-section" was a row of separate objects standing side by side.
+CUTAWAY_EXTINGUISHER = {
+    "kind": "diagram",
+    "title": "Cross-section of a fire extinguisher",
+    "layout": "scene",
+    "parts": [
+        {"id": "handle", "form": "handle", "col": 1, "row": 0},
+        {"id": "body", "form": "canister", "col": 1, "row": 1, "h": 2,
+         "name": "Steel body"},
+        {"id": "agent", "form": "liquid", "in": "body", "col": 0, "row": 2, "w": 3},
+        {"id": "tube", "form": "pipe", "in": "body", "col": 1, "row": 0, "h": 2},
+        {"id": "gauge", "form": "gauge", "col": 0, "row": 1},
+        {"id": "nozzle", "form": "nozzle", "col": 3, "row": 1},
+        {"id": "floor", "form": "ground", "col": 0, "row": 3, "w": 5},
+    ],
+    "links": [
+        {"from": "body", "to": "nozzle", "style": "pipe"},
+        {"from": "gauge", "to": "body", "style": "line"},
+    ],
+    "labels": [
+        {"at": "handle", "text": "__31__"},
+        {"at": "agent", "text": "__32__"},
+        {"at": "nozzle", "text": "__33__"},
+        {"at": "gauge", "text": "__34__"},
+    ],
+}
+
 # The listening full-test fixture holds four parts and a part holds one
 # figure, so the six layouts are proven over two passes rather than four of
 # them being proven and two sitting in this file unrendered.
+# The live termite mound of 2026-08-29, which passed every validator and drew
+# as an illegible blob: a `dome` holding five named parts. The dome was drawn
+# at its natural 130x52 inside a 240x270 cell, so the five contents were laid
+# out on a 3x3 sub-grid of a box 30 wide and 7 high and all five names printed
+# on top of one another. A text-presence check passes on that figure — every
+# name IS on the page — which is why the overlap assertion below exists.
+PACKED_MOUND = {
+    "kind": "diagram",
+    "title": "Cross-section of a termite mound",
+    "layout": "scene",
+    "parts": [
+        {"id": "ground", "form": "ground", "name": "Soil base",
+         "col": 0, "row": 3, "w": 6, "h": 1},
+        {"id": "outer", "form": "dome", "name": "Outer layer",
+         "col": 1, "row": 0, "w": 4, "h": 3},
+        {"id": "conduit", "form": "pipe", "name": "Vertical conduit",
+         "col": 0, "row": 0, "w": 1, "h": 3, "in": "outer"},
+        {"id": "openings", "form": "valve", "name": "Vent openings",
+         "col": 1, "row": 0, "w": 1, "h": 1, "in": "outer"},
+        {"id": "core", "form": "column", "name": "Central core",
+         "col": 2, "row": 0, "w": 1, "h": 1, "in": "outer"},
+        {"id": "tunnels", "form": "pipe", "name": "Horizontal tunnels",
+         "col": 2, "row": 1, "w": 1, "h": 1, "in": "outer"},
+        {"id": "cavity", "form": "chamber", "name": "Brood cavity",
+         "col": 2, "row": 2, "w": 1, "h": 1, "in": "outer"},
+    ],
+    "labels": [
+        {"at": "core", "text": "The __1__ channels warm air upwards",
+         "side": "right"},
+        {"at": "outer", "text": "The __2__ forms the outer covering",
+         "side": "left"},
+        {"at": "openings", "text": "The __3__ transport air to the surface",
+         "side": "right"},
+        {"at": "cavity", "text": "The __4__ houses the colony's brood",
+         "side": "left"},
+    ],
+}
+
+
 BATCHES = (
     (UNDERSEA_TURBINE, SEWING_MACHINE, AIRPORT_STRATA, OPERATIONAL_CYCLE),
     (DUNG_BEETLES, WATER_HEATER, LIVE_SOLAR_HEATER, LIVE_DISHWASHER),
-    (LIVE_THERMOSTAT,),
+    (LIVE_THERMOSTAT, FIRE_EXTINGUISHER, LIVE_VERTICAL_FARM,
+     CUTAWAY_EXTINGUISHER),
+    (PACKED_MOUND,),
 )
 
 # What each figure must have on screen once it is drawn. Gap numbers are
@@ -382,6 +557,11 @@ EXPECT = {
         lb["text"].strip("_") for lb in LIVE_DISHWASHER["labels"]
         if lb["text"].startswith("__")
     ],
+    FIRE_EXTINGUISHER["title"]: ["27", "28", "29", "Body"],
+    LIVE_VERTICAL_FARM["title"]: ["1", "2", "3", "4", "5"],
+    CUTAWAY_EXTINGUISHER["title"]: ["31", "32", "33", "34", "Steel body"],
+    PACKED_MOUND["title"]: ["1", "2", "3", "4", "Central core",
+                            "Brood cavity", "Vertical conduit"],
     LIVE_THERMOSTAT["title"]: [
         lb["text"].strip("_") for lb in LIVE_THERMOSTAT["labels"]
         if lb["text"].startswith("__")
@@ -515,6 +695,33 @@ def main() -> int:
                                  "figure[aria-label^='Diagram:'] svg circle")
             check("the figures drew real shapes", paths.count() >= 5 * len(batch),
                   f"{paths.count()} shapes")
+            # 🔬 Every name on the illegible mound WAS on the page, so the
+            # text checks above all passed on it. What was wrong was where the
+            # names sat: five of them printed at the same place. Two labels
+            # that share most of their area are the failure, and only geometry
+            # can see it. Boxes that merely touch are fine — the lines of one
+            # wrapped name sit edge to edge by design.
+            piled = []
+            boxes = page.evaluate(
+                """() => Array.from(
+                     document.querySelectorAll("figure[aria-label^='Diagram:'] svg text")
+                   ).map((el) => {
+                     const r = el.getBoundingClientRect();
+                     return {t: el.textContent.trim(),
+                             x: r.x, y: r.y, w: r.width, h: r.height};
+                   }).filter((b) => b.t && b.w > 0)"""
+            )
+            for i, a in enumerate(boxes):
+                for b in boxes[i + 1:]:
+                    ox = min(a["x"] + a["w"], b["x"] + b["w"]) - max(a["x"], b["x"])
+                    oy = min(a["y"] + a["h"], b["y"] + b["h"]) - max(a["y"], b["y"])
+                    if ox <= 0 or oy <= 0:
+                        continue
+                    smaller = min(a["w"] * a["h"], b["w"] * b["h"])
+                    if smaller and (ox * oy) / smaller > 0.4:
+                        piled.append(f"{a['t']!r}/{b['t']!r}")
+            check(f"batch {batch_no} prints no label on top of another",
+                  not piled, "; ".join(piled[:4]))
             check("no page or console errors", not errors, "; ".join(errors[:3]))
             ctx.close()
         browser.close()

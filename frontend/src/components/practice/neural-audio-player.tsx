@@ -25,7 +25,8 @@ function Equalizer({ playing }: { playing: boolean }) {
 }
 
 interface NeuralAudioPlayerProps {
-  practiceId: number;
+  /** Ignored when `fetchAudio` is given. */
+  practiceId?: number;
   /** Full-test part number; omit for a single-part practice recording. */
   part?: number;
   /** Disables playback and pauses any current playback (e.g. after submit). */
@@ -34,6 +35,12 @@ interface NeuralAudioPlayerProps {
   onPlayStart?: () => void;
   /** Return false to veto a fresh play (e.g. the 2-play limit is reached). */
   canPlay?: () => boolean;
+  /** Where to fetch the recording from, when it is not a practice set.
+   *
+   * A mock exam's listening paper is a snapshot inside the exam and has no
+   * practice id, so it fetches from its own route. Passing this makes
+   * `practiceId` unused. */
+  fetchAudio?: () => Promise<Blob>;
 }
 
 /**
@@ -47,6 +54,7 @@ export function NeuralAudioPlayer({
   disabled = false,
   onPlayStart,
   canPlay,
+  fetchAudio,
 }: NeuralAudioPlayerProps) {
   const audioRef = React.useRef<HTMLAudioElement | null>(null);
   const urlRef = React.useRef<string | null>(null);
@@ -68,7 +76,9 @@ export function NeuralAudioPlayer({
 
   const ensureLoaded = async () => {
     if (urlRef.current) return;
-    const blob = await api.listeningAudio(practiceId, part);
+    const blob = fetchAudio
+      ? await fetchAudio()
+      : await api.listeningAudio(practiceId as number, part);
     const url = URL.createObjectURL(blob);
     urlRef.current = url;
     if (audioRef.current) audioRef.current.src = url;

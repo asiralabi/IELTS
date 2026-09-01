@@ -32,7 +32,15 @@ READING_REPLY = {
 
 LISTENING_REPLY = {
     "title": "Joining a Sports Centre",
-    "audio_script": "AGENT: Good morning, how can I help you today? " * 130,
+    # The script SAYS the answer. A listening answer the recording never
+    # contains is refused now (`_unheard_answers`), and a stub script that says
+    # nothing made this reply invalid for a reason none of these tests is
+    # about — they assert on the prompt, so the reply has to be a set the
+    # generator accepts.
+    "audio_script": (
+        "AGENT: Good morning, how can I help you today? "
+        "CUSTOMER: I would like to start on Monday. " * 130
+    ),
     # Ten questions because create_part takes no other length, and each carries
     # its own gap: these tests assert on the prompt, so the reply has to be a
     # set the generator accepts without repairing it first.
@@ -161,7 +169,8 @@ def test_general_model_keeps_the_prose_listening_prompt(capture, name):
 def _part(question_count: int) -> dict:
     return {
         "title": "Joining a Sports Centre",
-        "audio_script": "AGENT: Good morning. " * 10,
+        # Says its answer, for the reason LISTENING_REPLY does.
+        "audio_script": "AGENT: Good morning, we open on Monday. " * 10,
         "questions": [
             {"number": n, "type": "sentence_completion", "question": f"Gap {n} is ..."}
             for n in range(1, question_count + 1)
@@ -449,9 +458,14 @@ def test_three_question_headings_block_is_accepted():
 
 
 def _keyed(answers: dict, questions: list[dict] | None = None) -> dict:
+    # Every keyed answer is spoken. A listening answer the recording never says
+    # is refused now (`_unheard_answers`); before that rule existed these
+    # fixtures were invalid sets that nothing checked, and each test here is
+    # about some OTHER rule.
+    spoken = " ".join(f"AGENT: I have {a} noted down." for a in answers.values())
     return {
         "title": "Joining a Sports Centre",
-        "audio_script": "AGENT: Good morning. " * 10,
+        "audio_script": "AGENT: Good morning. " * 10 + spoken,
         "questions": questions or [
             {"number": n, "type": "short_answer", "question": f"Question {n}?"}
             for n in answers

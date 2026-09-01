@@ -241,6 +241,26 @@ async def test_a_twice_rejected_set_reports_the_validator_not_a_json_error():
         )
 
 
+async def test_a_rejected_reply_travels_out_WITH_the_complaint():
+    """🔬 The verification sweep of 2026-09-01 saved the rejected set for six
+    of its seven failures and had nothing for the seventh: `l_map_r2` died
+    inside this retry, where the reply was dropped at the `raise`.
+
+    A map fault — "A sits on 'Main trail'" — cannot be diagnosed from the
+    sentence alone; you have to see the places and the letters. The reply rides
+    out on `.result`, which is what `tools/figure_sweep.py` writes to disk.
+    """
+    reply = json.dumps({"passage": "word " * 200, "visual": {"kind": "plan"}})
+    client = ScriptedClient([reply, reply])
+
+    with pytest.raises(ValueError) as caught:
+        await client.complete_json(
+            "sys", [], required_keys=("passage",),
+            validate=lambda o: "A sits on 'Main trail'",
+        )
+    assert caught.value.result["visual"] == {"kind": "plan"}
+
+
 async def test_no_required_keys_accepts_any_object():
     client = ScriptedClient(['{"anything": "goes"}'])
     assert await client.complete_json("sys", []) == {"anything": "goes"}
@@ -651,6 +671,65 @@ class TestOpenAIStreaming:
         assert fake.pieces
 
 
+class TestReasoningBudget:
+    """A reasoning model thinks out of the same allowance it writes from.
+
+    Measured live 2026-08-30 on gpt-oss-120b at `reasoning_effort=medium`: the
+    duplicate-gap relabel repair, which asks for one label at max_tokens=128,
+    came back with EMPTY content every time -- the thinking spent the budget
+    before the answer began. The whole reading set was then refused for the
+    duplicate the repair exists to fix, and the diagram sweep read 28% refused
+    against 11% before the model swap. Six hosted call sites ask for under
+    1024, so the reserve belongs here rather than in each of them.
+    """
+
+    @staticmethod
+    def _client(monkeypatch, fake):
+        import openai
+
+        monkeypatch.setattr(openai, "AsyncOpenAI", lambda **kwargs: fake)
+        return OpenAIClient()
+
+    def test_a_small_budget_is_topped_up_for_the_thinking(self, monkeypatch):
+        monkeypatch.setattr(settings, "openai_reasoning_effort", "medium")
+        fake = FakeOpenAIStream(["{}"])
+        client = self._client(monkeypatch, fake)
+
+        asyncio.run(
+            client.complete("sys", [{"role": "user", "content": "x"}], max_tokens=128)
+        )
+
+        assert fake.kwargs["reasoning_effort"] == "medium"
+        assert fake.kwargs["max_tokens"] == 128 + client_module._REASONING_RESERVE
+
+    def test_a_model_that_does_not_reason_is_left_alone(self, monkeypatch):
+        """Blank means the parameter is never sent -- a model that does not know
+        it answers 400 -- and then there is no thinking to reserve for either."""
+        monkeypatch.setattr(settings, "openai_reasoning_effort", "")
+        fake = FakeOpenAIStream(["{}"])
+        client = self._client(monkeypatch, fake)
+
+        asyncio.run(
+            client.complete("sys", [{"role": "user", "content": "x"}], max_tokens=128)
+        )
+
+        assert "reasoning_effort" not in fake.kwargs
+        assert fake.kwargs["max_tokens"] == 128
+
+    def test_the_configured_ceiling_still_wins(self, monkeypatch):
+        """The reserve protects the small repair calls. A generation already
+        asking for the whole allowance has room to think inside it, and asking
+        the provider for more than .env permits is a different bug."""
+        monkeypatch.setattr(settings, "openai_reasoning_effort", "medium")
+        monkeypatch.setattr(settings, "llm_max_tokens", 16384)
+        fake = FakeOpenAIStream(["{}"])
+        client = self._client(monkeypatch, fake)
+
+        asyncio.run(client.complete("sys", [{"role": "user", "content": "x"}]))
+
+        assert fake.kwargs["max_tokens"] == 16384
+
+
 class TestSkipFinetuneRouting:
     """A configured checkpoint serves "generator" — except for figure work.
 
@@ -687,3 +766,39 @@ class TestSkipFinetuneRouting:
         get_llm_client("generator", skip_finetune=True)
 
         assert get_llm_client("generator").is_finetune
+
+
+def test_a_rate_limited_model_is_not_reported_as_a_server_fault():
+    """🔬 Live 2026-09-01: three figure sweeps drained the free tier, and the
+    next `POST /writing/full-test/submit` raised `openai.RateLimitError` clean
+    through the router — every handler catches `ValueError`, the reply a
+    validator turned down, and none catches the provider declining to reply at
+    all. The student was told "Internal Server Error", which is untrue and
+    unactionable: nothing is broken and the fix is to wait.
+    """
+    import httpx as _httpx
+    from fastapi import APIRouter
+    from fastapi.testclient import TestClient
+    from openai import RateLimitError
+
+    from app.main import create_app
+
+    app = create_app()
+    hurt = APIRouter()
+
+    @hurt.get("/_test/ratelimited")
+    def _boom() -> dict:
+        raise RateLimitError(
+            "Too Many Requests",
+            response=_httpx.Response(
+                429, request=_httpx.Request("POST", "https://model.invalid/v1")),
+            body=None,
+        )
+
+    app.include_router(hurt)
+    # `raise_server_exceptions=False` so the handler is exercised rather than
+    # the exception being re-raised into the test.
+    r = TestClient(app, raise_server_exceptions=False).get("/_test/ratelimited")
+    assert r.status_code == 503
+    assert "busy" in r.json()["detail"]
+    assert "Internal Server Error" not in r.text

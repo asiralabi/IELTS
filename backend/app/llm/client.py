@@ -57,6 +57,21 @@ _RUNAWAY_CHECK_EVERY = 1000
 # reply is longer than anything it was trained to write, so it is not going to
 # become valid by continuing.
 _RUNAWAY_MAX_CHARS = 16_000
+# A reasoning model thinks out of the SAME allowance it writes from, so a
+# caller's `max_tokens` -- which sizes the ANSWER it wants -- has to be topped
+# up or the thinking eats the whole budget and `content` arrives empty. The
+# repairs are where this bites: they ask for one label or one line, so they set
+# the smallest budgets in the codebase. Measured 2026-08-30 on gpt-oss-120b at
+# `reasoning_effort=medium`, the duplicate-gap relabel asked four ways:
+#
+#   128  -> empty content, "No JSON object found in response: ''"
+#   512  -> {"answer": "walled basin"}
+#   1024 -> {"answer": "walled basin"}
+#
+# The floor sits between 128 and 512; this is the next power of two clear of
+# it. An unused reserve costs nothing -- `max_tokens` caps a reply, it does not
+# buy tokens -- so it is added to every call rather than guessed at per site.
+_REASONING_RESERVE = 1024
 
 _ADVICE_REPEATING = (
     "Your previous reply ran on and never closed the JSON object. "
@@ -211,7 +226,19 @@ class LLMClient(ABC):
             if validate is not None:
                 problem = validate(obj)
                 if problem:
-                    raise ValueError(problem)
+                    # The rejected reply travels WITH the complaint. Attached
+                    # rather than imported as a type, so this layer keeps no
+                    # dependency on the agents that define the validators —
+                    # `.result` is the whole contract, and `RefusedSet` in
+                    # `agents.answerability` is the same one spelled as a class.
+                    #
+                    # 🔬 Without it a validator rejection on retry reached the
+                    # caller as a bare sentence: `l_map_r2` was the one failure
+                    # of the 2026-09-01 sweep with no artifact to look at, and
+                    # a map fault is not diagnosable from its message alone.
+                    rejected = ValueError(problem)
+                    rejected.result = obj
+                    raise rejected
             return obj
 
         raw = ""
@@ -268,7 +295,9 @@ class LLMClient(ABC):
                 # Well-formed JSON a validator turned down. Quoting the reply
                 # buries the reason under 500 chars of passage; the validator's
                 # own complaint IS the reason, so lead with it.
-                raise ValueError(f"LLM reply rejected on retry: {exc}") from exc
+                on_retry = ValueError(f"LLM reply rejected on retry: {exc}")
+                on_retry.result = getattr(exc, "result", None)
+                raise on_retry from exc
 
 
 # Module-level singleton — creating a new httpx.AsyncClient per request
@@ -341,6 +370,21 @@ class OllamaClient(LLMClient):
             "options": {
                 "temperature": temperature if temperature is not None else settings.llm_temperature,
                 "num_predict": max_tokens if max_tokens is not None else settings.llm_max_tokens,
+                # Ollama's default repeat_last_n is 64 tokens. Measured
+                # 2026-08-27, a Listening Part 4 the checkpoint could not
+                # finish looped on a ~85-TOKEN cycle -- "Okay, that sounds
+                # like a good plan. Have you thought about how you're going
+                # to..." 26 times over -- so every repeated token had already
+                # fallen out of the window before it recurred and the penalty
+                # never fired once. Two live attempts died in the runaway
+                # guard at ~19 minutes each, which is a listening full test
+                # that cannot be assembled at all.
+                #
+                # Set on the client rather than in the Modelfile because a
+                # rebuild silently replaces the Modelfile (see the Unsloth
+                # temperature trap), and this must not depend on remembering.
+                "repeat_last_n": settings.ollama_repeat_last_n,
+                "repeat_penalty": settings.ollama_repeat_penalty,
             },
         }
         if json_mode:
@@ -473,6 +517,15 @@ class OpenAIClient(LLMClient):
         # object found in response". See `openai_reasoning_effort`.
         if settings.openai_reasoning_effort:
             kwargs["reasoning_effort"] = settings.openai_reasoning_effort
+            # The caller sized the answer; the thinking needs its own room on
+            # top, or a small budget never reaches the answer at all. The
+            # configured ceiling still wins: a generation already asking for
+            # `llm_max_tokens` has room to think inside it, and asking a
+            # provider for more than .env allows is a different bug.
+            kwargs["max_tokens"] = min(
+                kwargs["max_tokens"] + _REASONING_RESERVE,
+                max(kwargs["max_tokens"], settings.llm_max_tokens),
+            )
         # Streamed for the same reason ollama is, plus one the hosted side adds:
         # a gateway in front of the model will abandon a request that stays
         # silent too long. Measured against NVIDIA — an unstreamed part-2

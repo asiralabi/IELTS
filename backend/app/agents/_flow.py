@@ -235,7 +235,21 @@ async def _rewrite_step(
         "Rewrite that one step."
     )
     try:
-        reply = await get_llm_client("generator").complete_json(
+        # Hosted. `get_llm_client("generator")` lands on the local fine-tune,
+        # whose SFT corpus never mentions a figure — the exact case
+        # `skip_finetune` exists for, and this is figure text. Written before
+        # the 2026-08-27 model swap, when the general model and the checkpoint
+        # were closer in what they would attempt.
+        #
+        # The 256-token cap was suspected of the same fault and MEASURED
+        # instead (`tools/_diag_token_cap_probe.py`, gpt-oss-120b): on a
+        # one-sentence rewrite every cap from 256 up returns clean JSON in
+        # under 4s, and only 128 comes back empty. A reasoning model does eat
+        # its budget before it writes, but on an output this small it does not
+        # get near it. The cap stays.
+        reply = await get_llm_client(
+            "generator", skip_finetune=True
+        ).complete_json(
             FLOW_RESTEP_SYSTEM,
             [{"role": "user", "content": prompt}],
             required_keys=("step",),
@@ -427,10 +441,28 @@ def flow_error(visual: object, questions: list, answer_key: dict) -> str | None:
     # gap whose POSITION is wrong does not fix the step, and there is nothing
     # else to move. Scoped to the chart, so it refuses nothing that was ever
     # trained on — no corpus set carries a flow `visual` at all.
+    # A gap answered from a LETTERED BOX is exempt. Cambridge prints the flow
+    # chart both ways — "Choose FIVE answers from the box and write the correct
+    # letter, A-H" as often as "Choose NO MORE THAN TWO WORDS" — and the
+    # corpus bears it out: of the 12 real charts distilled into
+    # `data/figure_knowledge/`, 5 are `lettered_box` against 5
+    # `words_from_text`. The model kept producing the lettered form and this
+    # check kept refusing it as a fragment, because a bare "A" has no content
+    # word; two live listening sets died that way on 2026-08-28.
+    #
+    # Exempt only when the QUESTION actually offers the letters. A lettered
+    # answer with no options printed is still broken — the student would see a
+    # blank with nothing to choose from — and that is what the refusal is for.
+    lettered = {
+        str(q.get("number"))
+        for q in questions or []
+        if q.get("options")
+    }
     fragments = [
         (g, str((answer_key or {}).get(g)).strip())
         for g in gaps
-        if _fragment_answer(str((answer_key or {}).get(g) or ""))
+        if g not in lettered
+        and _fragment_answer(str((answer_key or {}).get(g) or ""))
     ]
     if fragments:
         named = ", ".join(f"gap {g} is answered {a!r}" for g, a in fragments)

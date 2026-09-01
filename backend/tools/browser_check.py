@@ -118,7 +118,10 @@ def main() -> int:
             shot(page, "14_study_plan_loaded")
             body_text = page.locator("body").inner_text()
             Path(OUT / "study_plan_body.txt").write_text(body_text, encoding="utf-8")
-            cites = sorted(set(re.findall(r"cambridge-\d+(?:-test\d+)?", body_text)))
+            # Both spellings — see the same note in `api_smoke.py`. The model
+            # writes "Cambridge IELTS 14"; only the retriever writes the slug.
+            cites = sorted(set(re.findall(
+                r"[Cc]ambridge[ -](?:IELTS[ -])?\d+(?:-test\d+)?", body_text)))
             print(f"    grounded citations: {cites or '(none)'}")
 
         print("\n[4] captured browser logs:")

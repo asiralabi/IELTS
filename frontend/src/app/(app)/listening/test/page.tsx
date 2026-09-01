@@ -33,6 +33,9 @@ export default function ListeningTestPage() {
   const [phase, setPhase] = React.useState<Phase>("start");
   const [test, setTest] = React.useState<FullListeningTest | null>(null);
   const [answers, setAnswers] = React.useState<Record<string, string>>({});
+  // Which question the student is on, so the figure can light that
+  // blank. One at a time, so one piece of state covers every section.
+  const [activeGap, setActiveGap] = React.useState<string | null>(null);
   const [result, setResult] = React.useState<FullTestResult | null>(null);
   const [openTranscripts, setOpenTranscripts] = React.useState<Record<number, boolean>>({});
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
@@ -281,9 +284,11 @@ export default function ListeningTestPage() {
                     </div>
                   )}
 
-                  <Visuals visual={part.visual} visuals={part.visuals} />
+                  <Visuals
+                    activeGap={activeGap} visual={part.visual} visuals={part.visuals} />
 
                   <QuestionList
+                    onActiveQuestion={setActiveGap}
                     questions={questions}
                     answers={answers}
                     onAnswer={(k, v) => setAnswers((a) => ({ ...a, [k]: v }))}

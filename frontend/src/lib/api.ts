@@ -308,6 +308,10 @@ export const api = {
     requestBlob(
       `/listening/audio/${practice_id}${part != null ? `?part=${part}` : ""}`
     ),
+  // A mock exam's listening paper is a snapshot inside the exam, with no
+  // practice id of its own, so it has its own recording route.
+  mockExamAudio: (exam_id: number, part: number) =>
+    requestBlob(`/mock-exam/${exam_id}/audio?part=${part}`),
 
   // --- mock exam ---
   generateMockExam: () =>

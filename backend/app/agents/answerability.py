@@ -14,6 +14,26 @@ desynced the committed jsonl from the model.
 import json
 import re
 
+
+class RefusedSet(ValueError):
+    """A generated set a validator rejected, carried with the set itself.
+
+    Subclasses `ValueError` because every caller already catches that and
+    regenerates; nothing upstream needs to change. What it adds is `.result` --
+    the rejected set, which until now was dropped on the floor at the `raise`.
+
+    🔬 Why it exists: `figure_sweep.py` saves only the sets that PASS, so the
+    one artifact that would diagnose a live refusal never survived the run.
+    Two picture-choice sets died on "pictures A and B are the same drawing"
+    (2026-09-01) with nothing left to look at, and the count rule that was
+    supposed to close it was already proven reachable -- so the evidence, not
+    another guess, is what was missing.
+    """
+
+    def __init__(self, message: str, result: dict | None = None) -> None:
+        super().__init__(message)
+        self.result = result
+
 def canon(name: str) -> str:
     """Canonical key for a question type.
 
@@ -46,9 +66,118 @@ STRUCTURE_TYPES = {canon(t) for t in (
 # names; these cannot, because the answer is a position on the drawing.
 MAP_TYPES = {canon(t) for t in ("map_labelling", "plan_labelling")}
 
-# Figure kinds that carry a drawn layout. `plan` states which room owns which
-# grid cell and lets the renderer derive the walls; `map` is the older
-# coordinate form, still present in payloads generated before the switch.
+# Words a gap usually supplies for itself, so an answer that opens with one is
+# the same answer without it.
+_ARTICLES = {"a", "an", "the"}
+
+
+def span_tokens(text: str) -> list[str]:
+    """Words of `text` reduced to a comparable form: punctuation and casing
+    dropped, "per cent"/"%" folded to one spelling, leading article stripped.
+
+    Lives here rather than in either trainer because both sections ask the same
+    question of their own source -- is this answer actually IN the passage /
+    the script -- and two copies of "is this a span of that" is how one of them
+    comes to accept what the other refuses.
+    """
+    lowered = str(text).lower().replace("per cent", "percent").replace("%", " percent ")
+    words = re.sub(r"[^a-z0-9]+", " ", lowered).split()
+    while words and words[0] in _ARTICLES:
+        words = words[1:]
+    return words
+
+
+def loose_stem(word: str) -> str:
+    for suffix in ("ing", "ed", "es", "s"):
+        if len(word) > 4 and word.endswith(suffix):
+            return word[: -len(suffix)]
+    return word
+
+
+# A time, a date, a price, a phone number, a quantity: what the speaker says in
+# words and the student is expected to write in figures. Measured 2026-08-27
+# over the listening corpus (`tools/_diag_listening_verbatim_cost.py`): these
+# are 45.1% of everything a naive verbatim rule flags there, and every one of
+# them is a CORRECT answer -- "six to eight" keyed '6:00-8:00', "March the
+# tenth" keyed '10th March'. A rule that counted them would refuse what the
+# exam itself prints.
+_NUMBER_WORDS = {
+    # cardinals
+    "zero", "oh", "nought", "one", "two", "three", "four", "five", "six",
+    "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen",
+    "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen",
+    "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty",
+    "ninety", "hundred", "thousand", "million", "double", "and",
+    # ordinals, which is how a spoken date reaches a written one
+    "first", "second", "third", "fourth", "fifth", "sixth", "seventh",
+    "eighth", "ninth", "tenth", "eleventh", "twelfth", "thirteenth",
+    "twentieth", "thirtieth",
+    # fractions and clock words
+    "half", "quarter", "past", "to", "am", "pm", "oclock",
+}
+
+
+def is_numeric_answer(answer: str) -> bool:
+    """True if the answer is a figure the script would speak rather than spell."""
+    text = str(answer)
+    if any(ch.isdigit() for ch in text):
+        return True
+    words = span_tokens(text)
+    return bool(words) and all(w in _NUMBER_WORDS for w in words)
+
+
+def absent_answers(
+    source: str,
+    questions: list,
+    answer_key: dict,
+    *,
+    skip_numeric: bool = False,
+) -> list[tuple[str, str]]:
+    """(question number, answer) for gap-fill answers not found in `source`.
+
+    `source` is the passage for Reading and the audio script for Listening. A
+    completion answer the student cannot find is one they cannot write, whether
+    they were told to read it or to hear it.
+
+    Matched on whole words after a loose stem, so "gaining"/"gain" agree. An
+    answer offering its own word box is skipped -- it is answered from the box.
+    `skip_numeric` drops figures, which Listening needs and Reading does not:
+    measured over both corpora, numeric answers are 45.1% of listening flags
+    and 0% of reading ones.
+    """
+    words = span_tokens(source or "")
+    if not words:
+        return []
+    haystack = f" {' '.join(words)} "
+    stemmed = f" {' '.join(loose_stem(w) for w in words)} "
+    missing: list[tuple[str, str]] = []
+    for q in questions or []:
+        if not isinstance(q, dict) or qtype(q) not in GAP_FILL_TYPES:
+            continue
+        if isinstance(q.get("options"), list) and q["options"]:
+            continue
+        answer = (answer_key or {}).get(str(q.get("number")))
+        if answer is None:
+            continue
+        for cand in (str(answer).split(";") if ";" in str(answer) else [str(answer)]):
+            if skip_numeric and is_numeric_answer(cand):
+                continue
+            tokens = span_tokens(cand)
+            if not tokens:
+                continue
+            span = f" {' '.join(tokens)} "
+            span_stem = f" {' '.join(loose_stem(w) for w in tokens)} "
+            if span not in haystack and span_stem not in stemmed:
+                missing.append((str(q.get("number")), cand.strip()))
+    return missing
+
+# Figure kinds that carry a drawn layout, and both are generated again as of
+# 2026-08-28. `plan` states which room owns which grid cell and lets the
+# renderer derive the walls — right for the inside of a building, where rooms
+# share walls. `map` places features at coordinates with paths between them —
+# right for a park, a town or a site, where things stand apart. The map form
+# had gone ungenerated for months while every outdoor place was drawn as a grid
+# of touching rooms.
 LAYOUT_KINDS = {"plan", "map"}
 
 # A gap the student writes into: underscores, or the dotted leader a real exam
@@ -111,6 +240,76 @@ _SECTION_KEYS = {
 }
 
 
+def _value_key(value: object) -> str:
+    """A chart value and an answer reduced to the same comparable form.
+
+    Numerically where both are numbers: a bar drawn at 58.0 and an answer
+    written "58" are the same thing to a student and must be the same thing
+    here, but `span_tokens` splits the decimal and they stop matching.
+    """
+    text = str(value if value is not None else "").strip()
+    try:
+        number = float(text.replace(",", ""))
+    except ValueError:
+        return " ".join(span_tokens(text))
+    return f"{number:g}"
+
+
+def chart_transcription_error(result: dict) -> str | None:
+    """Reject chart questions answered by reading a number off the chart.
+
+    A bar, line or pie chart prints every value it holds — unlike a table,
+    whose whole point is the cell it leaves blank. So it is fatally easy to
+    write "According to the chart, the average daily water use for bathing is
+    ______" and key it to the number already drawn on the bar. The student
+    answers it with the passage covered up, and the figure has replaced the
+    text instead of supporting it.
+
+    Measured live 2026-08-28: one reading set wrote NINE of these in a row, a
+    second wrote five, and both validated clean. The prompt now forbids it;
+    this is the half that cannot be skimmed.
+
+    Tables are exempt: their answers are the cells the figure does NOT print,
+    which is the opposite arrangement.
+    """
+    visual = result.get("visual")
+    if not isinstance(visual, dict) or str(visual.get("kind", "")).lower() != "chart":
+        return None
+    if str(visual.get("chart_type", "")).lower() == "table":
+        return None
+
+    printed: set[str] = set()
+    for row in visual.get("series") or []:
+        if not isinstance(row, dict):
+            continue
+        for point in row.get("data") or []:
+            if isinstance(point, (list, tuple)) and len(point) >= 2:
+                printed.add(_value_key(point[1]))
+    printed.discard("")
+    if not printed:
+        return None
+
+    answer_key = result.get("answer_key") or {}
+    copied = [
+        str(q.get("number"))
+        for q in result.get("questions") or []
+        if isinstance(q, dict) and qtype(q) == canon("chart_completion")
+        and _value_key(answer_key.get(str(q.get("number")))) in printed
+    ]
+    if len(copied) < 2:
+        # One such question is a reading-off task the exam does set. A block of
+        # them is a figure standing in for the passage.
+        return None
+    return (
+        f"question(s) {', '.join(copied)} are answered by copying a number the "
+        "chart already prints, so a student can answer them without opening "
+        "the passage. A chart question must need the TEXT as well as the "
+        "figure — ask for the reason behind a value, the name the passage "
+        "gives a category, a trend in the passage's own words, or what the "
+        "passage says follows from the figure."
+    )
+
+
 def cross_section_error(result: dict, section: str) -> str | None:
     """Reject a set that answers in the other section's schema."""
     foreign = sorted(
@@ -127,16 +326,17 @@ def cross_section_error(result: dict, section: str) -> str | None:
             f"contract. Return only the keys the {section.title()} schema "
             "declares."
         )
-    # Reading labels a diagram, it never asks for a position on a map, so the
-    # coordinate form has no reading use and its questions would be unanswerable.
-    if section == "reading":
-        visual = result.get("visual")
-        if isinstance(visual, dict) and str(visual.get("kind", "")).lower() == "map":
-            return (
-                "`visual` is a coordinate map, which a Reading set never uses. "
-                "A Reading visual must be a table object, a plan object (for "
-                "diagram labelling), or null."
-            )
+    # 🔬 This used to refuse `kind: "map"` outright in a Reading set, on the
+    # grounds that "Reading never asks for a position on a map". That was true
+    # only because nothing could DRAW an outdoor map — the renderer existed but
+    # no prompt emitted one, so every open place came out as a grid of rooms
+    # and an excavated Roman town was laid out like a floor plan.
+    #
+    # Reading does print a map: the route a migration took, the layout of an
+    # excavated settlement, the grounds of a site the passage describes. It is
+    # allowed from 2026-08-29, when `map_labelling` learned to choose between
+    # the plan and the map. Removing the refusal without saying so would leave
+    # the next reader wondering why the comment above disagreed with the code.
     return None
 
 
@@ -236,8 +436,60 @@ def missing_map_error(questions: list, visual: object) -> str | None:
     )
 
 
+def drop_letter_clash_names(result: dict) -> list[str]:
+    """Rub out a place NAME printed at the same spot as a letter.
+
+    The student is asked which letter marks a place; printing that place's name
+    on the letter hands the answer over. Repaired rather than refused, and
+    deterministically — there is one right answer, the name goes and the letter
+    stays — which is the bargain `blank_self_answering_labels` strikes on the
+    diagram: blanking costs one orientation label, leaving it costs the
+    question.
+
+    🔬 Live 2026-09-01, `l_map_r2`: refused on the way in, one corrective retry
+    spent, the retry failed the same way and the whole set died. The retry has
+    never rescued this — the model puts the name back — and one deletion cures
+    it for nothing.
+
+    Returns the names removed, for the caller to log.
+    """
+    visual = result.get("visual")
+    if not isinstance(visual, dict) or str(visual.get("kind", "")).lower() != "map":
+        return []
+    features = [f for f in (visual.get("features") or []) if isinstance(f, dict)]
+
+    def spot(feature: dict) -> tuple[float, float] | None:
+        try:
+            return (float(feature.get("x")), float(feature.get("y")))
+        except (TypeError, ValueError):
+            return None
+
+    lettered = {
+        spot(f)
+        for f in features
+        if len(str(f.get("label") or "").strip()) == 1
+        and str(f.get("label") or "").strip().isalpha()
+        and spot(f) is not None
+    }
+    if not lettered:
+        return []
+    dropped = [
+        str(f.get("label")).strip()
+        for f in features
+        if spot(f) in lettered
+        and len(str(f.get("label") or "").strip()) > 1
+    ]
+    if not dropped:
+        return []
+    visual["features"] = [
+        f for f in features
+        if not (spot(f) in lettered and len(str(f.get("label") or "").strip()) > 1)
+    ]
+    return dropped
+
+
 def unlettered_map_error(
-    questions: list, visual: object, answer_key: dict
+    questions: list, visual: object, answer_key: dict, *, after_repairs: bool = True
 ) -> str | None:
     """Reject a plan whose letters do not carry the answers keyed against it.
 
@@ -247,22 +499,69 @@ def unlettered_map_error(
     the questions it was meant to pose. Measured on the first hosted part 2 —
     A, E and F keyed against a grid holding only A.
 
-    Only `plan` is judged. The older coordinate `map` keeps its letters in
-    `features` rather than the grid, and nothing generates one any more.
+    Both layouts are judged. The coordinate `map` keeps its letters in
+    `features` rather than in a grid, and it went from ungenerated to
+    generated on 2026-08-28 — this docstring used to say "nothing generates one
+    any more", and the first live map walked straight through the hole: every
+    lettered point sat on the exact coordinates of a named feature, so the plan
+    printed "Car park" on top of the A the student was asked to find.
     """
-    if not isinstance(visual, dict) or str(visual.get("kind", "")).lower() != "plan":
+    if not isinstance(visual, dict):
         return None
-    grid = visual.get("grid")
-    if not isinstance(grid, list):
+    kind = str(visual.get("kind", "")).lower()
+    if kind not in ("plan", "map"):
         return None
-    letters = {
-        cell.strip().upper()
-        for row in grid if isinstance(row, list)
-        for cell in row
-        if isinstance(cell, str)
-        and len(cell.strip()) == 1
-        and cell.strip().isalpha()
-    }
+
+    if kind == "map":
+        letters = set()
+        named: dict[tuple[float, float], str] = {}
+        for feature in visual.get("features") or []:
+            if not isinstance(feature, dict):
+                continue
+            label = str(feature.get("label") or "").strip()
+            try:
+                spot = (float(feature.get("x")), float(feature.get("y")))
+            except (TypeError, ValueError):
+                continue
+            if len(label) == 1 and label.isalpha():
+                letters.add(label.upper())
+            elif label:
+                named[spot] = label
+        # A letter printed on top of a named place hands over the answer.
+        clashes = [
+            f"{str(f.get('label')).strip().upper()} sits on {named[(float(f['x']), float(f['y']))]!r}"
+            for f in visual.get("features") or []
+            if isinstance(f, dict)
+            and len(str(f.get("label") or "").strip()) == 1
+            and str(f.get("label") or "").strip().isalpha()
+            and (float(f.get("x", -1)), float(f.get("y", -1))) in named
+        ]
+        # `after_repairs=False` says nothing about the clash on the way in:
+        # `drop_letter_clash_names` deletes the offending name during
+        # normalisation, and complaining here buys a retry of the whole set
+        # that has never once rescued it. The other half — letters keyed but
+        # never drawn — no repair can invent, so it is judged either way.
+        if clashes and after_repairs:
+            return (
+                "the map prints a place's NAME at the same spot as the letter "
+                f"the student is asked to find: {'; '.join(clashes[:4])}. A "
+                "lettered point marks a place the map does NOT name — the "
+                "naming is left to the script. Move each letter to its own "
+                "position and delete the named feature that shares it, keeping "
+                "only the landmarks no question asks about."
+            )
+    else:
+        grid = visual.get("grid")
+        if not isinstance(grid, list):
+            return None
+        letters = {
+            cell.strip().upper()
+            for row in grid if isinstance(row, list)
+            for cell in row
+            if isinstance(cell, str)
+            and len(cell.strip()) == 1
+            and cell.strip().isalpha()
+        }
 
     prose: list[str] = []
     missing: dict[str, str] = {}
@@ -285,6 +584,17 @@ def unlettered_map_error(
     if missing:
         keyed = ", ".join(f"Q{n} keys {a}" for n, a in sorted(missing.items()))
         drawn = ", ".join(sorted(letters)) or "no letters at all"
+        # Worded for the figure in hand. A plan holds its letters in a grid of
+        # rooms and a map marks them at points, so one sentence covering both
+        # ends up describing neither.
+        if kind == "map":
+            return (
+                f"the answer key points at letters the map never draws: "
+                f"{keyed}, while the map marks {drawn}. Every place a question "
+                "asks about is a lettered point whose name appears nowhere on "
+                "the map — mark the missing letters and leave the naming to "
+                "the script."
+            )
         return (
             f"the answer key points at letters the plan never draws: {keyed}, "
             f"while the grid holds {drawn}. Every place a question asks about "

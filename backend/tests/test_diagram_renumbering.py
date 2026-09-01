@@ -138,3 +138,66 @@ def test_a_listening_plan_of_lettered_rooms_is_untouched():
     assert result["visual"]["grid"] == [["A", "corridor", "B"],
                                         ["C", "corridor", "D"]]
     assert result["questions"][0]["number"] == 21
+
+
+# ---------------------------------------------------------------------------
+# The same rule, one figure over: a table cell whose blank sits in a phrase
+# ---------------------------------------------------------------------------
+
+
+def _table_set():
+    """A table shaped the way Cambridge prints one.
+
+    Cambridge 19 Test 2 fills its cells with "using an app or by 7 .........."
+    and "often listening to a 9 .......... of a song" — the blank inside a
+    phrase, which is what tells the student what to write. `renumber` matched
+    table cells with an ANCHORED regex, so every one of those was skipped: the
+    question moved to global numbering and the cell kept its local number.
+    """
+    return {
+        "questions": [
+            {"number": 1, "type": "table_completion",
+             "question": "ONE WORD ONLY. Complete the table."},
+            {"number": 2, "type": "table_completion",
+             "question": "ONE WORD ONLY. Complete the table."},
+        ],
+        "answer_key": {"1": "app", "2": "chorus"},
+        "visual": {
+            "kind": "chart",
+            "chart_type": "table",
+            "title": "A typical guitar lesson",
+            "series": [
+                {"name": "Tuning", "data": [["Notes", "using an app or by __1__"]]},
+                {"name": "Songs", "data": [["Notes", "listening to a __2__ of a song"]]},
+            ],
+        },
+    }
+
+
+def test_a_phrase_cell_follows_its_question_into_global_numbering():
+    result = _table_set()
+    renumber(result, offset=13)
+    cells = [
+        row["data"][0][1] for row in result["visual"]["series"]
+    ]
+    assert cells == [
+        "using an app or by __14__",
+        "listening to a __15__ of a song",
+    ]
+    assert set(result["answer_key"]) == {"14", "15"}
+
+
+def test_a_bare_blank_cell_still_follows_its_question():
+    """The case that already worked, kept so the generalisation cannot lose it."""
+    result = _table_set()
+    result["visual"]["series"][0]["data"][0][1] = "__1__"
+    renumber(result, offset=13)
+    assert result["visual"]["series"][0]["data"][0][1] == "__14__"
+
+
+def test_a_chain_of_renumbers_moves_each_cell_once():
+    """1->2 and 2->3 in one pass, or the first gap is renumbered twice."""
+    result = _table_set()
+    renumber(result, offset=1)
+    cells = [row["data"][0][1] for row in result["visual"]["series"]]
+    assert cells == ["using an app or by __2__", "listening to a __3__ of a song"]

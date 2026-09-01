@@ -26,20 +26,33 @@ from app.config import settings
 # en-GB neural voices, split by perceived gender so a two-speaker Part 1
 # sounds like a natural male/female pair. Used for the heuristic fallback when
 # the generator did not supply explicit performance instructions.
-_FEMALE_VOICES = ["en-GB-SoniaNeural", "en-GB-LibbyNeural", "en-GB-BellaNeural"]
-_MALE_VOICES = ["en-GB-RyanNeural", "en-GB-ThomasNeural", "en-GB-EthanNeural"]
+# 🔬 Verified against `edge_tts.list_voices()` on 2026-08-29, because five of
+# the eighteen names here did not exist: en-GB-BellaNeural, en-GB-EthanNeural,
+# and the WHOLE Australian pool (en-AU-FreyaNeural, en-AU-DarrenNeural,
+# en-AU-WilliamNeural). edge-tts answers an unknown voice with "No audio was
+# received", so a part needing a third same-gender British speaker — or ANY
+# Australian one — produced a script the student could not hear. It failed 4
+# of 580 corpus parts and would have failed the same way in the app.
+# Re-check with `tools/tts_voice_check.py` before adding a name here.
+_FEMALE_VOICES = ["en-GB-SoniaNeural", "en-GB-LibbyNeural", "en-GB-MaisieNeural"]
+_MALE_VOICES = ["en-GB-RyanNeural", "en-GB-ThomasNeural"]
 _DEFAULT_VOICE = "en-GB-SoniaNeural"
 
 # Neural voice pools keyed by (accent, gender). The Audio Performance
 # Instructions pick an accent + gender per speaker; we cycle through the pool
 # so two same-accent/same-gender speakers still sound distinct.
 _ACCENT_VOICES: dict[tuple[str, str], list[str]] = {
-    ("british", "F"): ["en-GB-SoniaNeural", "en-GB-LibbyNeural", "en-GB-BellaNeural"],
-    ("british", "M"): ["en-GB-RyanNeural", "en-GB-ThomasNeural", "en-GB-EthanNeural"],
+    ("british", "F"): ["en-GB-SoniaNeural", "en-GB-LibbyNeural", "en-GB-MaisieNeural"],
+    ("british", "M"): ["en-GB-RyanNeural", "en-GB-ThomasNeural"],
     ("american", "F"): ["en-US-AriaNeural", "en-US-JennyNeural", "en-US-MichelleNeural"],
     ("american", "M"): ["en-US-GuyNeural", "en-US-EricNeural", "en-US-RogerNeural"],
-    ("australian", "F"): ["en-AU-NatashaNeural", "en-AU-FreyaNeural"],
-    ("australian", "M"): ["en-AU-WilliamNeural", "en-AU-DarrenNeural"],
+    ("australian", "F"): ["en-AU-NatashaNeural"],
+    ("australian", "M"): ["en-AU-WilliamMultilingualNeural"],
+    # The exam uses these accents too, and every one is a real voice.
+    ("irish", "F"): ["en-IE-EmilyNeural"],
+    ("irish", "M"): ["en-IE-ConnorNeural"],
+    ("new zealand", "F"): ["en-NZ-MollyNeural"],
+    ("new zealand", "M"): ["en-NZ-MitchellNeural"],
     ("canadian", "F"): ["en-CA-ClaraNeural"],
     ("canadian", "M"): ["en-CA-LiamNeural"],
 }

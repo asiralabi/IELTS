@@ -3,9 +3,12 @@ import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+
+from openai import APIStatusError
 
 from app.config import settings
 from app.database import init_db
@@ -100,6 +103,33 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    @app.exception_handler(APIStatusError)
+    async def upstream_llm_error(_request: Request, exc: APIStatusError) -> JSONResponse:
+        """Say what actually happened when the hosted model turns us away.
+
+        Every router catches `ValueError` — a reply the validators rejected —
+        and nothing catches the provider refusing to answer at all. So a 429
+        reached the student as a bare 500 and the page said "Internal Server
+        Error", which is both untrue and unactionable: nothing is broken, the
+        quota is spent, and the right advice is to wait a moment.
+
+        🔬 Live 2026-09-01: `POST /writing/full-test/submit` raised
+        `openai.RateLimitError` straight through `submit_full_test` after three
+        figure sweeps had drained the free tier. One handler here rather than a
+        clause in each router — the whole app talks to one model, and every
+        module can be told no.
+        """
+        busy = exc.status_code in (429, 503)
+        logger.warning("hosted model refused: %s %s", exc.status_code, exc)
+        return JSONResponse(
+            status_code=503 if busy else 502,
+            content={"detail": (
+                "The examiner is busy right now — wait a moment and try again."
+                if busy else
+                "The examiner is unavailable right now. Please try again."
+            )},
+        )
 
     settings.ensure_data_dirs()
     app.mount("/assets", StaticFiles(directory=settings.assets_dir), name="assets")

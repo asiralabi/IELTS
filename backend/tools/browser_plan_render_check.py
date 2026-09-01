@@ -171,8 +171,13 @@ def main() -> int:
 
             plans = shoot(page, theme)
             print(f"[{theme}] plan figures = {plans}")
-            if plans != 3:
-                failures.append(f"[{theme}] expected 3 plan figures, saw {plans}")
+            # Four, because `build_fixture` puts four of them on the page.
+            # This read 3 from the commit that introduced it (`ed4c80d`) —
+            # written against three fixtures and not updated when the live
+            # sewing machine was added as the fourth — so the check had never
+            # passed. Verified 2026-08-28 by screenshot: all four draw.
+            if plans != 4:
+                failures.append(f"[{theme}] expected 4 plan figures, saw {plans}")
             ctx.close()
         browser.close()
 

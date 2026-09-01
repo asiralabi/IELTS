@@ -34,6 +34,9 @@ export default function ListeningPage() {
   const [phase, setPhase] = React.useState<Phase>("start");
   const [practice, setPractice] = React.useState<PracticeSet | null>(null);
   const [answers, setAnswers] = React.useState<Record<string, string>>({});
+  // Which question the student is on, so the figure can light that
+  // blank. One at a time, so one piece of state covers every section.
+  const [activeGap, setActiveGap] = React.useState<string | null>(null);
   const [result, setResult] = React.useState<CheckResult | null>(null);
   const [playsUsed, setPlaysUsed] = React.useState(0);
   const [showScript, setShowScript] = React.useState(false);
@@ -328,9 +331,11 @@ export default function ListeningPage() {
               </div>
             )}
 
-            <Visuals visual={practice.visual} visuals={practice.visuals} />
+            <Visuals
+                    activeGap={activeGap} visual={practice.visual} visuals={practice.visuals} />
 
             <QuestionList
+              onActiveQuestion={setActiveGap}
               questions={questions}
               answers={answers}
               onAnswer={(k, v) => setAnswers((a) => ({ ...a, [k]: v }))}

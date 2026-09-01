@@ -166,24 +166,34 @@ def run_mock_exam(page: Page) -> None:
     )
     page.wait_for_timeout(1200)
 
+    # 🔬 The exam sits its sections IN ORDER, the way the real one does: one
+    # part on screen at a time, and the tab for a section you have not reached
+    # is disabled ("Reading opens when the section before it ends"). This
+    # harness predated that and did two things the paper no longer allows —
+    # counted four "Part N" headings at once, and CLICKED its way to Reading.
+    # The click hung for 30s on a button that is disabled on purpose, which
+    # read as a product failure when it was the check that was out of date.
+    # `browser_student_walkthrough.py` asserts the locking as correct
+    # behaviour; this walks the paper the same way, with "Finish section".
     total = 0
-    for label, noun, expected in (
-        ("Listening", "Part", 4),
-        ("Reading", "Passage", 3),
-    ):
-        page.get_by_role("button", name=label, exact=False).first.click()
+    for label, noun in (("Listening", "Part"), ("Reading", "Passage")):
         page.wait_for_timeout(600)
         shot(page, f"mock_{label.lower()}")
+        body = page.locator("body").inner_text()
+        check(f"{label.lower()} section is open", label in body)
         sections = page.locator(f"text=/^{noun} [1-9]$/").count()
-        check(f"{label.lower()} is a whole paper", sections >= expected, f"{sections}")
+        check(f"{label.lower()} shows a {noun.lower()}", sections >= 1, f"{sections}")
         total += answer_everything(page)
+        finish = page.get_by_role("button", name="Finish section").first
+        if finish.count():
+            finish.click()
+            page.wait_for_timeout(1200)
     check("mock questions answerable", total > 0, f"{total} answered")
 
     for label, placeholder in (
         ("Writing", "Write your answer…"),
         ("Speaking", "Type (or dictate) what you would say…"),
     ):
-        page.get_by_role("button", name=label, exact=False).first.click()
         page.wait_for_timeout(400)
         boxes = page.get_by_placeholder(placeholder)
         check(f"{label.lower()} boxes", boxes.count() > 0, f"{boxes.count()}")

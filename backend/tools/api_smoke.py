@@ -104,7 +104,11 @@ def main() -> int:
             ok(f"  {len(days)} day(s), first focus: {days[0].get('focus') if days else 'n/a'}")
             import re
             blob = json.dumps(plan)
-            cites = sorted(set(re.findall(r"cambridge-\d+(?:-test\d+)?", blob)))
+            # Both spellings: the retriever's slug (`cambridge-9`) AND the prose
+            # the model actually writes ("Cambridge IELTS 14"). Matching only the
+            # slug reported "(none)" against a plan that cites a book in every
+            # paragraph — a false alarm that costs a session to chase down.
+            cites = sorted(set(re.findall(r"[Cc]ambridge[ -](?:IELTS[ -])?\d+(?:-test\d+)?", blob)))
             (ok if cites else bad)(f"  grounded citations: {cites or '(none)'}")
             # matches the tightened frontend StudyPlan type?
             if isinstance(days, list) and days and \

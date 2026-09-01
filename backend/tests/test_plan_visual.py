@@ -243,3 +243,81 @@ def test_a_diagram_numbering_one_part_is_refused():
 
 def test_a_diagram_numbering_three_parts_passes():
     assert reading_trainer.validate_practice(_labelled_diagram(3)) is None
+
+
+# ---------------------------------------------------------------------------
+# The outdoor map — generated again from 2026-08-28
+# ---------------------------------------------------------------------------
+
+
+def _park_map():
+    """A listening map of a park: lettered points plus named landmarks."""
+    return {
+        "kind": "map",
+        "title": "Greenfield Country Park",
+        "width": 12,
+        "height": 10,
+        "features": [
+            {"label": "Car park", "x": 2, "y": 1, "shape": "room"},
+            {"label": "Lake", "x": 9, "y": 7, "shape": "room"},
+            {"label": "A", "x": 4, "y": 3, "shape": "point"},
+            {"label": "B", "x": 6, "y": 4, "shape": "point"},
+            {"label": "C", "x": 3, "y": 8, "shape": "point"},
+        ],
+        "paths": [{"points": [[2, 1], [4, 3], [9, 7]], "label": "Main trail"}],
+    }
+
+
+def _map_questions():
+    return [
+        {"number": n, "type": "map_labelling",
+         "question": f"Write the correct letter, A-C, for the {place}."}
+        for n, place in ((1, "cafe"), (2, "playground"), (3, "wildlife hide"))
+    ]
+
+
+def test_a_healthy_map_passes():
+    from app.agents.answerability import unlettered_map_error
+
+    assert unlettered_map_error(
+        _map_questions(), _park_map(), {"1": "A", "2": "B", "3": "C"}
+    ) is None
+
+
+def test_a_letter_printed_on_a_named_place_is_refused():
+    """The first live map did this for every one of its eight letters.
+
+    `unlettered_map_error` judged only `plan` — its docstring said "nothing
+    generates a map any more" — so when the map became generatable again the
+    guard had a hole exactly where the door opened. Every lettered point sat on
+    the coordinates of a named feature, so the figure printed "Car park" on top
+    of the A the student was asked to find.
+    """
+    from app.agents.answerability import unlettered_map_error
+
+    v = _park_map()
+    v["features"].append({"label": "Cafe", "x": 4, "y": 3, "shape": "room"})
+    problem = unlettered_map_error(
+        _map_questions(), v, {"1": "A", "2": "B", "3": "C"}
+    ) or ""
+    assert "same spot" in problem
+    assert "Cafe" in problem
+
+
+def test_a_map_keyed_to_a_letter_it_never_draws_is_refused():
+    from app.agents.answerability import unlettered_map_error
+
+    problem = unlettered_map_error(
+        _map_questions(), _park_map(), {"1": "A", "2": "B", "3": "H"}
+    ) or ""
+    assert "the map never draws" in problem
+
+
+def test_a_map_question_answered_in_words_is_refused():
+    """A map question is answered with a letter, not with the place's name."""
+    from app.agents.answerability import unlettered_map_error
+
+    problem = unlettered_map_error(
+        _map_questions(), _park_map(), {"1": "A", "2": "the cafe", "3": "C"}
+    ) or ""
+    assert "letter" in problem

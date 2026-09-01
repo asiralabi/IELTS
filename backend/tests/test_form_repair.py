@@ -23,7 +23,14 @@ from app.llm.client import LLMClient, get_llm_client, set_llm_client
 from app.llm.prompts import FORM_WRITER_SYSTEM
 
 # Over _MIN_SCRIPT_WORDS, so nothing here depends on the expansion pass.
-SCRIPT = "AGENT: Good morning, Sports World. CUSTOMER: I would like to join. " * 100
+# The script says every answer the fixtures key: a listening answer the
+# recording never contains is refused now (`_unheard_answers`), and these tests
+# are about the form-label repair, not about answer content.
+SCRIPT = (
+    "AGENT: Good morning, Sports World. CUSTOMER: I would like to join. "
+    "My name is John Smith and my number is 07798 563421. "
+    "AGENT: And would you like the annual plan? CUSTOMER: Yes, annual please. "
+) * 100
 
 GOOD_LABELS = {"labels": {"1": "Full name", "3": "Payment plan"}}
 
@@ -259,3 +266,89 @@ def test_an_unanswered_gap_is_refused_instead_of_repaired(client):
         _practice()
 
     assert installed.writer_turns == []
+
+
+# ---------------------------------------------------------------------------
+# Reading shares the repair
+#
+# 🔬 2026-09-01. The repair above was written for listening and reading never
+# got it — only the gate. So a reading set whose completion question showed no
+# gap spent a ~4k-token corrective retry on a complaint that has never been
+# rescued by one, and was then refused anyway: two of the three refusals in a
+# 36-set diagram sweep (`r_diagram_apparatus_r3`, `r_diagram_cycle_r5`).
+# ---------------------------------------------------------------------------
+
+READING_PASSAGE = (
+    "Beekeeping in cities has grown quickly over the past decade. " * 100
+)
+
+
+def _reading_set() -> dict:
+    """A reading set whose table question is the block's rubric, with no table."""
+    return {
+        "title": "Urban Beekeeping",
+        "passage": READING_PASSAGE,
+        "visual": None,
+        "questions": [
+            {"number": 1, "type": "table_completion",
+             "question": "Complete the table below."},
+            {"number": 2, "type": "short_answer",
+             "question": "Where has beekeeping grown?"},
+        ],
+        "answer_key": {"1": "decade", "2": "cities"},
+    }
+
+
+def test_reading_skips_the_structure_rule_on_the_way_in():
+    """The gate still refuses it — but not on the reply, where retrying is what
+    was measured not to work."""
+    from app.agents import reading_trainer
+
+    dangling = _reading_set()
+    assert reading_trainer.validate_practice(dangling) is not None
+    assert reading_trainer.validate_practice(
+        dangling, judge_structure=False) is None
+
+
+def test_reading_repairs_a_dangling_completion(client):
+    """The same repair listening has always had, on a reading set."""
+    from app.agents import reading_trainer
+
+    installed = client(_reading_set(), labels=[{"labels": {"1": "Years of growth"}}])
+    result = asyncio.run(reading_trainer.create_practice(topic="urban beekeeping"))
+
+    assert result["questions"][0]["question"] == "Years of growth: ______"
+    # Repaired, so the shipped validator accepts it on its own terms.
+    assert reading_trainer.validate_practice(result) is None
+    # Only the dangling one was sent; the short answer carries its own question.
+    assert "2." not in installed.writer_turns[0]
+
+
+def test_a_label_may_not_print_its_own_answer(client):
+    """🔬 A reading gap is keyed to the part's own name often enough that the
+    model reaches for it — "Firn zone: ______" keyed 'firn zone' answers itself.
+
+    The listening copy never hit this: a form field names a category and the
+    answer fills it.
+    """
+    installed = client(
+        _reading_set(),
+        labels=[{"labels": {"1": "Growth over the past decade"}},
+                {"labels": {"1": "Years of growth"}}],
+    )
+    from app.agents import reading_trainer
+    result = asyncio.run(reading_trainer.create_practice(topic="urban beekeeping"))
+
+    assert "contains that gap's own answer" in " ".join(installed.complaints)
+    assert result["questions"][0]["question"] == "Years of growth: ______"
+
+
+def test_a_label_is_not_refused_for_a_word_that_merely_contains_the_answer():
+    """'ice' does not leak through 'device'. Matching on the raw substring said
+    it did, which would have cost a retry on a sound label."""
+    from app.agents._figure_pass import _contains_words
+
+    assert _contains_words("Firn zone", "firn")
+    assert _contains_words("the Firn Zone!", "firn zone")
+    assert not _contains_words("Device position", "ice")
+    assert not _contains_words("Preferred start date", "12 March")

@@ -33,6 +33,9 @@ export default function ReadingPage() {
   const [phase, setPhase] = React.useState<Phase>("start");
   const [practice, setPractice] = React.useState<PracticeSet | null>(null);
   const [answers, setAnswers] = React.useState<Record<string, string>>({});
+  // Which question the student is on, so the figure can light that
+  // blank. One at a time, so one piece of state covers every section.
+  const [activeGap, setActiveGap] = React.useState<string | null>(null);
   const [result, setResult] = React.useState<CheckResult | null>(null);
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
   const [errorKind, setErrorKind] = React.useState<ErrorKind>("generate");
@@ -296,6 +299,7 @@ export default function ReadingPage() {
                   {practice.passage}
                 </div>
                 <Visuals
+                  activeGap={activeGap}
                   visual={practice.visual}
                   visuals={practice.visuals}
                   className="mt-5"
@@ -312,7 +316,22 @@ export default function ReadingPage() {
                   mobileTab === "questions" ? "block" : "hidden lg:block"
                 )}
               >
+                {/* The figure again, on small screens only.
+                    The passage and the questions are separate tabs below the
+                    `lg` breakpoint, so a student answering "Label 3 on the
+                    diagram" had to leave the question, switch tabs, read the
+                    figure, and switch back — once per blank, against the
+                    clock. The exam prints the figure WITH the questions, not
+                    with the passage, so this is also the more faithful place
+                    for it. */}
+                <Visuals
+                  visual={practice.visual}
+                  visuals={practice.visuals}
+                  activeGap={activeGap}
+                  className="mb-5 lg:hidden"
+                />
                 <QuestionList
+                  onActiveQuestion={setActiveGap}
                   questions={questions}
                   answers={answers}
                   onAnswer={(k, v) => setAnswers((a) => ({ ...a, [k]: v }))}

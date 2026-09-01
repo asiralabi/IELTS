@@ -288,7 +288,11 @@ def _machine_part(answer: str):
                 {"id": "tank", "form": "tank", "name": "Water tank"},
                 {"id": "grouphead", "form": "disc"},
             ],
-            "labels": [{"at": "grouphead", "text": "__11__"}],
+            # A clause the script supports, the way Cambridge 7 prints
+            # "Float dropped into ocean and 23 .......... by satellite".
+            "labels": [
+                {"at": "grouphead", "text": "Water is forced through the __11__"}
+            ],
         },
         "answer_key": {"11": answer},
     }
@@ -348,7 +352,8 @@ def test_validate_part_refuses_the_inaudible_answer():
     r["visual"]["parts"].append({"id": "dial", "form": "dial"})
     r["visual"]["parts"].append({"id": "tankslot", "form": "slot"})
     r["visual"]["labels"] += [
-        {"at": "dial", "text": "__12__"}, {"at": "tankslot", "text": "__13__"}
+        {"at": "dial", "text": "Grind size is set with the __12__"},
+        {"at": "tankslot", "text": "Refill the __13__ before each session"},
     ]
     r["answer_key"].update({"12": "rotary dial", "13": "water tank"})
     r["questions"] = [
@@ -367,7 +372,8 @@ def test_the_same_part_with_the_spoken_answer_is_accepted():
     r["visual"]["parts"].append({"id": "dial", "form": "dial"})
     r["visual"]["parts"].append({"id": "tankslot", "form": "slot"})
     r["visual"]["labels"] += [
-        {"at": "dial", "text": "__12__"}, {"at": "tankslot", "text": "__13__"}
+        {"at": "dial", "text": "Grind size is set with the __12__"},
+        {"at": "tankslot", "text": "Refill the __13__ before each session"},
     ]
     r["answer_key"].update({"12": "rotary dial", "13": "tank"})
     r["questions"] = [
@@ -378,3 +384,58 @@ def test_the_same_part_with_the_spoken_answer_is_accepted():
     ]
     assert lt.validate_part(
         r, judge_structure=False, judge_matching=False) is None
+
+
+def test_the_set_is_judged_again_after_the_figure_is_normalised():
+    """`_normalize_figure` and the figure repairs run AFTER the main gate, so
+    whatever they introduce or reveal used to ship unchecked — the same hole
+    `renumber_checked` closes on the full-test path.
+
+    🔬 Found live 2026-08-27: a picture-choice came back with pictures A and C
+    identical, two correct answers and neither markable. `picture_error`
+    catches it exactly, and never ran."""
+    import pytest as _pytest
+    same = {"layout": "scene",
+            "parts": [{"id": "a", "form": "canister", "col": 0, "row": 0},
+                      {"id": "b", "form": "nozzle", "col": 1, "row": 0}]}
+    result = {
+        "title": "t",
+        "audio_script": "SPEAKER: The canister sits beside the nozzle.",
+        "questions": [{"number": 1, "type": "picture_choice",
+                       "question": "Which picture?", "options": ["A", "B"]}],
+        "answer_key": {"1": "A"},
+        "visual": {"kind": "picture", "title": "Which picture?",
+                   "choices": [dict(same), dict(same)]},
+    }
+    with _pytest.raises(ValueError, match="normalised listening set is invalid"):
+        lt._gate_after_figure_work(result)
+
+
+def test_the_mid_pipeline_gate_leaves_the_figure_to_the_figure_repairs():
+    """🔬 `create_part` gates once after the completion repairs and again after
+    the figure work. Judged at full strictness, the FIRST gate refused sets its
+    own pipeline was about to fix: every diagram repair — the redraw, the two
+    blankings, the callout rewrite — runs below it. "the figure prints 'Hopper'
+    on part 'hopper'" survived a whole sweep after the repair had been moved to
+    run last, because this gate never waited for it."""
+    result = _two_label_part()
+    result["questions"].append({
+        "number": 3,
+        "type": "diagram_label_completion",
+        "question": "NO MORE THAN TWO WORDS. Label 3 on the diagram.",
+        "word_limit": 2,
+    })
+    result["answer_key"]["3"] = "power light"
+    # The defect `blank_gapped_part_names` deletes, further down the pipeline:
+    # a SYNONYM of the answer printed on the very part the gap asks for.
+    result["visual"]["parts"][2]["name"] = "Warning lamp"
+    result["visual"]["labels"] = [
+        {"at": "c", "text": "The __3__ comes on once the water is hot"}
+    ]
+    assert lt.validate_part(
+        result, judge_structure=False, judge_matching=False, judge_diagram=False
+    ) is None
+    # ...and the gate that runs after the repairs still refuses it.
+    assert "name that very part" in (
+        lt.validate_part(result, judge_structure=False, judge_matching=False) or ""
+    )

@@ -188,6 +188,54 @@
 }
 
 @layer components {
+  /* The blank the student is answering RIGHT NOW, lit on the figure.
+   *
+   * A figure is printed once and asked about five times, so "Label 3 on the
+   * diagram" leaves the student hunting for a small 3 among four others while
+   * a clock runs. Focusing an answer box now lights its own blank.
+   *
+   * Driven by data attributes rather than props so nothing has to be threaded
+   * through six renderers and a dozen call sites: every printed blank carries
+   * `data-gap`, and the figure's wrapper carries `data-active-gap`.
+   */
+  [data-active-gap] [data-gap] {
+    transition: fill 140ms ease, color 140ms ease, opacity 140ms ease;
+  }
+  [data-active-gap="1"] [data-gap="1"],
+  [data-active-gap="2"] [data-gap="2"],
+  [data-active-gap="3"] [data-gap="3"],
+  [data-active-gap="4"] [data-gap="4"],
+  [data-active-gap="5"] [data-gap="5"],
+  [data-active-gap="6"] [data-gap="6"],
+  [data-active-gap="7"] [data-gap="7"],
+  [data-active-gap="8"] [data-gap="8"],
+  [data-active-gap="9"] [data-gap="9"],
+  [data-active-gap="10"] [data-gap="10"] {
+    fill: var(--color-primary, #6366f1);
+    color: var(--color-primary, #6366f1);
+    opacity: 1;
+  }
+  /* An SVG blank gets a soft plate behind it too, because colour alone is not
+   * enough to find a two-character number inside a drawing. */
+  [data-active-gap="1"] [data-gap="1"].gap-mark,
+  [data-active-gap="2"] [data-gap="2"].gap-mark,
+  [data-active-gap="3"] [data-gap="3"].gap-mark,
+  [data-active-gap="4"] [data-gap="4"].gap-mark,
+  [data-active-gap="5"] [data-gap="5"].gap-mark,
+  [data-active-gap="6"] [data-gap="6"].gap-mark,
+  [data-active-gap="7"] [data-gap="7"].gap-mark,
+  [data-active-gap="8"] [data-gap="8"].gap-mark,
+  [data-active-gap="9"] [data-gap="9"].gap-mark,
+  [data-active-gap="10"] [data-gap="10"].gap-mark {
+    paint-order: stroke;
+    stroke: color-mix(in oklab, var(--color-primary, #6366f1) 22%, transparent);
+    stroke-width: 7px;
+    stroke-linejoin: round;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    [data-active-gap] [data-gap] { transition: none; }
+  }
+
   .prose-chat :is(p, ul, ol, pre, table) {
     margin-block: 0.5rem;
   }

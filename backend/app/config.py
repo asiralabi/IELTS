@@ -21,6 +21,13 @@ class Settings(BaseSettings):
     llm_provider: str = "ollama"
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "qwen3:4b"
+    # How far back the repetition penalty looks, in tokens, and how hard it
+    # pushes. Ollama defaults to 64 / 1.1, and 64 is SHORTER than the cycle the
+    # fine-tuned generator loops on (~85 tokens), so the penalty never fires --
+    # the model repeats a sentence until it hits the token cap. 320 spans
+    # roughly three cycles.
+    ollama_repeat_last_n: int = 320
+    ollama_repeat_penalty: float = 1.15
     # Task-specific fine-tuned checkpoints, served by ollama alongside the
     # general model. Each falls back to ollama_model when blank. These exist
     # because a checkpoint trained only to generate Listening parts is worse

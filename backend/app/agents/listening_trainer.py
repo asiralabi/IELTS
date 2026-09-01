@@ -5,12 +5,24 @@ import re
 from collections import Counter
 from functools import partial
 
+from app.agents._figure_pass import (
+    repair_dangling_completions,
+    redraw_diagram,
+    repair_self_answering_callouts,
+)
 from app.agents._diagram import (
+    gap_the_named_answers,
+    blank_gapped_part_names,
     blank_self_answering_labels,
     diagram_error,
     inaudible_diagram_error,
     is_diagram,
+    is_picture,
     normalize_diagram,
+    drop_duplicate_pictures,
+    normalize_picture,
+    picture_error,
+    pictureless_error,
     sparse_diagram_error,
 )
 from app.agents._flow import (
@@ -18,12 +30,22 @@ from app.agents._flow import (
     normalize_flow,
     repair_self_answering_steps,
 )
+from app.agents._notes import (
+    blank_self_answering_lines,
+    is_notes,
+    normalize_notes,
+    notes_error,
+)
 from app.agents._marking import mark_answers, mark_full_test
 from app.agents._numbering import renumber, renumber_checked
 from app.agents._plan import normalize_plan
 from app.agents.answerability import (
     MAP_TYPES,
+    drop_letter_clash_names,
+    RefusedSet,
+    absent_answers,
     canon,
+    chart_transcription_error,
     cross_section_error,
     dangling_completions,
     dangling_structure_error,
@@ -37,10 +59,10 @@ from app.agents.answerability import (
 from app.llm.client import gather_llm, get_llm_client
 from app.llm.prompts import (
     EVALUATOR_SYSTEM,
-    FORM_WRITER_SYSTEM,
     LISTENING_TRAINER_SYSTEM,
     SCRIPT_EXPANDER_SYSTEM,
 )
+from app.rag.figures import family_to_ground, figure_conventions
 from app.rag.retriever import retrieve_context
 
 logger = logging.getLogger(__name__)
@@ -64,19 +86,6 @@ _REFUSAL_ANSWER = re.compile(
 )
 
 _BLANK_RE = re.compile(r"^__(\d+)__$")
-
-# The caption printed beside a gap on a form. 165 corpus labels run 1-4 words
-# with a median of 1, so one word of slack over the longest is generous —
-# beyond it the model has stopped naming a field and is writing the rubric
-# again, which is the thing this repair exists to remove.
-_MAX_LABEL_WORDS = 5
-# "1. Name" / "2) Address". The model numbers the label it was asked for even
-# though the number is what it was given.
-_LABEL_PREFIX = re.compile(r"^\s*\d+\s*[.):]\s*")
-_LABEL_TRAILING = re.compile(r"[\s:.…]+$")
-# The gap the repaired question shows. Matches the corpus's inline route and
-# GAP_MARKER, which is what makes the repaired question self-contained.
-_GAP = "______"
 
 # Each real IELTS Listening test has four parts of ten questions each, with a
 # distinct register and typical figure per part.
@@ -145,15 +154,6 @@ _PART_SPECS: dict[int, dict[str, str]] = {
 }
 
 
-# Parts whose spec calls for a figure. The generator checkpoint cannot draw one
-# — its corpus encodes a part's figure through question types alone and never
-# describes the figure itself — so these parts go to the general model, which
-# reads the figure schema out of the system prompt.
-#
-# Part 3 joined them when the flow chart landed. It is the strongest case of
-# the three: 0 of the 212 listening SFT sets write a flow_chart_completion
-# question at all, so the checkpoint has never seen one, while 6 of the real
-# Cambridge Part 3s print a chart.
 # The other figure Part 2 can print. The spec is a whole alternative rather
 # than a swapped `figure` line, because the talk itself has to change: a
 # monologue about a site gives the student nowhere to hang a cross-section, and
@@ -204,13 +204,33 @@ def _part_spec(part_number: int) -> dict[str, str]:
     return _PART_SPECS[part_number]
 
 
+# Parts whose spec calls for a figure. The generator checkpoint cannot draw one
+# — its corpus encodes a part's figure through question types alone and never
+# describes the figure itself — so these parts go to the general model, which
+# reads the figure schema out of the system prompt.
+#
+# Part 3 joined them when the flow chart landed. It is the strongest case of
+# the three: 0 of the 212 listening SFT sets write a flow_chart_completion
+# question at all, so the checkpoint has never seen one, while 6 of the real
+# Cambridge Part 3s print a chart.
+#
+# Part 2 belongs here whichever way `_part_spec` falls: the checkpoint has
+# drawn neither a plan nor a diagram.
 _FIGURE_PARTS = frozenset({1, 2, 3})
 
 # The same rule stated as question types, for the single-part path where the
 # student names the type instead of the part.
+# The same rule stated as question types, for the single-part path where the
+# student names the type instead of the part. Every one of these prints a
+# figure the checkpoint has never described, so an explicit request for one
+# goes to the general model.
 _FIGURE_ASK = MAP_TYPES | {
     canon("flow_chart_completion"),
     canon("diagram_label_completion"),
+    canon("chart_completion"),
+    canon("picture_choice"),
+    canon("note_completion"),
+    canon("summary_completion"),
 }
 
 
@@ -262,7 +282,14 @@ _LISTENING_BAND_TABLE: list[tuple[int, float]] = [
 
 
 def validate_part(
-    result: dict, *, judge_structure: bool = True, judge_matching: bool = True
+    result: dict,
+    *,
+    judge_structure: bool = True,
+    judge_matching: bool = True,
+    judge_verbatim: bool = True,
+    judge_diagram: bool = True,
+    judge_picture_count: bool = True,
+    judge_map: bool = True,
 ) -> str | None:
     """Reject a part a student could not actually sit.
 
@@ -277,10 +304,28 @@ def validate_part(
     ~4k-token regeneration on a complaint the repair answers for a few hundred
     tokens buys nothing. Export keeps the default: it has no repair pass, so a
     record that dangles must not become a training target.
+
+    `judge_diagram=False` says the same about the figure: the two faults
+    `redraw_diagram` fixes for free — a question with no gap, and two callouts
+    on one part — are left unsaid on the way in and judged at full strictness
+    by `_gate_after_figure_work`, which runs after the redraw.
+
+    `judge_picture_count=False` runs the other way round, and deliberately: the
+    picture count is held at the exam's three on the way IN, where a corrective
+    retry is cheap, and relaxed to two afterwards, because
+    `drop_duplicate_pictures` may have deleted a twin to make the set markable
+    at all. Strict in both places, that repair would refuse the set it fixed.
     """
     cross_section = cross_section_error(result, "listening")
     if cross_section:
         return cross_section
+
+    # A chart prints every value it holds, so a question keyed to one of them
+    # is answered with the passage covered up. Two live sets wrote nine and
+    # five of those and both validated clean.
+    transcription = chart_transcription_error(result)
+    if transcription:
+        return transcription
 
     questions = result.get("questions") or []
     answer_key = result.get("answer_key") or {}
@@ -325,7 +370,8 @@ def validate_part(
     if mapless:
         return mapless
 
-    unlettered = unlettered_map_error(questions, result.get("visual"), answer_key)
+    unlettered = unlettered_map_error(
+        questions, result.get("visual"), answer_key, after_repairs=judge_map)
     if unlettered:
         return unlettered
 
@@ -338,9 +384,24 @@ def validate_part(
     # with Reading and a figure that reached a part unvalidated is exactly how
     # the grid's renumbering bug survived: the guard costs nothing until the
     # day a part spec starts asking, and then it is already there.
-    broken_diagram = diagram_error(result.get("visual"), questions, answer_key)
+    broken_diagram = diagram_error(
+        result.get("visual"), questions, answer_key, after_repairs=judge_diagram
+    )
     if broken_diagram:
         return broken_diagram
+
+    broken_notes = notes_error(result.get("visual"), questions, answer_key)
+    if broken_notes:
+        return broken_notes
+
+    broken_picture = picture_error(result.get("visual"), questions, answer_key,
+                                   exam_count=judge_picture_count)
+    if broken_picture:
+        return broken_picture
+
+    pictureless = pictureless_error(questions, result.get("visual"))
+    if pictureless:
+        return pictureless
 
     sparse = sparse_diagram_error(
         [q for q in questions
@@ -349,6 +410,9 @@ def validate_part(
     if sparse:
         return sparse
 
+    # The diagram's own rule runs first and at a threshold of one, because its
+    # failure is systematic rather than stray: `id` is an internal slug sitting
+    # in the payload beside the answer, and its message says so.
     inaudible = inaudible_diagram_error(
         result.get("visual"), answer_key, str(result.get("audio_script") or "")
     )
@@ -394,6 +458,24 @@ def validate_part(
                 f"({', '.join(repr(str(o)) for o in opts)}). Key it to the exact "
                 "text of the correct option — a position number cannot be marked."
             )
+    # LAST of all the rules, deliberately. Every check above names a specific,
+    # actionable fault -- an answer that refuses to answer, one over the word
+    # limit, a matching pair whose option was never offered. "The script never
+    # says it" is true of all of those as well, so running it first swallowed
+    # the useful message: 28 tests asserting the refusal-answer wording started
+    # reading this complaint instead.
+    if judge_verbatim:
+        unheard = _unheard_answers(result)
+        if len(unheard) >= _MAX_UNHEARD:
+            named = ", ".join(f"Q{n}={a!r}" for n, a in unheard)
+            return (
+                f"these gap-fill answers are never said in the script: {named}. "
+                "A Listening answer is words the student HEARS, so an answer "
+                "the recording does not contain cannot be produced or marked. "
+                "Either have a speaker say the answer in those words, or key "
+                "each gap to the wording already in the script."
+            )
+
     if len(mc) >= 3:
         answers = {str(answer_key.get(str(q.get("number")))).strip().upper() for q in mc}
         if len(answers) == 1:
@@ -452,37 +534,77 @@ async def create_practice(
                 + context
             )
 
+    # How the exam builds this figure, distilled from the books' own figure
+    # pages. The exemplar above grounds the script; nothing grounded the
+    # figure until this existed. See `reading_trainer` for the longer note.
+    figures = figure_conventions(
+        family_to_ground(question_types) or "", module="listening", subject=topic or ""
+    )
+    if figures:
+        parts.append(figures)
+
     result = await client.complete_json(
         LISTENING_TRAINER_SYSTEM,
         [{"role": "user", "content": "\n".join(parts)}],
         required_keys=("title", "audio_script", "questions", "answer_key"),
         validate=partial(
-            validate_part, judge_structure=False, judge_matching=False
+            validate_part,
+            judge_structure=False,
+            judge_matching=False,
+            # Skipped on the way IN so `_repair_unheard_answers` gets its turn;
+            # the gate below judges it at full strictness. Reading makes the
+            # same promise with `judge_verbatim=False` and keeps it the same
+            # way.
+            judge_verbatim=False,
+            # Likewise for the figure: `redraw_diagram` runs below and fixes
+            # both of the faults this drops.
+            judge_diagram=False,
         ),
         # A full part is a ~1.7-3.1k-token JSON object, but LLM_MAX_TOKENS is
         # 2048 locally — that truncates mid-JSON on the longer half of the
         # range, and each retry costs another ~5 min. The ~2.9k prompt plus
         # this still fits the checkpoint's 8192 context.
-        max_tokens=4096,
+        #
+        # That ceiling is the CHECKPOINT's, so it is applied only when the
+        # checkpoint is what answers. A figure-bearing request skips the
+        # fine-tune and lands on a reasoning model that spends the same budget
+        # thinking before it writes — 4096 truncated it mid-JSON on a live
+        # Part 2 diagram request (2026-08-28), which is the one path that
+        # cannot afford the retry. Left to the configured budget there.
+        max_tokens=4096 if client.is_finetune else None,
     )
 
     # Before the expansion, not after: a label names the field an answer fills
     # and the expander is forbidden to change an answer, so the longer script
     # would only cost input tokens on the repair call.
-    await _repair_dangling_completions(result)
+    await repair_dangling_completions(
+        result, str(result.get("audio_script") or ""))
     _repair_compound_matching(result)
     # Skipped on the way in on the promise it would be repaired here.
-    problem = validate_part(result)
+    #
+    # 🔬 Except the FIGURE, which this gate is too early to judge: every one of
+    # the diagram repairs — the redraw, the two blankings, the callout rewrite
+    # — happens below, and `_gate_after_figure_work` is the gate that holds
+    # them to account. Judged here at full strictness it refused sets its own
+    # pipeline was about to fix, twice over: "the figure prints 'Hopper' on
+    # part 'hopper'" survived a whole sweep after the repair had been moved to
+    # run last, because this gate never waited for it.
+    problem = validate_part(result, judge_diagram=False, judge_map=False)
     if problem:
-        raise ValueError(f"the repaired listening set is invalid: {problem}")
+        raise RefusedSet(
+            f"the repaired listening set is invalid: {problem}", result)
 
-    script = str(result.get("audio_script") or "")
-    if len(script.split()) < _MIN_SCRIPT_WORDS:
-        expanded = await _expand_script(script, str(result.get("title") or ""))
-        if expanded and len(expanded.split()) > len(script.split()):
-            result["audio_script"] = expanded
+    await _grow_script(result)
 
     _normalize_figure(result)
+    # Before the redraw, deliberately: a printed answer whose question has no
+    # gap is cured by making that name the gap, and a figure that becomes legal
+    # here may skip the redraw altogether. Deterministic — the answer names
+    # exactly one part, so there is nothing to infer.
+    named_gaps = gap_the_named_answers(result)
+    if named_gaps:
+        logger.info("gapped the parts printing their own answer: %s",
+                    ", ".join(f"{pid}=__{n}__" for pid, n in named_gaps))
     # After the normalisation, so the rewrite sees the boxes the student will.
     await repair_self_answering_steps(result)
     # The drawn figure's version of the same rule. Live Part 2, 2026-08-27:
@@ -491,80 +613,24 @@ async def create_practice(
     # tank', four times over, and the part validated clean. The prompt already
     # says a part is named OR numbered, never both -- which is exactly why this
     # is fixed in code.
+    # Draws the figure again in a call that does nothing else, before the
+    # cleanups below: a redraw replaces the whole figure and would strand any
+    # fix made to the one it replaces.
+    await redraw_diagram(result, str(result.get("audio_script") or ""),
+                         source_label="Audio script")
     _blank_diagram_answers(result)
+    # A callout carrying its own gap cannot be deleted without orphaning a
+    # question, and now that it holds a clause there IS something to reword.
+    await repair_self_answering_callouts(result)
+    # 🔬 LAST, after the rewrite above. `repair_self_answering_callouts`
+    # rewords a callout through the model, and the wording it comes back
+    # with can be the subject form this repair exists for — "The __1__
+    # holds the beans" against a part still printing "Hopper". Run before
+    # the rewrite it saw the old text, missed that, and the gate refused
+    # the set: 3 of the 9 failures in the 36-set sweep of 2026-08-29.
+    blank_gapped_part_names(result)
+    _gate_after_figure_work(result)
     return result
-
-
-def _clean_label(value: object) -> str:
-    return _LABEL_TRAILING.sub("", _LABEL_PREFIX.sub("", str(value).strip()))
-
-
-async def _write_field_labels(
-    script: str, gaps: list[tuple[str, str]]
-) -> dict[str, str] | None:
-    """Ask the model only to name each gap's field — the half it does not drop.
-
-    Measured over 11 live artifacts: where the checkpoint emitted a `visual` at
-    all it coupled every cell to its question correctly, 24 of 24. What it
-    drops is the form itself, leaving the block's shared rubric behind as the
-    question ("Complete the membership details below."). Naming the field one
-    answer belongs to is a different task from writing the question and the
-    form as one coupled object, and the gap is then placed here rather than
-    asked for.
-
-    The reply is a few hundred characters, so unlike a whole part it fits under
-    the echo cap — a corrective retry can actually see what it wrote.
-    """
-    numbers = [number for number, _ in gaps]
-    listed = "\n".join(f"{number}. {answer}" for number, answer in gaps)
-
-    def check(reply: dict) -> str | None:
-        labels = reply.get("labels")
-        if not isinstance(labels, dict):
-            return "`labels` must be an object with one gap number per key"
-        blank = [n for n in numbers if not str(labels.get(n) or "").strip()]
-        if blank:
-            return (
-                f"no label was written for gap {', '.join(blank)}; write one "
-                "for every number you were given"
-            )
-        cleaned = [_clean_label(labels[n]) for n in numbers]
-        overlong = [n for n, text in zip(numbers, cleaned)
-                    if len(text.split()) > _MAX_LABEL_WORDS]
-        if overlong:
-            return (
-                f"the label for gap {', '.join(overlong)} is too long to print "
-                f"beside a gap; name the field in at most {_MAX_LABEL_WORDS} "
-                "words"
-            )
-        # A form repeats a column heading down its rows and the row tells the
-        # two apart, which is why 44.8% of corpus forms carry a duplicate. An
-        # inline gap has no row, so here a repeat leaves two questions reading
-        # identically and the student cannot tell which answer goes where.
-        lowered = [text.lower() for text in cleaned]
-        if len(set(lowered)) != len(lowered):
-            return (
-                "two gaps were given the same label; each label must name what "
-                "makes its own gap different from the others"
-            )
-        return None
-
-    try:
-        reply = await get_llm_client("generator").complete_json(
-            FORM_WRITER_SYSTEM,
-            [{"role": "user", "content":
-              f"Listening script:\n{script}\n\nName the form field each of "
-              f"these {len(gaps)} answers fills.\n\n{listed}"}],
-            required_keys=("labels",),
-            validate=check,
-            max_tokens=512,
-        )
-        # Read inside the try on purpose. `check` guarantees the shape only for
-        # a client that honours the validate hook, and the caller's fallback
-        # needs a None here rather than an exception thrown through it.
-        return {n: _clean_label(reply["labels"][n]) for n in numbers}
-    except Exception:
-        return None
 
 
 # The separator between a matched pair's two halves: a colon, or a dash with
@@ -664,45 +730,44 @@ def _repair_compound_matching(result: dict) -> None:
     result["answer_key"] = answer_key
 
 
-async def _repair_dangling_completions(result: dict) -> None:
-    """Give every completion question that shows no gap one of its own.
+# The expansion gets more than one go at the floor.
+#
+# 🔬 Measured over the 342-part corpus of 2026-08-29: 21 of them (6%) shipped
+# UNDER `_MIN_SCRIPT_WORDS`, the shortest at 395 words — two and a half minutes
+# of audio carrying ten questions, where the real exam gives seven or eight.
+# The call site asked once and accepted any growth at all, so a script that
+# went 395 -> 500 counted as repaired and shipped a long way under the bar.
+# That is the same fault `_repair_unheard_answers` had before `ff549fa`:
+# a repair judged against its own progress rather than against the threshold
+# it exists to reach.
+_EXPAND_TRIES = 3
 
-    The set keeps whatever `visual` it already has: rebuilding the form would
-    reproduce the two-artifact coupling that is what the checkpoint drops, and
-    a set whose visual is a map has no room for a second object anyway. The
-    corpus's other route is single-artifact — 8% of listening completion items
-    and 93.4% of reading's, which is the section that does not have this bug —
-    so the question is moved onto that one, where there is no second half left
-    to lose.
 
-    Left alone if the labels cannot be written. The caller re-validates, so a
-    question still pointing at nothing fails loudly rather than reaching a
-    student.
+async def _grow_script(result: dict) -> None:
+    """Lengthen a short script until it clears the floor, or run out of tries."""
+    for _ in range(_EXPAND_TRIES):
+        script = str(result.get("audio_script") or "")
+        if len(script.split()) >= _MIN_SCRIPT_WORDS:
+            return
+        expanded = await _expand_script(script, str(result.get("title") or ""))
+        if not expanded or len(expanded.split()) <= len(script.split()):
+            return
+        # Kept even when it is still short: each round expands what the last
+        # one produced, so two partial gains compound into a whole one.
+        result["audio_script"] = expanded
+
+
+async def _expand_script(
+    script: str, title: str, must_say: list[str] | None = None
+) -> str | None:
+    """Single-call expansion — asks the model to lengthen without changing what
+    the speakers established.
+
+    `must_say` is wording the recording has to contain because an answer is
+    keyed to it. Reading's `_expand_passage` strikes the identical bargain with
+    `must_name`: when the answer is right but unwritten, the SOURCE is made to
+    contain it rather than the answer re-keyed to something weaker.
     """
-    questions = result.get("questions") or []
-    dangling = dangling_completions(questions, result.get("visual"))
-    if not dangling:
-        return
-
-    answer_key = result.get("answer_key") or {}
-    gaps = [
-        (str(q.get("number")), str(answer_key[str(q.get("number"))]))
-        for q in dangling
-        if str(q.get("number")) in answer_key
-    ]
-    if not gaps:
-        return
-
-    labels = await _write_field_labels(str(result.get("audio_script") or ""), gaps)
-    if not labels:
-        return
-    for q in dangling:
-        label = labels.get(str(q.get("number")))
-        if label:
-            q["question"] = f"{label}: {_GAP}"
-
-
-async def _expand_script(script: str, title: str) -> str | None:
     if not script.strip():
         return None
     prompt = (
@@ -715,6 +780,15 @@ async def _expand_script(script: str, title: str) -> str | None:
         "have already been introduced in the script. Return ONLY the "
         "expanded script text with speaker labels — no JSON, no commentary."
     )
+    if must_say:
+        listed = "; ".join(sorted({str(w).strip() for w in must_say if str(w).strip()}))
+        prompt += (
+            "\n\nA speaker MUST say each of these wordings aloud, exactly as "
+            "written, in a natural sentence: "
+            f"{listed}. Work them into what the speakers are already talking "
+            "about — do not list them, and never mention questions, diagrams "
+            "or answers."
+        )
     try:
         expanded = await get_llm_client().complete(
             SCRIPT_EXPANDER_SYSTEM,
@@ -755,12 +829,153 @@ def _normalize_figure(result: dict) -> None:
     visual = result.get("visual")
     if not isinstance(visual, dict):
         return
+    # Before anything judges the map: a name printed on the letter the student
+    # is asked to find is one deletion from legal, and refusing it costs the
+    # script, the questions and the key as well.
+    clashes = drop_letter_clash_names(result)
+    if clashes:
+        logger.info("dropped place name(s) printed on a letter: %s",
+                    ", ".join(clashes))
     if visual.get("kind") == "plan":
         result["visual"] = normalize_plan(visual)
     elif visual.get("kind") == "flow":
         result["visual"] = normalize_flow(visual)
     elif is_diagram(visual):
         result["visual"] = normalize_diagram(visual)
+    elif is_notes(visual):
+        result["visual"] = normalize_notes(visual)
+    elif is_picture(visual):
+        result["visual"] = normalize_picture(visual)
+        # A picture that repeats another has two correct answers and cannot be
+        # marked, so `picture_error` refuses the whole set. Deleting the twin
+        # costs one of three drawings and saves the generation.
+        gone = drop_duplicate_pictures(result)
+        if gone:
+            logger.info("dropped duplicate picture(s) %s", ", ".join(gone))
+
+
+# One stray answer the recording does not say is teacher noise and costs a
+# retry for little gain; two in the same set is a habit. The threshold reading
+# has used since `84c426c`, kept identical so the two sections are not tuned
+# against each other by accident.
+_MAX_UNHEARD = 2
+
+# How many times the script expansion is asked to name the answers it missed.
+# Three, because each attempt is told only what is STILL unheard, so they are
+# corrective rather than repeats — the same reasoning as the figure redraw's
+# retries. One attempt let a set die after a repair that had "succeeded".
+_UNHEARD_ATTEMPTS = 3
+
+
+def _unheard_answers(result: dict) -> list[tuple[str, str]]:
+    """(question number, answer) for gap-fill answers the script never says.
+
+    A Listening answer is words the student HEARS. Reading has enforced the
+    same thing against its passage since `84c426c`; the listening side has
+    never had the rule for any question type, which is how a live Part 2 keyed
+    'grouphead' against a script saying "group head".
+
+    📏 Measured before it was built, over the 144 gap-fill sets of the
+    listening SFT corpus (`tools/_diag_listening_verbatim_cost.py`, which calls
+    THIS function rather than restating it). A naive rule flags 82 answers
+    across 34.0% of sets, but under half of those flags are the defect:
+
+      46.3%  a number, date, time or price -- '6:00-8:00' for "six to eight",
+             '10th March' for "March the tenth". CORRECT answers, and refusing
+             them would refuse what the exam itself prints. Skipped.
+      12.2%  an answer that is a comma-separated list of items. A different
+             defect, and not this rule's business. Skipped.
+      41.5%  plain wording. The target.
+
+    Scoped that way, and at the `_MAX_UNHEARD` threshold below, the rule
+    **refuses 4.9% of listening sets (7 of 144)** -- and that is before
+    `_repair_unheard_answers` gets a chance to rescue any of them. The same
+    rule refuses 0% of the reading corpus, because reading's flags fall one to
+    a set; listening's cluster.
+    """
+    return [
+        (number, answer)
+        for number, answer in absent_answers(
+            str(result.get("audio_script") or ""),
+            result.get("questions") or [],
+            result.get("answer_key") or {},
+            skip_numeric=True,
+        )
+        # A list of items is a different fault; `word_limit_error` and the
+        # matching rules are what catch those.
+        if "," not in answer
+    ]
+
+
+async def _repair_unheard_answers(result: dict) -> None:
+    """Make the recording say the answers it was keyed to but never spoke.
+
+    The cure reading already proved (`c293479`): when the answer is RIGHT and
+    the source simply never says it, rewriting the source is cheaper and better
+    than re-keying the gap to whatever the source happens to contain. A live
+    Part 2 keyed 'group head' off a script that described the part without ever
+    naming it; re-keying would have produced a vaguer question, not a better
+    one.
+
+    One call, and only for the ~1 set in 6 the rule flags. Verified before it
+    is kept: an expansion that does not actually reduce the unheard answers is
+    discarded, so a model that ignored the instruction cannot make things worse.
+    """
+    before = _unheard_answers(result)
+    if len(before) < _MAX_UNHEARD:
+        return
+
+    # Tried more than once, and judged against the bar that actually refuses
+    # the set rather than against "any improvement at all".
+    #
+    # It used to make ONE call and keep the result whenever it reduced the
+    # count. Going from three unheard answers to two is a reduction — and
+    # `_MAX_UNHEARD` is 2, so the set was refused anyway and the whole
+    # generation was thrown away after a repair that had reported success. A
+    # live Part 1 form died exactly that way on 2026-08-29 with Q26='types',
+    # Q27='weight', Q28='marker'.
+    #
+    # Each attempt is told only what is STILL missing, so a second call is
+    # corrective rather than another roll of the same dice.
+    for _ in range(_UNHEARD_ATTEMPTS):
+        missing = _unheard_answers(result)
+        if len(missing) < _MAX_UNHEARD:
+            return
+        expanded = await _expand_script(
+            str(result.get("audio_script") or ""),
+            str(result.get("title") or ""),
+            must_say=[answer for _, answer in missing],
+        )
+        if not expanded:
+            return
+        trial = {**result, "audio_script": expanded}
+        after = _unheard_answers(trial)
+        if len(after) >= len(missing):
+            # No progress; another identical call will not make any either.
+            logger.info(
+                "script expansion made no progress on %d unheard answer(s)",
+                len(missing),
+            )
+            return
+        result["audio_script"] = expanded
+
+
+def _gate_after_figure_work(result: dict) -> None:
+    """Judge the set once more, after the figure has been normalised.
+
+    The gate above runs BEFORE `_normalize_figure` and the figure repairs, so
+    until now whatever they introduced shipped unchecked. That is the same hole
+    `renumber_checked` exists to close on the full-test path: the last step a
+    set takes was the one nothing validated.
+
+    🔬 Found live 2026-08-27. A picture-choice came back with pictures A and C
+    identical — two correct answers, neither markable. `picture_error` catches
+    it exactly, and never ran, because normalisation happened afterwards.
+    """
+    problem = validate_part(result, judge_picture_count=False)
+    if problem:
+        raise RefusedSet(
+            f"the normalised listening set is invalid: {problem}", result)
 
 
 def _blank_diagram_answers(result: dict) -> None:
@@ -773,10 +988,16 @@ def _blank_diagram_answers(result: dict) -> None:
     """
     if is_diagram(result.get("visual")):
         blank_self_answering_labels(result)
+    blank_self_answering_lines(result)
 
 
 def _validate_full_test_part(
-    result: dict, *, judge_structure: bool = True, judge_matching: bool = True
+    result: dict,
+    *,
+    judge_structure: bool = True,
+    judge_matching: bool = True,
+    judge_verbatim: bool = True,
+    judge_diagram: bool = True,
 ) -> str | None:
     """validate_part, plus the count a full test depends on.
 
@@ -788,7 +1009,12 @@ def _validate_full_test_part(
     The count is judged either way — the repair rewrites a question, it never
     adds one, so a short part still has to be regenerated.
     """
-    problem = validate_part(result, judge_structure=judge_structure)
+    problem = validate_part(
+        result,
+        judge_structure=judge_structure,
+        judge_verbatim=judge_verbatim,
+        judge_diagram=judge_diagram,
+    )
     if problem:
         return problem
     count = len(result.get("questions") or [])
@@ -835,28 +1061,37 @@ async def create_part(
         [{"role": "user", "content": "\n".join(parts)}],
         required_keys=("title", "audio_script", "questions", "answer_key"),
         validate=partial(
-            _validate_full_test_part, judge_structure=False, judge_matching=False
+            _validate_full_test_part,
+            judge_structure=False,
+            judge_matching=False,
+            judge_verbatim=False,
+            judge_diagram=False,
         ),
         # A full part is a ~1.7-3.1k-token JSON object, but LLM_MAX_TOKENS is
         # 2048 locally — that truncates mid-JSON on the longer half of the
         # range, and each retry costs another ~5 min. The ~2.9k prompt plus
         # this still fits the checkpoint's 8192 context.
-        max_tokens=4096,
+        #
+        # That ceiling is the CHECKPOINT's, so it is applied only when the
+        # checkpoint is what answers. A figure-bearing request skips the
+        # fine-tune and lands on a reasoning model that spends the same budget
+        # thinking before it writes — 4096 truncated it mid-JSON on a live
+        # Part 2 diagram request (2026-08-28), which is the one path that
+        # cannot afford the retry. Left to the configured budget there.
+        max_tokens=4096 if client.is_finetune else None,
     )
 
     # Before _renumber, so the labels are keyed by the numbers the questions
     # still carry.
-    await _repair_dangling_completions(result)
+    await repair_dangling_completions(
+        result, str(result.get("audio_script") or ""))
     _repair_compound_matching(result)
     problem = _validate_full_test_part(result)
     if problem:
-        raise ValueError(f"the repaired listening part is invalid: {problem}")
+        raise RefusedSet(
+            f"the repaired listening part is invalid: {problem}", result)
 
-    script = str(result.get("audio_script") or "")
-    if len(script.split()) < _MIN_SCRIPT_WORDS:
-        expanded = await _expand_script(script, str(result.get("title") or ""))
-        if expanded and len(expanded.split()) > len(script.split()):
-            result["audio_script"] = expanded
+    await _grow_script(result)
 
     # Checked: the only step a part takes after the gate above, and the one
     # that shipped a reading diagram numbered against the wrong questions.
@@ -867,7 +1102,17 @@ async def create_part(
     # the ones the part now carries, and after the normalisation, so the
     # rewrite sees the boxes the student will.
     await repair_self_answering_steps(result)
+    await redraw_diagram(result, str(result.get("audio_script") or ""),
+                         source_label="Audio script")
     _blank_diagram_answers(result)
+    await repair_self_answering_callouts(result)
+    # 🔬 LAST, after the rewrite above. `repair_self_answering_callouts`
+    # rewords a callout through the model, and the wording it comes back
+    # with can be the subject form this repair exists for — "The __1__
+    # holds the beans" against a part still printing "Hopper". Run before
+    # the rewrite it saw the old text, missed that, and the gate refused
+    # the set: 3 of the 9 failures in the 36-set sweep of 2026-08-29.
+    blank_gapped_part_names(result)
     result["part"] = part_number
     return result
 

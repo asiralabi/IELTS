@@ -3,12 +3,13 @@
 import { Fragment } from "react";
 import type { ReactNode } from "react";
 import { API_URL } from "@/lib/api";
-import { DiagramBlock } from "@/components/practice/diagram";
+import { DiagramBlock, PictureBlock } from "@/components/practice/diagram";
 import type {
   Visual,
   VisualChart,
   VisualChartSeries,
   VisualFlow,
+  VisualNotes,
   VisualMap,
   VisualPlan,
 } from "@/lib/types";
@@ -18,15 +19,26 @@ export function Visuals({
   visual,
   visuals,
   className,
+  activeGap,
 }: {
   visual?: Visual;
   visuals?: Visual[];
   className?: string;
+  /** The question number the student is answering right now, so its blank can
+   * be lit on the figure. A figure is printed once and asked about five times;
+   * without this, "Label 3 on the diagram" means hunting for a small 3 among
+   * four others while a clock runs.
+   *
+   * Set as a data attribute on the wrapper rather than threaded as a prop:
+   * every renderer already tags its blanks with `data-gap`, so one attribute
+   * here lights the right one through the CSS in globals.css — no prop has to
+   * cross six renderers and a dozen call sites to get there. */
+  activeGap?: string | null;
 }) {
   const list = visuals && visuals.length > 0 ? visuals : visual ? [visual] : [];
   if (list.length === 0) return null;
   return (
-    <div className={cn("space-y-3", className)}>
+    <div className={cn("space-y-3", className)} data-active-gap={activeGap ?? undefined}>
       {list.map((v, i) => (
         <VisualBlock key={i} visual={v} />
       ))}
@@ -81,7 +93,91 @@ export function VisualBlock({
   if (visual.kind === "diagram") {
     return <DiagramBlock visual={visual} className={className} />;
   }
-  return <ChartBlock visual={visual} className={className} />;
+  if (visual.kind === "notes") {
+    return <NotesBlock visual={visual} className={className} />;
+  }
+  if (visual.kind === "picture") {
+    return <PictureBlock visual={visual} className={className} />;
+  }
+  // Only a chart falls through to the chart branch. Everything else renders
+  // nothing at all, which is deliberate: a payload whose `kind` this build does
+  // not know used to be handed to ChartBlock, and it read `series` off a shape
+  // that has none. A live summary came back as `kind: "summary"` and would have
+  // drawn as a broken chart rather than as the block it is. A missing figure is
+  // a figure the student can ask about; a wrong one is one they cannot.
+  if (visual.kind === "chart") {
+    return <ChartBlock visual={visual} className={className} />;
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Printed notes / summary block — the figure the exam names constantly
+// ("Complete the notes below", "Complete the summary below") and this engine
+// could not draw, so every note item had to carry its own context inline and
+// the student never saw the block the rubric promised.
+//
+// One component for both, because they are one shape with two typographies:
+// notes are headed groups of short lines, a summary is the same content set as
+// flowing prose. Laid out in HTML rather than SVG for the reason the flow chart
+// is — a line is text of unpredictable length and the exam wraps it.
+
+function NotesBlock({
+  visual,
+  className,
+}: {
+  visual: VisualNotes;
+  className?: string;
+}) {
+  const summary = visual.style === "summary";
+  return (
+    <figure
+      className={cn(
+        "rounded-[20px] border border-border/70 bg-card px-5 py-4 shadow-soft",
+        className
+      )}
+      aria-label={`${summary ? "Summary" : "Notes"}: ${visual.title}`}
+    >
+      {visual.title && (
+        <figcaption className="mb-3 text-center text-sm font-semibold tracking-tight text-foreground">
+          {visual.title}
+        </figcaption>
+      )}
+      <div className={cn("space-y-3", summary && "space-y-2")}>
+        {visual.sections.map((section, i) => (
+          <section key={i}>
+            {section.heading && (
+              <h4 className="mb-1 text-sm font-semibold text-foreground">
+                {flowStepContent(section.heading)}
+              </h4>
+            )}
+            {summary ? (
+              // A summary is prose: the lines are sentences of one paragraph,
+              // so they are joined rather than listed. Set as bullets it reads
+              // as notes, which is the other style.
+              <p className="text-sm leading-7 text-foreground">
+                {flowStepContent(section.lines.join(" "))}
+              </p>
+            ) : (
+              <ul className="space-y-1">
+                {section.lines.map((line, j) => (
+                  <li
+                    key={j}
+                    className="flex gap-2 text-sm leading-7 text-foreground"
+                  >
+                    <span aria-hidden className="select-none opacity-50">
+                      •
+                    </span>
+                    <span>{flowStepContent(line)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        ))}
+      </div>
+    </figure>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -115,8 +211,11 @@ function FlowBlock({
       className={cn("glass rounded-[20px] p-4 shadow-soft", className)}
       aria-label={`Flow chart: ${visual.title}`}
     >
+      {/* Centred and bold above the chart, which is where the exam prints it —
+          Cambridge 9 Test 1 heads its chart "Method of determining where the
+          ancestors of turtles and tortoises come from" that way. */}
       {visual.title && (
-        <figcaption className="mb-3 text-sm font-medium">
+        <figcaption className="mb-3 text-center text-sm font-semibold">
           {visual.title}
         </figcaption>
       )}
@@ -125,11 +224,16 @@ function FlowBlock({
           lives inside its own <li> rather than between them: an <ol> may only
           hold <li>, and a bare <div> there is invalid even though browsers
           tolerate it. */}
-      <ol className="mx-auto flex max-w-[460px] flex-col items-stretch">
+      <ol className="mx-auto flex max-w-[640px] flex-col items-stretch">
         {steps.map((step, i) => (
           <li key={i}>
             {i > 0 && <FlowArrow />}
-            <div className="rounded-xl border border-border/70 bg-muted/40 px-3 py-2 text-center text-xs leading-relaxed">
+            {/* Square corners, no fill, text ranged left: a printed exam box,
+                not a UI pill. A rounded tinted box centring a clause reads as
+                a button, and the chart stopped looking like the paper the
+                student will sit. Cambridge sets its steps as running text
+                inside a plain rectangle the width of the column. */}
+            <div className="border border-foreground/70 px-3 py-2 text-left text-xs leading-relaxed">
               {flowStepContent(step)}
             </div>
           </li>
@@ -171,7 +275,10 @@ function flowStepContent(step: string): ReactNode {
         key={`${match.index}-${match[1]}`}
         className="mx-0.5 whitespace-nowrap font-semibold text-foreground"
       >
-        {match[1]} {"·".repeat(8)}
+        {/* `data-gap` lets the question the student is on light its own blank
+            here too -- see the [data-active-gap] rules in globals.css. */}
+        <span data-gap={match[1]}>{match[1]}</span>{" "}
+        <span className="tracking-[0.15em] opacity-70">{".".repeat(12)}</span>
       </span>
     );
     last = match.index + match[0].length;
@@ -527,7 +634,16 @@ function PlanRegionLabel({
         fontWeight={600}
         fill="currentColor"
       >
-        {`${blank[1]} ${"·".repeat(8)}`}
+        {/* The same mark the flow chart, the notes block and the drawn
+            diagram print: the question number, then a run of dots. It was a
+            row of middots here and periods everywhere else, so one student met
+            two different marks across one paper. */}
+        <tspan className="gap-mark" data-gap={blank[1]}>
+          {blank[1]}{" "}
+        </tspan>
+        <tspan fontWeight={400} letterSpacing="1.5" opacity={0.7}>
+          {".".repeat(10)}
+        </tspan>
       </text>
     );
   }
@@ -727,8 +843,18 @@ function MapBlock({ visual, className }: { visual: VisualMap; className?: string
   const CHAR_W = 6.3;
   const LINE_H = 15;
 
+  // What makes a feature the lettered one the student is hunting for is its
+  // LABEL — a bare "A" — not its `shape`. This used to read
+  // `f.shape !== "point"`, which is the opposite of how the payload is
+  // written: the prompt asks for lettered locations as `point`s and named
+  // landmarks as `room`s, so every letter drew as a 5px dot with a 9px caption
+  // and every landmark drew as a box with its name printed across it. `shape`
+  // now does only what it is named for — whether the thing has a footprint.
+  const isLettered = (f: { label?: string }) =>
+    /^[A-Za-z]$/.test(String(f.label ?? "").trim());
+
   for (const f of features) {
-    const isLetter = !f.fixed && f.shape !== "point";
+    const isLetter = isLettered(f);
     if (isLetter) {
       reserved.push({ x: px(f.x) - roomW / 2, y: py(f.y) - roomH / 2, w: roomW, h: roomH });
     } else {
@@ -794,28 +920,10 @@ function MapBlock({ visual, className }: { visual: VisualMap; className?: string
             strokeOpacity={0.28}
             strokeWidth={1.5}
           />
-          {Array.from({ length: gw + 1 }).map((_, i) => (
-            <line
-              key={`v${i}`}
-              x1={pad + i * cell}
-              y1={pad}
-              x2={pad + i * cell}
-              y2={pad + gh * cell}
-              stroke="currentColor"
-              strokeOpacity={0.05}
-            />
-          ))}
-          {Array.from({ length: gh + 1 }).map((_, i) => (
-            <line
-              key={`h${i}`}
-              x1={pad}
-              y1={pad + i * cell}
-              x2={pad + gw * cell}
-              y2={pad + i * cell}
-              stroke="currentColor"
-              strokeOpacity={0.05}
-            />
-          ))}
+          {/* No graticule. The coordinates are how the payload SAYS where a
+              thing is; they are not something the exam prints, and a ruled
+              grid behind a park makes it read as a floor plan — which is the
+              confusion this figure was added to end. */}
 
           {/* compass */}
           <g transform={`translate(${width - pad - 6}, ${pad + 14})`} aria-hidden>
@@ -853,7 +961,7 @@ function MapBlock({ visual, className }: { visual: VisualMap; className?: string
           {features.map((f, fi) => {
             const cx = px(f.x);
             const cy = py(f.y);
-            const isLetter = !f.fixed && f.shape !== "point";
+            const isLetter = isLettered(f);
             if (isLetter) {
               return (
                 <g key={`r${fi}`}>
@@ -897,7 +1005,7 @@ function MapBlock({ visual, className }: { visual: VisualMap; className?: string
           {/* word labels for landmarks / points + path labels, placed last so
               they paint on top, each in a collision-free slot with a pill */}
           {features
-            .filter((f) => f.fixed || f.shape === "point")
+            .filter((f) => !isLettered(f))
             .map((f, fi) => {
               const box = placeLabel(px(f.x), py(f.y), f.label);
               return <LabelPill key={`l${fi}`} box={box} text={f.label} strong />;
@@ -982,7 +1090,13 @@ function ChartBlock({
       className={cn("glass rounded-[20px] p-4 shadow-soft", className)}
       aria-label={`${visual.chart_type} chart: ${visual.title}`}
     >
-      <figcaption className="mb-3 text-sm font-medium">{visual.title}</figcaption>
+      {/* A table sets its own title INSIDE the rules, in a header row spanning
+          every column, which is where the exam prints it. Leaving the caption
+          here as well printed it twice. Every other chart type still needs
+          one, because a graph has no header row to put it in. */}
+      {visual.chart_type !== "table" && (
+        <figcaption className="mb-3 text-sm font-medium">{visual.title}</figcaption>
+      )}
       {visual.chart_type === "bar" && <BarChart visual={visual} />}
       {visual.chart_type === "line" && <LineChart visual={visual} />}
       {visual.chart_type === "pie" && <PieChart visual={visual} />}
@@ -1409,14 +1523,32 @@ function ChartTable({ visual }: { visual: VisualChart }) {
       headers = headers.slice(1);
     }
   }
+  // Fully ruled, with the title in a header row spanning the whole width —
+  // which is how the exam prints one. Cambridge 19 Test 2 heads its table "A
+  // typical 45-minute guitar lesson" that way and boxes every cell. Ours drew
+  // hairlines between rows only and set the title outside the figure, so it
+  // read as a web data table rather than as the thing on the page.
+  const cellRule = "border border-foreground/25 px-2.5 py-2 align-top";
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-left text-xs">
-        <thead className="text-muted-foreground">
+      <table className="w-full border-collapse text-left text-xs">
+        <thead>
+          {visual.title && (
+            <tr>
+              <th
+                colSpan={headers.length + 1}
+                className={cn(cellRule, "text-center text-sm font-semibold")}
+              >
+                {visual.title}
+              </th>
+            </tr>
+          )}
           <tr>
-            <th className="px-2 py-1.5 font-medium">{cornerLabel}</th>
+            <th className={cn(cellRule, "text-center font-semibold")}>
+              {cornerLabel}
+            </th>
             {headers.map((h) => (
-              <th key={h} className="px-2 py-1.5">
+              <th key={h} className={cn(cellRule, "text-center font-semibold")}>
                 {h}
               </th>
             ))}
@@ -1424,12 +1556,12 @@ function ChartTable({ visual }: { visual: VisualChart }) {
         </thead>
         <tbody>
           {visual.series.map((row, ri) => (
-            <tr key={ri} className="border-t border-border/60">
-              <td className="px-2 py-1.5 font-medium">{row.name}</td>
+            <tr key={ri}>
+              <td className={cn(cellRule, "font-medium")}>{row.name}</td>
               {headers.map((h) => {
                 const cell = findCell(row, h);
                 return (
-                  <td key={h} className="px-2 py-1.5 tabular-nums">
+                  <td key={h} className={cn(cellRule, "tabular-nums")}>
                     {renderCell(cell)}
                   </td>
                 );
@@ -1534,13 +1666,18 @@ function findCell(row: VisualChartSeries, header: string): unknown {
 function renderCell(value: unknown) {
   if (value === null || value === undefined || value === "") return "";
   const str = String(value);
-  const blank = BLANK_RE.exec(str);
-  if (blank) {
-    return (
-      <span className="inline-flex items-center rounded-md bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-        Q{blank[1]}
-      </span>
-    );
-  }
+  // Two things were wrong here, both found against the books on 2026-08-28.
+  //
+  // `BLANK_RE` is anchored, so it matched only a cell that is ENTIRELY a
+  // blank. Cambridge 19 Test 2 prints "using an app or by 7 .........." and
+  // "often listening to a 9 .......... of a song" — the blank sits inside a
+  // phrase, which is what gives the student the grammar of the answer. Such a
+  // cell fell through to `return str` and printed the raw `__7__` marker.
+  //
+  // And a matched blank rendered as a grey "Q7" chip, the one figure in the
+  // app that did not print the exam's mark. `flowStepContent` already prints
+  // the number and the dot leader, handles inline gaps, and tags each one with
+  // `data-gap` for the active-question highlight — so the table uses it too.
+  if (BLANK_RE.test(str) || /__\d+__/.test(str)) return flowStepContent(str);
   return str;
 }

@@ -1,6 +1,6 @@
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -9,6 +9,7 @@ from app.auth import get_current_user
 from app.database import get_db
 from app.models import MockExam, User
 from app.routers._payload import ANSWER_FIELDS
+from app.services import tts
 
 router = APIRouter(prefix="/mock-exam", tags=["mock-exam"])
 
@@ -64,6 +65,49 @@ async def submit_mock_exam(
         return await orchestrator.score_mock_exam(db, user, exam, payload.model_dump())
     except ValueError:
         raise HTTPException(status_code=502, detail="LLM returned invalid output")
+
+
+@router.get("/{exam_id}/audio")
+async def get_exam_audio(
+    exam_id: int,
+    part: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> Response:
+    """Stream the recording for one Listening part of a mock exam.
+
+    The mock exam printed its `audio_script` on screen, so a student sat the
+    Listening paper by READING the transcript — which is a reading test with a
+    different name on it. The single-practice route cannot serve this: it is
+    keyed to a `GeneratedQuestion` id, and an exam's listening paper is a
+    snapshot inside `MockExam.exam` with no id of its own.
+
+    Synthesis is lazy and cached by the TTS service, so the first play of a
+    part pays for it and every later play is free.
+    """
+    exam = _get_owned_exam(exam_id, db, user)
+    parts = ((exam.exam or {}).get("listening") or {}).get("parts") or []
+    for candidate in parts:
+        if isinstance(candidate, dict) and candidate.get("part") == part:
+            script = candidate.get("audio_script")
+            speakers = candidate.get("speakers")
+            break
+    else:
+        raise HTTPException(status_code=404, detail="No such part in this exam")
+
+    if not script:
+        raise HTTPException(status_code=404, detail="No recording for this part")
+
+    try:
+        audio = await tts.synthesize_script(script, speakers)
+    except Exception:
+        raise HTTPException(status_code=503, detail="Audio synthesis unavailable")
+
+    return Response(
+        content=audio,
+        media_type="audio/mpeg",
+        headers={"Cache-Control": "private, max-age=86400"},
+    )
 
 
 @router.get("/{exam_id}")

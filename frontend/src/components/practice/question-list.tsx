@@ -29,12 +29,17 @@ export function QuestionList({
   onAnswer,
   disabled,
   results,
+  onActiveQuestion,
 }: {
   questions: PracticeQuestion[];
   answers: Record<string, string>;
   onAnswer: (key: string, value: string) => void;
   disabled?: boolean;
   results?: Record<string, { correct?: boolean; correct_answer?: string }> | null;
+  /** Which question the student is on, so the figure can light its blank.
+   * Fired on focus and cleared on blur; a page that does not care may omit
+   * it. */
+  onActiveQuestion?: (key: string | null) => void;
 }) {
   return (
     <motion.ol
@@ -105,6 +110,8 @@ export function QuestionList({
               <Input
                 value={answers[key] ?? ""}
                 onChange={(e) => onAnswer(key, e.target.value)}
+                onFocus={() => onActiveQuestion?.(key)}
+                onBlur={() => onActiveQuestion?.(null)}
                 disabled={disabled}
                 placeholder="Type your answer…"
                 className="mt-3"

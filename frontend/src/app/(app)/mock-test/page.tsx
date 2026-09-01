@@ -27,6 +27,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { ExaminerLoading } from "@/components/practice/examiner-loading";
+import { NeuralAudioPlayer } from "@/components/practice/neural-audio-player";
 import { QuestionList } from "@/components/practice/question-list";
 import { Visuals } from "@/components/practice/visual";
 import { BandRing } from "@/components/ui/progress";
@@ -42,7 +43,19 @@ const SECTIONS: Array<{ id: SectionId; label: string; icon: typeof Headphones }>
   { id: "speaking", label: "Speaking", icon: Mic },
 ];
 
-const EXAM_MINUTES = 165;
+// The real paper is sat one section at a time, each on its own clock, and you
+// cannot go back to a section you have left. A single 165-minute countdown let
+// a student spend two hours on Reading and skip Listening entirely, which is
+// the one thing a mock test must not allow — the whole point is to find out
+// whether they can work at the exam's pace.
+const SECTION_MINUTES: Record<SectionId, number> = {
+  listening: 30,
+  reading: 60,
+  writing: 60,
+  speaking: 15,
+};
+const SECTION_ORDER: SectionId[] = ["listening", "reading", "writing", "speaking"];
+const EXAM_MINUTES = SECTION_ORDER.reduce((t, s) => t + SECTION_MINUTES[s], 0);
 
 function asQuestionText(value: unknown): string {
   if (typeof value === "string") return value;
@@ -92,6 +105,12 @@ function toSections(
   }));
 }
 
+/** The part number out of a section key like "Part 3". */
+function partNumber(key: string): number {
+  const m = /(\d+)/.exec(key);
+  return m ? Number(m[1]) : 1;
+}
+
 function extractVisual(value: unknown): Visual | null {
   if (!value || typeof value !== "object") return null;
   const raw = (value as { visual?: unknown }).visual;
@@ -112,18 +131,45 @@ export default function MockTestPage() {
   const [section, setSection] = React.useState<SectionId>("listening");
   const [listeningAnswers, setListeningAnswers] = React.useState<Record<string, string>>({});
   const [readingAnswers, setReadingAnswers] = React.useState<Record<string, string>>({});
+  // Which question the student is on, so the figure can light that
+  // blank. One at a time, so one piece of state covers every section.
+  const [activeGap, setActiveGap] = React.useState<string | null>(null);
   const [essays, setEssays] = React.useState<Record<string, string>>({});
   const [transcripts, setTranscripts] = React.useState<Record<string, string>>({});
   const [result, setResult] = React.useState<MockExamResult | null>(null);
   const [seconds, setSeconds] = React.useState(0);
   const [saved, setSaved] = React.useState(false);
   const [flagged, setFlagged] = React.useState<Record<string, boolean>>({});
+  // How many times each Listening part has been played. The real exam plays
+  // each recording ONCE, so this is one, not the practice page's two.
+  const [plays, setPlays] = React.useState<Record<string, number>>({});
 
-  React.useEffect(() => {
-    if (phase !== "exam") return;
-    const t = setInterval(() => setSeconds((s) => s + 1), 1000);
-    return () => clearInterval(t);
-  }, [phase]);
+  // Sections already sat. The exam never returns to one, exactly as the real
+  // test never hands a paper back.
+  const [closed, setClosed] = React.useState<SectionId[]>([]);
+  // When the current section's clock started, on the same elapsed-seconds
+  // scale as `seconds`, so both timers stay in step through a re-render.
+  const [sectionFrom, setSectionFrom] = React.useState(0);
+
+  const sectionLeft = SECTION_MINUTES[section] * 60 - (seconds - sectionFrom);
+
+  /** Close the current section and open the next. Time is not carried over —
+   * minutes saved on Listening do not buy minutes on Reading, and the real
+   * exam is the same. */
+  const closeSection = React.useCallback(() => {
+    setClosed((done) => (done.includes(section) ? done : [...done, section]));
+    const next = SECTION_ORDER[SECTION_ORDER.indexOf(section) + 1];
+    if (next) {
+      setSection(next);
+      setSectionFrom(seconds);
+    }
+  }, [section, seconds]);
+
+  // The clock decides the transition, on the tick that crosses zero — not a
+  // separate effect watching the derived value, which would be setting state
+  // from a render pass. `elapsed` lives in a ref so the interval can read the
+  // real count without being torn down and rebuilt every second.
+  const elapsed = React.useRef(0);
 
   // Autosave pulse whenever answers change.
   const savedTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -143,7 +189,11 @@ export default function MockTestPage() {
       setEssays({});
       setTranscripts({});
       setSeconds(0);
+      setPlays({});
+      elapsed.current = 0;
       setSection("listening");
+      setClosed([]);
+      setSectionFrom(0);
       setPhase("exam");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not generate the exam.");
@@ -168,6 +218,39 @@ export default function MockTestPage() {
       setPhase("exam");
     }
   };
+
+  // The exam clock reads the current section and the current `submit` through
+  // a ref refreshed after every render — the standard latest-ref pattern. It
+  // keeps the interval out of the dependency list, so the countdown is not
+  // torn down and rebuilt on every keystroke, and it keeps the writes out of
+  // the render pass.
+  const live = React.useRef({ section, sectionFrom, closeSection, submit });
+  React.useEffect(() => {
+    live.current = { section, sectionFrom, closeSection, submit };
+  });
+
+  React.useEffect(() => {
+    if (phase !== "exam") return;
+    const t = setInterval(() => {
+      elapsed.current += 1;
+      setSeconds(elapsed.current);
+      const state = live.current;
+      if (
+        SECTION_MINUTES[state.section] * 60 - (elapsed.current - state.sectionFrom) >
+        0
+      ) {
+        return;
+      }
+      // Out of time. The last section ending is the end of the exam, so it
+      // submits rather than leaving the student at a dead paper.
+      if (SECTION_ORDER.indexOf(state.section) === SECTION_ORDER.length - 1) {
+        void state.submit();
+      } else {
+        state.closeSection();
+      }
+    }, 1000);
+    return () => clearInterval(t);
+  }, [phase]);
 
   const examData = (exam?.exam ?? {}) as Record<string, unknown>;
   const listeningParts = React.useMemo(
@@ -233,23 +316,43 @@ export default function MockTestPage() {
             {/* Exam header: navigator + timer + autosave */}
             <div className="glass-strong sticky top-3 z-30 flex flex-wrap items-center justify-between gap-3 rounded-[24px] p-3 shadow-soft">
               <div className="flex gap-1.5">
-                {SECTIONS.map((s) => (
-                  <button
-                    key={s.id}
-                    onClick={() => setSection(s.id)}
-                    aria-current={section === s.id ? "step" : undefined}
-                    className={cn(
-                      "flex items-center gap-2 rounded-2xl px-3.5 py-2 text-sm font-medium transition-all",
-                      section === s.id
-                        ? "bg-gradient-to-r from-primary to-secondary text-white shadow-glow"
-                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                    )}
-                  >
-                    <s.icon className="size-4" aria-hidden />
-                    <span className="hidden sm:inline">{s.label}</span>
-                    {flagged[s.id] && <Flag className="size-3 text-warning" aria-hidden />}
-                  </button>
-                ))}
+                {/* A navigator, not a menu. A section already sat is closed and
+                    one not yet reached has not opened — the same as the real
+                    exam, where the paper you are on is the only paper you
+                    have. Disabled rather than hidden so the student can see
+                    where they are in the test. */}
+                {SECTIONS.map((s) => {
+                  const done = closed.includes(s.id);
+                  const current = section === s.id;
+                  return (
+                    <button
+                      key={s.id}
+                      onClick={() => setSection(s.id)}
+                      disabled={!current}
+                      aria-current={current ? "step" : undefined}
+                      title={
+                        done
+                          ? `${s.label} is finished — the exam does not go back`
+                          : current
+                            ? undefined
+                            : `${s.label} opens when the section before it ends`
+                      }
+                      className={cn(
+                        "flex items-center gap-2 rounded-2xl px-3.5 py-2 text-sm font-medium transition-all",
+                        current
+                          ? "bg-gradient-to-r from-primary to-secondary text-white shadow-glow"
+                          : done
+                            ? "text-muted-foreground/70 line-through"
+                            : "text-muted-foreground/40",
+                        !current && "cursor-not-allowed"
+                      )}
+                    >
+                      <s.icon className="size-4" aria-hidden />
+                      <span className="hidden sm:inline">{s.label}</span>
+                      {flagged[s.id] && <Flag className="size-3 text-warning" aria-hidden />}
+                    </button>
+                  );
+                })}
               </div>
               <div className="flex items-center gap-3">
                 <AnimatePresence>
@@ -274,9 +377,24 @@ export default function MockTestPage() {
                 >
                   <Flag className="size-4" aria-hidden />
                 </button>
-                <Badge variant={timeLeft < 900 ? "danger" : "outline"} className="font-mono">
-                  {timeLeft >= 0 ? formatDuration(timeLeft) : "00:00"}
+                {/* The SECTION clock leads, because that is the one the
+                    student is racing. The whole-exam figure stays beside it,
+                    smaller, so they can still see how much test is left. */}
+                <Badge
+                  variant={sectionLeft < 300 ? "danger" : "outline"}
+                  className="font-mono tabular-nums"
+                >
+                  {SECTIONS.find((s) => s.id === section)?.label}{" "}
+                  {sectionLeft >= 0 ? formatDuration(sectionLeft) : "00:00"}
                 </Badge>
+                <span className="hidden font-mono text-xs tabular-nums text-muted-foreground sm:inline">
+                  {timeLeft >= 0 ? formatDuration(timeLeft) : "00:00"} total
+                </span>
+                {SECTION_ORDER.indexOf(section) < SECTION_ORDER.length - 1 && (
+                  <Button size="sm" variant="ghost" onClick={closeSection}>
+                    Finish section
+                  </Button>
+                )}
                 <Button size="sm" onClick={submit}>
                   <Send className="size-4" aria-hidden />
                   Submit
@@ -306,16 +424,50 @@ export default function MockTestPage() {
                             {part.title}
                           </h3>
                         )}
-                        <p className="whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">
-                          {part.body}
-                        </p>
+                        {/* The recording, NOT the transcript.
+                            The exam printed `audio_script` here, so a student
+                            sat the Listening paper by reading it — a reading
+                            test with a different name on it. IELTS plays each
+                            part once; the transcript is for the report
+                            afterwards, not for the exam. */}
+                        {part.body && exam?.id ? (
+                          <div className="flex flex-wrap items-center justify-between gap-4">
+                            <NeuralAudioPlayer
+                              part={partNumber(part.key)}
+                              disabled={phase !== "exam"}
+                              canPlay={() => (plays[part.key] ?? 0) < 1}
+                              onPlayStart={() =>
+                                setPlays((p) => ({
+                                  ...p,
+                                  [part.key]: (p[part.key] ?? 0) + 1,
+                                }))
+                              }
+                              fetchAudio={() =>
+                                api.mockExamAudio(exam.id, partNumber(part.key))
+                              }
+                            />
+                            <Badge
+                              variant={plays[part.key] ? "danger" : "accent"}
+                            >
+                              {plays[part.key]
+                                ? "Played — the exam plays each part once"
+                                : "Plays once"}
+                            </Badge>
+                          </div>
+                        ) : (
+                          <p className="whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">
+                            {part.body}
+                          </p>
+                        )}
                         <Visuals
+                          activeGap={activeGap}
                           visual={part.visual}
                           visuals={part.visuals}
                           className="mt-4"
                         />
                       </div>
                       <QuestionList
+                        onActiveQuestion={setActiveGap}
                         questions={part.questions}
                         answers={listeningAnswers}
                         onAnswer={(k, v) => {
@@ -342,12 +494,14 @@ export default function MockTestPage() {
                           {passage.body}
                         </p>
                         <Visuals
+                          activeGap={activeGap}
                           visual={passage.visual}
                           visuals={passage.visuals}
                           className="mt-4"
                         />
                       </div>
                       <QuestionList
+                        onActiveQuestion={setActiveGap}
                         questions={passage.questions}
                         answers={readingAnswers}
                         onAnswer={(k, v) => {
@@ -369,7 +523,8 @@ export default function MockTestPage() {
                         <p className="mb-4 whitespace-pre-wrap text-sm font-medium leading-relaxed">
                           {asQuestionText(writing[t])}
                         </p>
-                        {taskVisual && <Visuals visual={taskVisual} className="mb-4" />}
+                        {taskVisual && <Visuals
+                    activeGap={activeGap} visual={taskVisual} className="mb-4" />}
                         <Textarea
                           value={essays[t] ?? ""}
                           onChange={(e) => {

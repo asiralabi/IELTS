@@ -24,6 +24,9 @@ export default function ReadingTestPage() {
   const [phase, setPhase] = React.useState<Phase>("start");
   const [test, setTest] = React.useState<FullReadingTest | null>(null);
   const [answers, setAnswers] = React.useState<Record<string, string>>({});
+  // Which question the student is on, so the figure can light that
+  // blank. One at a time, so one piece of state covers every section.
+  const [activeGap, setActiveGap] = React.useState<string | null>(null);
   const [result, setResult] = React.useState<FullTestResult | null>(null);
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null);
 
@@ -228,6 +231,7 @@ export default function ReadingTestPage() {
                         {passage.passage}
                       </div>
                       <Visuals
+                        activeGap={activeGap}
                         visual={passage.visual}
                         visuals={passage.visuals}
                         className="mt-5"
@@ -235,6 +239,7 @@ export default function ReadingTestPage() {
                     </div>
 
                     <QuestionList
+                      onActiveQuestion={setActiveGap}
                       questions={questions}
                       answers={answers}
                       onAnswer={(k, v) => setAnswers((a) => ({ ...a, [k]: v }))}

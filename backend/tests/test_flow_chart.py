@@ -378,3 +378,62 @@ def test_both_prompts_describe_the_schema_the_renderer_reads(system):
 
     assert '"kind": "flow"' in text
     assert '"steps"' in text
+
+
+# ---------------------------------------------------------------------------
+# The lettered flow chart — the other half of what the exam prints
+# ---------------------------------------------------------------------------
+
+
+def _lettered_chart():
+    """"Choose FIVE answers from the box and write the correct letter, A-H."
+
+    Of the 12 real Cambridge flow charts distilled into
+    `data/figure_knowledge/`, 5 are answered from a lettered box against 5 from
+    the text. The engine allowed only the write-in form, so the model kept
+    producing the commoner one and `flow_error` kept refusing it: a bare "A"
+    has no content word, so `_fragment_answer` flagged it. Two live listening
+    sets died that way on 2026-08-28.
+    """
+    return {
+        "visual": {
+            "kind": "flow",
+            "title": "Mouse feeding experiment",
+            "steps": [
+                "Choose mice which are all the same __1__",
+                "Divide the mice into two groups, each with a different __2__",
+                "Put each group in a separate cage",
+                "Place them in a weighing chamber to prevent __3__",
+            ],
+        },
+        "questions": [
+            {"number": n, "type": "flow_chart_completion",
+             "question": "Choose the correct letter.",
+             "options": ["size", "escape", "age", "water"]}
+            for n in (1, 2, 3)
+        ],
+        "answer_key": {"1": "A", "2": "C", "3": "B"},
+    }
+
+
+def test_a_lettered_answer_is_accepted_when_the_question_offers_letters():
+    r = _lettered_chart()
+    assert flow_error(r["visual"], r["questions"], r["answer_key"]) is None
+
+
+def test_a_lettered_answer_with_no_options_is_still_refused():
+    """A blank with nothing to choose from is what the refusal is for."""
+    r = _lettered_chart()
+    for q in r["questions"]:
+        q.pop("options")
+    assert "fragments" in (
+        flow_error(r["visual"], r["questions"], r["answer_key"]) or ""
+    )
+
+
+def test_the_write_in_form_is_unaffected():
+    r = _lettered_chart()
+    for q in r["questions"]:
+        q.pop("options")
+    r["answer_key"] = {"1": "age", "2": "diet", "3": "escape"}
+    assert flow_error(r["visual"], r["questions"], r["answer_key"]) is None

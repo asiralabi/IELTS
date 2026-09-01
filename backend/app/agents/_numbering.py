@@ -18,6 +18,7 @@ import re
 # counts as a gap.
 from app.agents._diagram import renumber_diagram
 from app.agents._flow import FLOW_GAP_RE
+from app.agents._notes import renumber_notes
 
 # A table cell the student writes into, as the trainers emit it.
 BLANK_RE = re.compile(r"^__(\d+)__$")
@@ -26,6 +27,17 @@ BLANK_RE = re.compile(r"^__(\d+)__$")
 # which is the wording prompts.py prescribes. The number in that phrase has to
 # move with the question for the same reason the `__n__` cell does.
 LABEL_RE = re.compile(r"(?i)\b(label\s+)(\d+)\b")
+
+
+def _move_gaps(text: str, mapping: dict[str, str]) -> str:
+    """Move every `__n__` in one string to its question's new number.
+
+    A single pass off the mapping, so a chain like 1->2, 2->3 cannot renumber
+    the same gap twice — the reason `renumber_diagram` is written this way too.
+    """
+    return FLOW_GAP_RE.sub(
+        lambda m: f"__{mapping.get(m.group(1), m.group(1))}__", text
+    )
 
 
 def _relabel(text: str, old: str, new: str) -> str:
@@ -113,10 +125,14 @@ def renumber(result: dict, offset: int) -> dict:
                     continue
                 for cell in row.get("data") or []:
                     if isinstance(cell, list) and len(cell) >= 2:
-                        m = BLANK_RE.match(str(cell[1]))
-                        if m:
-                            old_n = m.group(1)
-                            cell[1] = f"__{mapping.get(old_n, old_n)}__"
+                        # Substituted in place, not matched from the start.
+                        # The exam puts the blank INSIDE a phrase — Cambridge
+                        # 19 Test 2 prints "using an app or by 7 .........." —
+                        # and an anchored match skips every such cell, so a
+                        # full test would move the question to global numbering
+                        # and leave the cell showing its local one. That is the
+                        # bug `b089b4a` fixed for the diagram, one figure over.
+                        cell[1] = _move_gaps(str(cell[1]), mapping)
 
         # A reading diagram is a `plan`, whose gaps live in grid cells rather
         # than table series. The renderer prints the bare number ("1 ......"),
@@ -127,10 +143,8 @@ def renumber(result: dict, offset: int) -> dict:
             if not isinstance(row, list):
                 continue
             for i, cell in enumerate(row):
-                m = BLANK_RE.match(str(cell))
-                if m:
-                    old_n = m.group(1)
-                    row[i] = f"__{mapping.get(old_n, old_n)}__"
+                if BLANK_RE.match(str(cell)) or FLOW_GAP_RE.search(str(cell)):
+                    row[i] = _move_gaps(str(cell), mapping)
 
         # A flow chart's gaps sit inside a sentence rather than owning a whole
         # cell, so they are substituted in place instead of matched from the
@@ -151,4 +165,9 @@ def renumber(result: dict, offset: int) -> dict:
         # name and a callout's text -- and both move. Same failure class as the
         # grid's: a leader line pointing at "1 ........" beside question 14.
         renumber_diagram(visual, mapping)
+
+        # And the printed notes/summary block, whose gaps sit inside its lines.
+        # Same failure class as every other figure's: a block numbering its
+        # gaps 1, 2, 3 beside questions 14, 15, 16.
+        renumber_notes(visual, mapping)
     return result

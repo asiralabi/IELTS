@@ -162,11 +162,33 @@ export interface VisualDiagramPart {
   id: string;
   form: string;
   name?: string;
+  /** Scene layout only: which cell of the coarse placement grid this part
+   * occupies, and how many cells it spans. A real exam diagram places its
+   * features in two dimensions; a single stacked column makes every subject
+   * look the same. The grid is what keeps two parts from overlapping. */
+  col?: number;
+  row?: number;
+  w?: number;
+  h?: number;
   /** Apparatus only: hang this part off the side of `to` instead of stacking it. */
   attach?: "left" | "right" | "top" | "bottom";
   to?: string;
   /** Tree only: the node this one descends from. */
   parent?: string;
+  /** Scene only: draw this part INSIDE the named part, which is what makes a
+   * cross-section a cross-section — a yolk in a shell, frames in a hive, gas
+   * in a cylinder. Its `col`/`row` then position it on a 3x3 sub-grid of the
+   * container instead of on the main grid. */
+  in?: string;
+}
+
+/** A drawn connection between two parts — the thing that makes an assembly
+ * read as one machine rather than a row of separate objects. */
+export interface VisualDiagramLink {
+  from: string;
+  to: string;
+  style?: "pipe" | "arrow" | "line";
+  label?: string;
 }
 
 /** A callout: the text the exam prints at the end of a leader line. */
@@ -189,9 +211,54 @@ export interface VisualDiagramLabel {
 export interface VisualDiagram {
   kind: "diagram";
   title: string;
-  layout: "apparatus" | "layers" | "cycle" | "tree" | "panel";
+  layout: "scene" | "apparatus" | "layers" | "cycle" | "tree" | "panel";
   parts: VisualDiagramPart[];
   labels: VisualDiagramLabel[];
+  links?: VisualDiagramLink[];
+}
+
+/** One headed group of a printed notes block. */
+export interface VisualNotesSection {
+  heading?: string;
+  lines: string[];
+}
+
+/** The printed notes block and the printed summary — one shape, two typographies.
+ *
+ * Cambridge prints these constantly ("Complete the notes below", "Complete the
+ * summary below") and the engine could not draw either: every note and summary
+ * item had to carry its own context inline and the student never saw the block
+ * the rubric named. A notes block is headed groups of short lines; a summary is
+ * the same content set as flowing prose. Both gap identically, so both are this
+ * one kind — a second schema would only be a second place for the numbering to
+ * go wrong. A line may carry `__<n>__` where question N's answer goes.
+ */
+export interface VisualNotes {
+  kind: "notes";
+  style: "notes" | "summary";
+  title: string;
+  sections: VisualNotesSection[];
+}
+
+/** One of the small drawings a picture-choice question offers. */
+export interface VisualPictureChoice {
+  letter: string;
+  layout: VisualDiagram["layout"];
+  parts: VisualDiagramPart[];
+  labels?: VisualDiagramLabel[];
+}
+
+/** "Which diagram shows ...? A, B or C" — two to four small line drawings.
+ *
+ * The diagram vocabulary again, at small size and in a row: a choice is a
+ * diagram body without a kind of its own. Nothing here is interactive, because
+ * the student answers with a letter using the option buttons the question
+ * already carries.
+ */
+export interface VisualPicture {
+  kind: "picture";
+  title: string;
+  choices: VisualPictureChoice[];
 }
 
 export type Visual =
@@ -200,7 +267,9 @@ export type Visual =
   | VisualMap
   | VisualPlan
   | VisualFlow
-  | VisualDiagram;
+  | VisualDiagram
+  | VisualNotes
+  | VisualPicture;
 
 export interface PracticeQuestion {
   id?: string;
