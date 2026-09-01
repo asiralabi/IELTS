@@ -245,15 +245,20 @@ def test_the_expansion_keeps_going_until_the_script_clears_the_floor(monkeypatch
 
     async def fake_expand(script, title, must_say=None):
         calls.append(len(script.split()))
-        # Each round adds half the floor again, so one call cannot get there.
-        return " ".join(["word"] * (len(script.split()) + lt._MIN_SCRIPT_WORDS // 2))
+        # A third of the floor per round, from half of it — so one call cannot
+        # get there and two can. Expressed against the floor rather than in
+        # absolute words: it was written as 400 + 500 against a floor of 1000,
+        # and reading the corpus moved that floor to 650, at which point one
+        # call cleared it and the test was asserting nothing.
+        return " ".join(["word"] * (len(script.split()) + lt._MIN_SCRIPT_WORDS // 3))
 
     monkeypatch.setattr(lt, "_expand_script", fake_expand)
-    result = {"audio_script": " ".join(["word"] * 400), "title": "t"}
+    result = {"audio_script": " ".join(["word"] * (lt._MIN_SCRIPT_WORDS // 2)),
+              "title": "t"}
     asyncio.run(lt._grow_script(result))
 
     assert len(result["audio_script"].split()) >= lt._MIN_SCRIPT_WORDS
-    assert len(calls) > 1, "one call cannot reach the floor from 400 words"
+    assert len(calls) > 1, "one call cannot reach the floor from half of it"
 
 
 def test_the_expansion_gives_up_rather_than_looping_forever(monkeypatch):
@@ -274,3 +279,98 @@ def test_the_expansion_gives_up_rather_than_looping_forever(monkeypatch):
     asyncio.run(lt._grow_script(result))
     assert len(calls) == 1
     assert len(result["audio_script"].split()) == 400
+
+
+# ---------------------------------------------------------------------------
+# Script length, measured against the corpus rather than against the cover
+# ---------------------------------------------------------------------------
+
+
+def test_the_length_bounds_match_the_real_corpus():
+    """The bounds used to read "7-8 minutes = 1200-1500 words", which is what
+    the 30 minutes printed on the paper's cover suggests — but that half hour
+    is four parts PLUS the instructions and the pauses for reading and checking
+    answers, not four parts of talking.
+
+    The 212 real parts in `data/datasets/listening_generator_sft.jsonl` say:
+    median 833 words, p10 671, p90 1042, longest 1415. So the old floor of 1000
+    sat above the corpus MEDIAN and the expander pushed every short script past
+    its p90 — which is why live sets were running 1400-2300 words.
+    """
+    from app.agents import listening_trainer as lt
+
+    assert lt._MIN_SCRIPT_WORDS <= 700, "the floor is above the corpus p10"
+    assert lt._MIN_SCRIPT_WORDS >= 400, "a floor this low is not a Part at all"
+    # Above the longest real part, so only a runaway script trips it.
+    assert lt._MAX_SCRIPT_WORDS > 1415
+    assert lt._MAX_SCRIPT_WORDS <= 1600
+
+
+def test_a_runaway_script_is_refused():
+    from app.agents import listening_trainer as lt
+
+    result = {
+        "title": "t",
+        "audio_script": " ".join(["word"] * (lt._MAX_SCRIPT_WORDS + 1)),
+        "questions": [{"number": 1, "type": "short_answer", "question": "Who?"}],
+        "answer_key": {"1": "Emma"},
+    }
+    problem = lt.validate_part(result) or ""
+    assert "words" in problem and "no exam would play" in problem
+
+
+def test_a_script_the_length_of_the_real_ones_passes():
+    """The corpus median must not be what the validator turns away."""
+    from app.agents import listening_trainer as lt
+
+    result = {
+        "title": "t",
+        "audio_script": " ".join(["word"] * 833),
+        "questions": [{"number": 1, "type": "short_answer", "question": "Who?"}],
+        "answer_key": {"1": "Emma"},
+    }
+    problem = lt.validate_part(result) or ""
+    assert "no exam would play" not in problem
+
+
+def test_an_expansion_that_overshoots_is_asked_again(monkeypatch):
+    """🔬 A generated paper on 2026-09-02 totalled 5816 words across four parts
+    against the ~3300 the exam plays, and two parts were over the ceiling on
+    their own. `_grow_script` kept whatever came back so long as it was LONGER,
+    so a part that arrived short shipped at twice the length of the longest
+    real one. An overshoot is not growth towards the floor."""
+    import asyncio
+
+    from app.agents import listening_trainer as lt
+
+    replies = [
+        " ".join(["word"] * (lt._MAX_SCRIPT_WORDS + 500)),   # wild overshoot
+        " ".join(["word"] * 900),                            # sensible
+    ]
+    asked = []
+
+    async def fake_expand(script, title, must_say=None):
+        asked.append(len(script.split()))
+        return replies[len(asked) - 1] if len(asked) <= len(replies) else script
+
+    monkeypatch.setattr(lt, "_expand_script", fake_expand)
+    result = {"audio_script": " ".join(["word"] * 300), "title": "t"}
+    asyncio.run(lt._grow_script(result))
+
+    kept = len(result["audio_script"].split())
+    assert kept == 900, f"kept {kept} words instead of asking again"
+    assert len(asked) == 2, "the overshoot was accepted rather than retried"
+
+
+def test_the_full_test_part_is_judged_after_its_figure_work(monkeypatch):
+    """The practice path has ended with a gate since the redraw landed; the
+    full-test path returned straight after the last repair, so everything the
+    figure pass produced shipped unchecked."""
+    import inspect
+
+    from app.agents import listening_trainer as lt
+
+    src = inspect.getsource(lt.create_part)
+    tail = src[src.rindex("blank_gapped_part_names"):]
+    assert "_validate_full_test_part(result)" in tail, (
+        "create_part returns without re-judging what its figure pass produced")

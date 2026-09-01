@@ -68,10 +68,23 @@ from app.rag.retriever import retrieve_context
 
 logger = logging.getLogger(__name__)
 
-# Real IELTS Listening audio is 7-8 minutes ≈ 1200-1500 words at natural pace.
-# We keep the floor slightly under the prompt target (1200) to allow for
-# short-generation without triggering an expansion pass on borderline outputs.
-_MIN_SCRIPT_WORDS = 1000
+# 🔬 Measured, not assumed. These used to read "7-8 minutes = 1200-1500 words",
+# which is what the 30 minutes on the paper's cover suggests — but that half
+# hour is four parts PLUS the instructions and the pauses for reading and
+# checking answers, not four parts of talking. The 212 real parts in
+# `data/datasets/listening_generator_sft.jsonl` say otherwise: median 833 words,
+# p10 671, p90 1042, longest 1415.
+#
+# So the old floor of 1000 sat above the corpus MEDIAN and the expander pushed
+# every short script past its p90. Live sets ran 1400-2300 words — half again as
+# long as the longest real part — which is what a student notices first, and it
+# doubles both the synthesis wait and the recording they have to sit through.
+_MIN_SCRIPT_WORDS = 650
+
+# Above the longest part in the corpus (1415). Not a style rule: a script this
+# far over is a different exercise from the one the paper is built around, and
+# by here it has already survived every other check.
+_MAX_SCRIPT_WORDS = 1500
 
 # An answer key that says the script does not answer the question. The model is
 # declining, not answering, so the student can never be marked correct — and
@@ -318,6 +331,22 @@ def validate_part(
     `drop_duplicate_pictures` may have deleted a twin to make the set markable
     at all. Strict in both places, that repair would refuse the set it fixed.
     """
+    # Longer is not harder, it is a different exercise. Judged on the way IN as
+    # well as at the gate, deliberately: a corrective retry can write a shorter
+    # script for a few hundred tokens, where finding this at the gate throws the
+    # questions and the answer key away with it. No trimming — cutting a script
+    # down can cut out the sentence an answer is keyed to, and `_grow_script`
+    # only ever pushed the other way.
+    spoken = len(str(result.get("audio_script") or "").split())
+    if spoken > _MAX_SCRIPT_WORDS:
+        return (
+            f"the script runs to {spoken} words; one Part of real IELTS "
+            f"Listening is about 4-5 minutes of speech (median 833 words over "
+            f"the corpus, longest 1415), so anything past {_MAX_SCRIPT_WORDS} "
+            "is a recording no exam would play. Write the same testable detail "
+            "in fewer turns."
+        )
+
     cross_section = cross_section_error(result, "listening")
     if cross_section:
         return cross_section
@@ -738,7 +767,7 @@ def _repair_compound_matching(result: dict) -> None:
 #
 # 🔬 Measured over the 342-part corpus of 2026-08-29: 21 of them (6%) shipped
 # UNDER `_MIN_SCRIPT_WORDS`, the shortest at 395 words — two and a half minutes
-# of audio carrying ten questions, where the real exam gives seven or eight.
+# of audio carrying ten questions, where the real exam gives four or five.
 # The call site asked once and accepted any growth at all, so a script that
 # went 395 -> 500 counted as repaired and shipped a long way under the bar.
 # That is the same fault `_repair_unheard_answers` had before `ff549fa`:
@@ -756,6 +785,17 @@ async def _grow_script(result: dict) -> None:
         expanded = await _expand_script(script, str(result.get("title") or ""))
         if not expanded or len(expanded.split()) <= len(script.split()):
             return
+        # 🔬 Asked for 850 words, a model can hand back 1800. This used to keep
+        # whatever came back so long as it was LONGER, so a part that arrived
+        # short shipped at twice the length of the longest real one — measured
+        # 2026-09-02 on a generated paper whose four parts totalled 5816 words
+        # against the ~3300 the exam plays. An overshoot is not growth towards
+        # the floor, it is a different fault, and there are tries left to spend.
+        if len(expanded.split()) > _MAX_SCRIPT_WORDS:
+            logger.info(
+                "expansion overshot to %d words; asking again",
+                len(expanded.split()))
+            continue
         # Kept even when it is still short: each round expands what the last
         # one produced, so two partial gains compound into a whole one.
         result["audio_script"] = expanded
@@ -776,8 +816,9 @@ async def _expand_script(
         return None
     prompt = (
         f"Scenario title: {title}\n\nScript to expand:\n{script}\n\n"
-        "Extend this listening script to at least 1200 words (real IELTS "
-        "Listening audio is 7-8 minutes ≈ 1200-1500 words). Keep every "
+        f"Extend this listening script to at least {_MIN_SCRIPT_WORDS + 200} "
+        "words — one Part of real IELTS Listening runs about 4-5 minutes of "
+        "speech, around 850 words. Keep every "
         "existing turn, speaker label, testable detail, and correction. Add "
         "more turns of natural conversation OR additional monologue detail "
         "as appropriate for the scenario. Do NOT change any answers that "
@@ -1005,6 +1046,8 @@ def _validate_full_test_part(
     judge_matching: bool = True,
     judge_verbatim: bool = True,
     judge_diagram: bool = True,
+    judge_map: bool = True,
+    judge_notes: bool = True,
 ) -> str | None:
     """validate_part, plus the count a full test depends on.
 
@@ -1021,6 +1064,8 @@ def _validate_full_test_part(
         judge_structure=judge_structure,
         judge_verbatim=judge_verbatim,
         judge_diagram=judge_diagram,
+        judge_map=judge_map,
+        judge_notes=judge_notes,
     )
     if problem:
         return problem
@@ -1093,7 +1138,20 @@ async def create_part(
     await repair_dangling_completions(
         result, str(result.get("audio_script") or ""))
     _repair_compound_matching(result)
-    problem = _validate_full_test_part(result)
+    # The same relaxations `create_practice` passes at the same point in its
+    # chain, and for the same reason: `_normalize_figure` and every figure
+    # repair run BELOW this line, so judging the figure here holds it to a
+    # standard nothing has had the chance to meet yet.
+    #
+    # 🔬 Live 2026-09-02: a whole listening paper was thrown away on "the figure
+    # prints 'Power LED' on part 'power' while gap 1 asks the student to name
+    # that very part" — the fault `blank_gapped_part_names` deletes for free a
+    # few lines further down. That rule's own comment says reaching a gate with
+    # one still on the drawing means the repair did not take; here the repair
+    # had not RUN. The single-part path has been lenient here since the redraw
+    # landed and this path was never brought along.
+    problem = _validate_full_test_part(
+        result, judge_diagram=False, judge_map=False, judge_notes=False)
     if problem:
         raise RefusedSet(
             f"the repaired listening part is invalid: {problem}", result)
@@ -1120,6 +1178,18 @@ async def create_part(
     # the rewrite it saw the old text, missed that, and the gate refused
     # the set: 3 of the 9 failures in the 36-set sweep of 2026-08-29.
     blank_gapped_part_names(result)
+    # The gate the practice path has had since the redraw landed, and this one
+    # never grew. Everything above — the expansion, the normalisation, the
+    # redraw, the two blankings, the callout rewrite — ran with nothing
+    # checking what it produced, which is the same hole `renumber_checked`
+    # exists to close: the last step a part takes was the one nothing judged.
+    #
+    # 🔬 It let a 1820-word script through on 2026-09-02. `_grow_script` had
+    # overshot and no one asked again.
+    problem = _validate_full_test_part(result)
+    if problem:
+        raise RefusedSet(
+            f"the repaired listening part is invalid: {problem}", result)
     result["part"] = part_number
     return result
 

@@ -439,3 +439,59 @@ def test_the_mid_pipeline_gate_leaves_the_figure_to_the_figure_repairs():
     assert "name that very part" in (
         lt.validate_part(result, judge_structure=False, judge_matching=False) or ""
     )
+
+
+def test_the_full_test_path_judges_its_figure_no_sooner_than_the_practice_path():
+    """🔬 Live 2026-09-02: a whole listening paper was thrown away on "the
+    figure prints 'Power LED' on part 'power' while gap 1 asks the student to
+    name that very part" — the fault `blank_gapped_part_names` deletes for free
+    a few lines further down the same function.
+
+    `create_practice` has passed `judge_diagram=False` at that point in its
+    chain since the redraw landed, because `_normalize_figure` and every figure
+    repair run BELOW it. The full-test path was never brought along, so it held
+    a figure to the post-repair standard before any repair had run.
+    """
+    from app.agents import listening_trainer as lt
+
+    # A figure whose part prints the answer to its own gap: illegal at the
+    # final gate, routine on the way in — `blank_gapped_part_names` cures it.
+    result = {
+        "title": "A radio",
+        "audio_script": (
+            "LECTURER: The power led glows when the set is on. The tuner "
+            "finds the stations, and the aerial coil picks up the signal. "
+            + " ".join(["word"] * 800)
+        ),
+        "visual": {
+            "kind": "diagram", "layout": "scene",
+            "parts": [
+                # Only this one prints the answer its own gap asks for.
+                {"id": "power", "form": "button", "name": "Power LED",
+                 "col": 0, "row": 0},
+                {"id": "dial", "form": "dial", "name": "", "col": 1, "row": 0},
+                {"id": "coil", "form": "coil", "name": "", "col": 2, "row": 0},
+                {"id": "case", "form": "chamber", "name": "Outer case",
+                 "col": 0, "row": 1},
+            ],
+            "labels": [
+                {"at": "power", "text": "The __1__ shows the set is on"},
+                {"at": "dial", "text": "Stations are found with the __2__"},
+                {"at": "coil", "text": "Signal is picked up by the __3__"},
+            ],
+        },
+        "questions": [
+            {"number": n, "type": "diagram_label_completion" if n <= 3
+             else "short_answer", "question": f"Q{n}?"} for n in range(1, 11)
+        ],
+        "answer_key": {"1": "power led", "2": "tuner", "3": "aerial coil",
+                       **{str(n): "word" for n in range(4, 11)}},
+    }
+
+    strict = lt._validate_full_test_part(result) or ""
+    assert "asks the student to name that very part" in strict, (
+        "the fixture no longer reproduces the fault")
+    # ...and the way-in form must let it through to the repair below.
+    lenient = lt._validate_full_test_part(
+        result, judge_diagram=False, judge_map=False, judge_notes=False)
+    assert lenient is None, f"still refused before the repair could run: {lenient}"

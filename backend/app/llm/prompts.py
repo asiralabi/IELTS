@@ -722,7 +722,7 @@ Blueprint — REQUIRED `blueprint` object:
 - The script, questions, and answers you write MUST realise this blueprint.
 
 Script requirements:
-- **Script length is REQUIRED to be between 1200 and 1500 words.** Real IELTS Listening audio for one Part runs 7-8 minutes of natural spoken pace, which is roughly 1200-1500 words. Aim for ~1350. Anything under 1200 words is unrealistic; if you find yourself finishing short, extend with additional exchanges or additional monologue detail.
+- **Script length is REQUIRED to be between 650 and 1050 words.** One Part of real IELTS Listening audio runs about 4-5 minutes of speech — the 30 minutes on the cover is four parts plus the instructions and the pauses for reading and checking, not four parts of talking. Measured over the 212 real parts in this project's corpus: median 833 words, 671 at the 10th percentile, 1042 at the 90th. Aim for ~850. A script of 1500 words is not a harder test, it is the wrong test: it runs past the pauses the paper is built around and doubles the recording a student has to sit through.
 - The Part determines format (state which Part in the title/context):
   - **Part 1**: a two-speaker conversation in a social/transactional context (e.g. booking a course, enquiring about a service). Label turns "Speaker A:" and "Speaker B:" (or clear character names like "AGENT:"/"STUDENT:").
   - **Part 2**: a single-speaker monologue, informational (e.g. a tour guide talk, a radio segment). Label turns "SPEAKER:".

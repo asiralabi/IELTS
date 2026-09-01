@@ -39,7 +39,7 @@ LISTENING_REPLY = {
     # generator accepts.
     "audio_script": (
         "AGENT: Good morning, how can I help you today? "
-        "CUSTOMER: I would like to start on Monday. " * 130
+        "CUSTOMER: I would like to start on Monday. " * 50
     ),
     # Ten questions because create_part takes no other length, and each carries
     # its own gap: these tests assert on the prompt, so the reply has to be a

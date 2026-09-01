@@ -30,7 +30,7 @@ SCRIPT = (
     "AGENT: Good morning, Sports World. CUSTOMER: I would like to join. "
     "My name is John Smith and my number is 07798 563421. "
     "AGENT: And would you like the annual plan? CUSTOMER: Yes, annual please. "
-) * 100
+) * 25
 
 GOOD_LABELS = {"labels": {"1": "Full name", "3": "Payment plan"}}
 
