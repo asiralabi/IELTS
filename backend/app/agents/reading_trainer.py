@@ -27,6 +27,7 @@ from app.agents._flow import (
 )
 from app.agents._marking import mark_answers, mark_full_test
 from app.agents._notes import (
+    fold_extra_sections,
     blank_self_answering_lines,
     is_notes,
     normalize_notes,
@@ -211,6 +212,7 @@ def validate_practice(
     judge_verbatim: bool = True,
     judge_diagram: bool = True,
     judge_structure: bool = True,
+    judge_notes: bool = True,
 ) -> str | None:
     """Reject a practice set a student could not fairly sit.
 
@@ -417,7 +419,8 @@ def validate_practice(
     if broken_diagram:
         return broken_diagram
 
-    broken_notes = notes_error(result.get("visual"), questions, answer_key)
+    broken_notes = notes_error(result.get("visual"), questions, answer_key,
+                               after_repairs=judge_notes)
     if broken_notes:
         return broken_notes
     return None
@@ -972,6 +975,7 @@ async def create_practice(
             judge_verbatim=False,
             judge_diagram=False,
             judge_structure=False,
+            judge_notes=False,
         ),
         # A ~1200-word passage plus 8-13 questions carrying full options lists
         # is a 3.5-5k-token JSON object; LLM_MAX_TOKENS is 2048 locally. A
@@ -1080,6 +1084,11 @@ async def create_practice(
         result["visual"] = normalize_diagram(result["visual"])
     if is_notes(result.get("visual")):
         result["visual"] = normalize_notes(result["visual"])
+        # Untidy is not unusable: merging the overflow keeps every line and
+        # every gap, and refusing costs the passage, the questions and the key.
+        folded = fold_extra_sections(result)
+        if folded:
+            logger.info("folded %d overflowing notes section(s)", folded)
     # Last on the chart, for the same reason `_blank_self_answering_cells` is
     # last on the grid: the passage expansion above can key a gap to wording a
     # box also prints. The box is reworded rather than the gap re-keyed —
@@ -1170,9 +1179,39 @@ _DIFFICULTY_RAMP = ("easy", "medium", "hard")
 _PASSAGE_FIGURES = ("diagram_label_completion", "flow_chart_completion")
 
 
+# The printed block passage 2 carries beside its figure. Both are the same
+# family — a block with numbered gaps — and varying it is what puts a table in
+# some papers and a summary in others, the way the books do.
+_PASSAGE_BLOCKS = ("summary_completion", "table_completion")
+
+
 def _passage_types() -> dict[int, list[str]]:
+    """What each passage of a full paper is asked for.
+
+    Listening has had `_PART_SPECS` since it was written; reading steered only
+    the passage carrying the figure and left the other two to the default mix.
+    That mix names nine types, so three of the eleven the exam prints —
+    matching_sentence_endings, short_answer and table_completion — could not
+    appear in a paper at all unless a student asked for them by name.
+
+    The spread is the real paper's: passage 1 factual and gap-filling, passage
+    2 carrying the figure and the heading/feature matching, passage 3
+    argumentative, which is where Cambridge puts yes/no/not given and the
+    sentence endings.
+
+    🔬 Passages 1 and 3 are steered ONLY to types outside `_FIGURE_TYPES`, and
+    deliberately: a figure type is what routes a passage to the hosted model,
+    and the whole point of the split in `create_full_test` is that the one slow
+    hosted passage runs beside the others rather than in front of them. Full
+    type coverage is not worth turning a three-passage paper into three hosted
+    calls.
+    """
     return {
-        1: [random.choice(_PASSAGE_FIGURES), "true_false_notgiven", "multiple_choice"],
+        0: ["true_false_notgiven", "sentence_completion", "short_answer"],
+        1: [random.choice(_PASSAGE_FIGURES), "matching_headings",
+            "matching_features", random.choice(_PASSAGE_BLOCKS)],
+        2: ["yes_no_notgiven", "matching_information",
+            "matching_sentence_endings", "multiple_choice"],
     }
 
 

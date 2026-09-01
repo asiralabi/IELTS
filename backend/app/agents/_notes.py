@@ -209,7 +209,42 @@ def self_answering_lines(
     return out
 
 
-def notes_error(visual: object, questions: list, answer_key: dict) -> str | None:
+def fold_extra_sections(result: dict) -> int:
+    """Merge a notes block's overflow headings down to the printable limit.
+
+    Lossless where it matters: every LINE and every gap survives, in order. All
+    that goes is a heading, which is orientation — the same bargain
+    `blank_gapped_part_names` strikes on a diagram, and the same one
+    `notes_error` states for itself: "the bar is unusable, never improvable".
+    Seven headed groups is untidy, not unreadable, and refusing it costs a
+    whole regeneration.
+
+    🔬 Live 2026-09-02, the one failure in a 25-type sweep: a listening
+    note_completion set came back with 7 sections and died on the way in — "a
+    notes block cannot carry 7 sections legibly (at most 6)" — taking the
+    script, the questions and the key with it.
+
+    Returns how many sections were folded away.
+    """
+    visual = result.get("visual")
+    if not is_notes(visual):
+        return 0
+    sections = notes_sections(visual)
+    if len(sections) <= _MAX_SECTIONS:
+        return 0
+    kept = [dict(s) for s in sections[:_MAX_SECTIONS - 1]]
+    tail = sections[_MAX_SECTIONS - 1:]
+    merged = {
+        "heading": _text(tail[0].get("heading")),
+        "lines": [line for section in tail for line in (section.get("lines") or [])],
+    }
+    visual["sections"] = kept + [merged]
+    return len(sections) - _MAX_SECTIONS
+
+
+def notes_error(
+    visual: object, questions: list, answer_key: dict, *, after_repairs: bool = True
+) -> str | None:
     """Why this block is not a printable IELTS notes or summary, or None if it is.
 
     Refuses only what cannot be read or cannot be answered. The cost of a
@@ -222,7 +257,12 @@ def notes_error(visual: object, questions: list, answer_key: dict) -> str | None
     sections = notes_sections(visual)
     if not sections:
         return "the notes block has no sections, so there is nothing to print"
-    if len(sections) > _MAX_SECTIONS:
+    # `after_repairs=False` says nothing about the count on the way in:
+    # `fold_extra_sections` merges the overflow during normalisation, and
+    # complaining here spends a retry of the whole set on a fault one merge
+    # cures. Judged at the final gate, where a block still over the limit means
+    # that repair did not run.
+    if len(sections) > _MAX_SECTIONS and after_repairs:
         return (
             f"a notes block cannot carry {len(sections)} sections legibly "
             f"(at most {_MAX_SECTIONS})"

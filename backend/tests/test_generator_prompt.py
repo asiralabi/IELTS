@@ -343,25 +343,35 @@ class TestFigureWorkBypassesTheCheckpoint:
         flake rather than as a failure, which is the worst way to learn it."""
         for _ in range(40):
             steer = reading_trainer._passage_types()
-            assert steer, "no passage is steered to a figure"
-            for index, types in steer.items():
-                assert reading_trainer._FIGURE_TYPES.intersection(
-                    reading_trainer.canon(t) for t in types
-                ), f"passage {index} is steered to {types}, none of them a figure"
+            assert steer, "no passage is steered at all"
+            # Every passage is steered now, so "all of them carry a figure" is
+            # no longer the question — exactly ONE should, and the other two
+            # must stay clear of `_FIGURE_TYPES` or the paper turns into three
+            # hosted calls and the split in `create_full_test` buys nothing.
+            drawing = [
+                index for index, types in steer.items()
+                if reading_trainer._FIGURE_TYPES.intersection(
+                    reading_trainer.canon(t) for t in types)
+            ]
+            assert drawing == [1], (
+                f"expected passage 2 alone to carry a figure, got {drawing} "
+                f"from {steer}")
 
     def test_both_figures_are_reachable_in_a_paper(self):
         """The diagram was the only figure a paper could carry until the flow
         chart landed. A per-paper choice that collapsed back to one value would
         leave the new figure live-untested forever and nothing else would say
         so."""
-        drawn = {
-            t
-            for _ in range(200)
-            for t in reading_trainer._passage_types()[1]
-            if reading_trainer.canon(t) in reading_trainer._FIGURE_TYPES
-        }
-
+        steers = [reading_trainer._passage_types()[1] for _ in range(200)]
+        drawn = {t for types in steers for t in types
+                 if t in reading_trainer._PASSAGE_FIGURES}
         assert drawn == set(reading_trainer._PASSAGE_FIGURES)
+
+        # The printed block beside it varies the same way, so a paper shows a
+        # table sometimes and a summary the rest of the time.
+        blocks = {t for types in steers for t in types
+                  if t in reading_trainer._PASSAGE_BLOCKS}
+        assert blocks == set(reading_trainer._PASSAGE_BLOCKS)
 
 
 def test_full_test_part_requires_ten_questions():

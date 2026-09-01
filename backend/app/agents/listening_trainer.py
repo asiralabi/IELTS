@@ -31,6 +31,7 @@ from app.agents._flow import (
     repair_self_answering_steps,
 )
 from app.agents._notes import (
+    fold_extra_sections,
     blank_self_answering_lines,
     is_notes,
     normalize_notes,
@@ -103,7 +104,7 @@ _PART_SPECS: dict[int, dict[str, str]] = {
             "Fill the rest with short_answer or sentence_completion. Use AT "
             "MOST 2 multiple_choice questions."
         ),
-        "types": "form_completion, short_answer, multiple_choice",
+        "types": "form_completion, table_completion, short_answer, multiple_choice",
     },
     2: {
         "format": (
@@ -149,7 +150,7 @@ _PART_SPECS: dict[int, dict[str, str]] = {
             "(lecture notes with numbered gaps). Do NOT use multiple_choice. "
             "No figure is needed — set `visual` to null."
         ),
-        "types": "note_completion, sentence_completion",
+        "types": "note_completion, summary_completion, sentence_completion",
     },
 }
 
@@ -290,6 +291,7 @@ def validate_part(
     judge_diagram: bool = True,
     judge_picture_count: bool = True,
     judge_map: bool = True,
+    judge_notes: bool = True,
 ) -> str | None:
     """Reject a part a student could not actually sit.
 
@@ -390,7 +392,8 @@ def validate_part(
     if broken_diagram:
         return broken_diagram
 
-    broken_notes = notes_error(result.get("visual"), questions, answer_key)
+    broken_notes = notes_error(result.get("visual"), questions, answer_key,
+                               after_repairs=judge_notes)
     if broken_notes:
         return broken_notes
 
@@ -589,7 +592,8 @@ async def create_practice(
     # pipeline was about to fix, twice over: "the figure prints 'Hopper' on
     # part 'hopper'" survived a whole sweep after the repair had been moved to
     # run last, because this gate never waited for it.
-    problem = validate_part(result, judge_diagram=False, judge_map=False)
+    problem = validate_part(result, judge_diagram=False, judge_map=False,
+                             judge_notes=False)
     if problem:
         raise RefusedSet(
             f"the repaired listening set is invalid: {problem}", result)
@@ -844,6 +848,9 @@ def _normalize_figure(result: dict) -> None:
         result["visual"] = normalize_diagram(visual)
     elif is_notes(visual):
         result["visual"] = normalize_notes(visual)
+        folded = fold_extra_sections(result)
+        if folded:
+            logger.info("folded %d overflowing notes section(s)", folded)
     elif is_picture(visual):
         result["visual"] = normalize_picture(visual)
         # A picture that repeats another has two correct answers and cannot be

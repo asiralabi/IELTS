@@ -296,3 +296,84 @@ def test_a_kind_nobody_recognises_is_still_not_a_notes_block():
     plan must not be dragged in and drawn as prose."""
     assert not is_notes({"kind": "plan", "grid": [["a"]]})
     assert not is_notes({"kind": "flow", "steps": ["a"]})
+
+
+# ---------------------------------------------------------------------------
+# Too many headings is untidy, not unusable
+# ---------------------------------------------------------------------------
+
+
+def _seven_sections() -> dict:
+    """🔬 The one failure in the 25-type sweep of 2026-09-02: a listening
+    note_completion set came back with seven headed groups and died on the way
+    in, taking the script, the questions and the answer key with it."""
+    return {
+        "visual": {
+            "kind": "notes", "style": "notes", "title": "Beach clean scheme",
+            "sections": [
+                {"heading": f"Section {i}",
+                 "lines": [f"Line {i}a with a gap __{i}__", f"Line {i}b"]}
+                for i in range(1, 8)
+            ],
+        },
+        "questions": [
+            {"number": i, "type": "note_completion",
+             "question": f"NO MORE THAN TWO WORDS. Complete the notes: __{i}__"}
+            for i in range(1, 8)
+        ],
+        "answer_key": {str(i): f"answer{i}" for i in range(1, 8)},
+    }
+
+
+def test_the_overflow_is_merged_not_refused():
+    from app.agents._notes import _MAX_SECTIONS, fold_extra_sections, notes_sections
+
+    r = _seven_sections()
+    assert fold_extra_sections(r) == 1
+    sections = notes_sections(r["visual"])
+    assert len(sections) == _MAX_SECTIONS
+    # Every line survives, in order — only a heading is spent.
+    lines = [ln for s in sections for ln in s["lines"]]
+    assert len(lines) == 14
+    assert lines[-2:] == ["Line 7a with a gap __7__", "Line 7b"]
+
+
+def test_every_gap_survives_the_fold():
+    """A merged section that lost a gap would orphan its question, which is
+    worse than the untidy block it replaced."""
+    from app.agents._notes import fold_extra_sections, notes_lines
+
+    r = _seven_sections()
+    fold_extra_sections(r)
+    text = " ".join(notes_lines(r["visual"]))
+    for n in range(1, 8):
+        assert f"__{n}__" in text
+
+
+def test_a_block_within_the_limit_is_untouched():
+    from app.agents._notes import fold_extra_sections
+
+    r = _seven_sections()
+    r["visual"]["sections"] = r["visual"]["sections"][:4]
+    before = [dict(s) for s in r["visual"]["sections"]]
+    assert fold_extra_sections(r) == 0
+    assert r["visual"]["sections"] == before
+
+
+def test_the_count_costs_no_retry_on_the_way_in():
+    """The fold runs during normalisation, which is AFTER the way-in hook."""
+    from app.agents._notes import notes_error
+
+    r = _seven_sections()
+    v, qs, key = r["visual"], r["questions"], r["answer_key"]
+    assert "cannot carry 7 sections" in (notes_error(v, qs, key) or "")
+    assert notes_error(v, qs, key, after_repairs=False) is None
+
+
+def test_the_gate_still_refuses_a_block_the_fold_never_reached():
+    """A count still over the limit at the final gate means the repair did not
+    run, and that is worth refusing."""
+    from app.agents._notes import notes_error
+
+    r = _seven_sections()
+    assert notes_error(r["visual"], r["questions"], r["answer_key"])
