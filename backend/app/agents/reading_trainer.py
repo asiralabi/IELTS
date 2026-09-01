@@ -107,10 +107,33 @@ _HEADINGS_DISTRACTORS = 2
 # Without a cap a 9-paragraph passage becomes a 9-question headings block, which
 # would crowd out every other type in a set of 8-13.
 _MAX_HEADINGS_BLOCK = 5
+
+# Shorter than this and a paragraph has no content to summarise. Cambridge's
+# shortest headings paragraph runs to about forty words; ten is a floor on
+# what could be a paragraph at all, not a target.
+_MIN_BODY_WORDS = 10
 _ROMAN = ("i", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix", "x", "xi", "xii")
 # "A." / "**B**" / "Paragraph C:". Punctuation after the letter is required, so a
 # paragraph that merely opens "A new study..." is not mistaken for a label.
 _PARAGRAPH_LABEL = re.compile(r"^\**\s*(?:Paragraph\s+)?([A-Z])\s*[.):]\s*\**\s*")
+
+# A line that is nothing BUT a label — "Paragraph A", "Section 2", a lone "C." —
+# marks the paragraph BELOW it. It is not a paragraph itself, and it carries no
+# prose a heading could ever be written for.
+#
+# 🔬 Live 2026-09-02, in 2 of the 5 reading sets sitting in the warm pool. The
+# model labelled its paragraphs on their own lines -- a bare 'Paragraph A'
+# line, then the prose beneath it --
+# which `_PARAGRAPH_LABEL` does not match because it demands punctuation after
+# the letter. So every LINE became a paragraph, `_rebuild_headings` re-lettered
+# fourteen of them, and the passage the student was given read "A. Paragraph A
+# / B. The rapid expansion of wind and solar... / C. Paragraph B". Five heading
+# questions were then keyed against paragraphs A, B, C — one of which was the
+# literal text "Paragraph A". Unanswerable, and it shipped.
+_LABEL_ONLY = re.compile(
+    r"\**\s*(?:(?:paragraph|section|part)\s+(?:[A-Z]|\d{1,2})|[A-Z])\s*[.):]?\s*\**",
+    re.I,
+)
 # The model sometimes numbers the heading it was asked to write bare, and the
 # numeral it picks is not the one the shuffle assigns. Only the numeral form is
 # stripped: a leading capital is left alone because "E. coli in water supplies"
@@ -409,6 +432,9 @@ def _paragraph_bodies(passage: str) -> list[str]:
     live generations. Otherwise every non-empty line is a paragraph.
     """
     lines = [ln.strip() for ln in passage.splitlines() if ln.strip()]
+    # Dropped before anything counts paragraphs: the rebuild assigns its own
+    # letters afterwards, so a bare label carries nothing worth keeping.
+    lines = [ln for ln in lines if not _LABEL_ONLY.fullmatch(ln)]
     marked = [(i, m) for i, ln in enumerate(lines) if (m := _PARAGRAPH_LABEL.match(ln))]
     letters = [m.group(1) for _, m in marked]
     if len(letters) < _MIN_HEADINGS_BLOCK or letters != [chr(65 + i) for i in range(len(letters))]:
@@ -555,6 +581,15 @@ async def _rebuild_headings(result: dict) -> None:
         return
 
     bodies = _paragraph_bodies(str(result.get("passage") or ""))
+    # A body too thin to say anything cannot have a heading written for it, and
+    # keying a question to one asks the student to summarise nothing. Dropped
+    # from the passage as well as from the block, because the rewrite below is
+    # what the student reads.
+    #
+    # Belt to the label rule's braces: a stub that arrives already lettered
+    # ("A. Paragraph A") looks like a legitimate paragraph to every other check
+    # here, and that is the exact shape found in the warm pool on 2026-09-02.
+    bodies = [body for body in bodies if len(body.split()) >= _MIN_BODY_WORDS]
     keyed = min(len(bodies) - _HEADINGS_DISTRACTORS, _MAX_HEADINGS_BLOCK)
     new: list[dict] = []
     if keyed >= _MIN_HEADINGS_BLOCK:

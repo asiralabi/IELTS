@@ -307,6 +307,17 @@ class PoolWarmer:
                     exc,
                 )
                 return False
+            # Synthesise the recording before the set is handed out, so the
+            # student's first press of PLAY is a cache hit.
+            #
+            # 🔬 Measured 2026-09-02: the set itself pops from this pool in
+            # 0.3s, and then the listener waited 102 SECONDS staring at a dead
+            # player while ~1900 words were spoken on demand. The audio is
+            # cached on disk keyed by script+voices, so the second request came
+            # back in 0.2s — every student was simply paying for the first one.
+            # The whole point of this warmer is to move that wait off the
+            # student, and it was pre-generating the script but not the sound.
+            await _warm_audio(bucket, payload)
             try:
                 with SessionLocal() as db:
                     insert(db, bucket.section, bucket.question_type, payload)
@@ -314,6 +325,34 @@ class PoolWarmer:
                 logger.warning("pool insert failed: %s", exc)
                 return False
             return True
+
+
+async def _warm_audio(bucket: Bucket, payload: dict[str, Any]) -> None:
+    """Prime the TTS cache for a listening set the pool is about to store.
+
+    Best effort, never fatal: a set with no recording yet is still a usable set
+    — the student pays the synthesis the old way — whereas losing the whole
+    generation to a TTS hiccup wastes a hosted call as well.
+
+    A full test carries its parts as separate scripts, so each is warmed on its
+    own; that is how `/listening/audio/{id}?part=N` will ask for them.
+    """
+    if bucket.section != "listening":
+        return
+    from app.services import tts
+
+    parts = payload.get("parts") if isinstance(payload.get("parts"), list) else [payload]
+    for part in parts:
+        if not isinstance(part, dict):
+            continue
+        script = str(part.get("audio_script") or "")
+        if not script.strip():
+            continue
+        try:
+            await tts.synthesize_script(script, part.get("speakers"))
+        except Exception as exc:  # noqa: BLE001 — the set is still worth keeping
+            logger.warning("pool could not pre-render audio: %s", exc)
+            return
 
 
 _warmer: PoolWarmer | None = None
