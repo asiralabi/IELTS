@@ -1,6 +1,7 @@
 """Live browser check: login demo user, visit pages, verify rendering."""
 
 import json
+import os
 import re
 import sys
 import time
@@ -12,8 +13,11 @@ from playwright.sync_api import sync_playwright
 OUT = Path("tools/browser_shots")
 OUT.mkdir(parents=True, exist_ok=True)
 
-BASE = "http://127.0.0.1:3000"
-API = "http://127.0.0.1:8000"
+# Overridable so this checks a DEPLOYMENT, not only two local dev servers.
+# Behind the bundled proxy both live on one origin:
+#   IELTS_BASE=http://localhost:8080 IELTS_API=http://localhost:8080/api
+BASE = os.environ.get("IELTS_BASE", "http://127.0.0.1:3000").rstrip("/")
+API = os.environ.get("IELTS_API", "http://127.0.0.1:8000").rstrip("/")
 EMAIL = "demo@example.com"
 PASSWORD = "demo1234"
 

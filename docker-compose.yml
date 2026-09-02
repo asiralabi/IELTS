@@ -1,0 +1,52 @@
+name: ielts
+
+services:
+  # FastAPI. Not exposed to the host: the proxy is the only way in, so there is
+  # exactly one address to share and no second port to open on the firewall.
+  backend:
+    build:
+      context: ./backend
+    env_file:
+      - .env.docker
+    volumes:
+      # Runtime state, NOT build output: the SQLite DB, the Qdrant store, the
+      # figure assets, the TTS cache. A bind mount so the container reads the
+      # corpus this machine already built. On another host, seed a directory
+      # from a bundle first — see docs/deploy.md.
+      - ./backend/data:/app/data
+      # The embedding model and Whisper large-v3 (~3GB) land here. A named
+      # volume so they survive a rebuild instead of downloading again.
+      - model-cache:/home/app/.cache
+    expose:
+      - "8000"
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Relative on purpose. See frontend/Dockerfile.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
+    expose:
+      - "3000"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  proxy:
+    image: caddy:2-alpine
+    ports:
+      # 0.0.0.0 by default, which is what lets another device on the network
+      # reach it. Bind to 127.0.0.1 (PUBLIC_BIND=127.0.0.1) to keep it local.
+      - "${PUBLIC_BIND:-0.0.0.0}:${PUBLIC_PORT:-8080}:8080"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    depends_on:
+      - backend
+      - frontend
+    restart: unless-stopped
+
+volumes:
+  model-cache:
+  caddy-data:

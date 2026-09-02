@@ -3,12 +3,16 @@ frontend consumes, and verify the responses match the shapes the frontend
 now expects (after the recent type tightening)."""
 
 import json
+import os
 import sys
 from typing import Any
 
 import httpx
 
-API = "http://127.0.0.1:8000"
+# Overridable so the same harness verifies a DEPLOYMENT, not only a local
+# uvicorn: behind the bundled proxy the API lives under /api.
+#   IELTS_API=http://localhost:8080/api python tools/api_smoke.py
+API = os.environ.get("IELTS_API", "http://127.0.0.1:8000").rstrip("/")
 EMAIL = "demo@example.com"
 PASSWORD = "demo1234"
 

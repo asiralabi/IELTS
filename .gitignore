@@ -45,3 +45,7 @@ Thumbs.db
 
 # Fine-tuned model weights downloaded from Kaggle (multi-GB, never in git)
 *.gguf
+
+# Container env derived from backend/.env by scripts/env_for_docker.py.
+# Same secrets, different file name — never committed.
+.env.docker

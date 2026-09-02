@@ -1,0 +1,40 @@
+# One origin for both services.
+#
+# This is what makes the app reachable from another device: the browser loads
+# the page and calls the API from the SAME host and port, so there is one
+# address to share, one port to open, one tunnel to run, and no CORS.
+{
+	admin off
+	auto_https off
+}
+
+:8080 {
+	encode zstd gzip
+
+	# The backend mounts its routers at the root (/auth, /reading, /listening,
+	# ...), so the /api prefix the frontend adds has to come back off here.
+	# handle_path strips the matched prefix; handle would not.
+	handle_path /api/* {
+		reverse_proxy backend:8000 {
+			# A generation call is minutes of work, not seconds. Caddy streams
+			# by default, but say so rather than leaving it to a default that
+			# a future version may tighten.
+			transport http {
+				response_header_timeout 30m
+				dial_timeout 10s
+			}
+		}
+	}
+
+	# Figure images. The backend serves them from /assets, and the frontend
+	# resolves them against the API base — so they normally arrive as
+	# /api/assets/... and the rule above already has them. This is for anything
+	# that asks at the origin root instead.
+	handle /assets/* {
+		reverse_proxy backend:8000
+	}
+
+	handle {
+		reverse_proxy frontend:3000
+	}
+}

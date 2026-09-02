@@ -1,0 +1,20 @@
+# The 14GB the build must never see. data/ is mounted at runtime instead, and
+# books/ + Audios/ are the copyrighted source material that grounds generation
+# — they are never served, never shipped.
+data/
+books/
+Audios/
+
+# Secrets. Config comes from the environment in a container.
+.env
+.env.*
+
+# Session scratch: sweep logs, saved galleries, sample audio, screenshots.
+tools/
+tests/
+.pytest_cache/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.log
+README.md

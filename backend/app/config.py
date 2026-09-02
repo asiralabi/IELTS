@@ -75,6 +75,13 @@ class Settings(BaseSettings):
     whisper_device: str = "cpu"  # "cuda" when a GPU is available
     whisper_compute_type: str = "int8"  # int8 on CPU; "float16" on GPU
 
+    # Origins a browser may call this API from: "*" for any, or a
+    # comma-separated list. Behind the bundled reverse proxy the page and the
+    # API share an origin and nothing here is consulted; it matters when the
+    # frontend is deployed somewhere else, where "*" would let any site on the
+    # internet make authenticated calls on a logged-in student's behalf.
+    cors_origins: str = "*"
+
     data_dir: str = "./data"
     upload_dir: str = "./data/uploads"
     assets_dir: str = "./data/assets"
@@ -86,6 +93,14 @@ class Settings(BaseSettings):
     rag_chunk_size: int = 650
     rag_chunk_overlap: int = 100
     rag_top_k: int = 5
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        """`cors_origins` as the list CORSMiddleware wants."""
+        raw = self.cors_origins.strip()
+        if raw in ("", "*"):
+            return ["*"]
+        return [origin.strip().rstrip("/") for origin in raw.split(",") if origin.strip()]
 
     @property
     def jwt_secret_is_default(self) -> bool:
