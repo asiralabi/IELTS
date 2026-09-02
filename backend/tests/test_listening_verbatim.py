@@ -243,7 +243,7 @@ def test_the_expansion_keeps_going_until_the_script_clears_the_floor(monkeypatch
 
     calls = []
 
-    async def fake_expand(script, title, must_say=None):
+    async def fake_expand(script, title, must_say=None, *, overshot=0):
         calls.append(len(script.split()))
         # A third of the floor per round, from half of it — so one call cannot
         # get there and two can. Expressed against the floor rather than in
@@ -270,7 +270,7 @@ def test_the_expansion_gives_up_rather_than_looping_forever(monkeypatch):
 
     calls = []
 
-    async def stuck(script, title, must_say=None):
+    async def stuck(script, title, must_say=None, *, overshot=0):
         calls.append(1)
         return script  # no growth at all
 
@@ -348,9 +348,11 @@ def test_an_expansion_that_overshoots_is_asked_again(monkeypatch):
         " ".join(["word"] * 900),                            # sensible
     ]
     asked = []
+    told = []
 
-    async def fake_expand(script, title, must_say=None):
+    async def fake_expand(script, title, must_say=None, *, overshot=0):
         asked.append(len(script.split()))
+        told.append(overshot)
         return replies[len(asked) - 1] if len(asked) <= len(replies) else script
 
     monkeypatch.setattr(lt, "_expand_script", fake_expand)
@@ -360,6 +362,11 @@ def test_an_expansion_that_overshoots_is_asked_again(monkeypatch):
     kept = len(result["audio_script"].split())
     assert kept == 900, f"kept {kept} words instead of asking again"
     assert len(asked) == 2, "the overshoot was accepted rather than retried"
+    # 🔬 And the second ask has to KNOW. Live 2026-09-02, `l_chart_r3`: the
+    # prompt said "at least 850 words" and named no ceiling, so 1745 words was
+    # obedience, and the identical retry obeyed identically at 1706. Three
+    # tries, three overshoots, and the part shipped at its original 441 words.
+    assert told == [0, lt._MAX_SCRIPT_WORDS + 500]
 
 
 def test_the_full_test_part_is_judged_after_its_figure_work(monkeypatch):
@@ -374,3 +381,31 @@ def test_the_full_test_part_is_judged_after_its_figure_work(monkeypatch):
     tail = src[src.rindex("blank_gapped_part_names"):]
     assert "_validate_full_test_part(result)" in tail, (
         "create_part returns without re-judging what its figure pass produced")
+
+
+def test_the_expansion_prompt_states_the_range_it_wants():
+    """A floor with no ceiling is an instruction to overshoot, and it was
+    obeyed three times running on one live part."""
+    import asyncio
+
+    from app.agents import listening_trainer as lt
+
+    sent = []
+
+    class _Stub:
+        is_finetune = False
+
+        async def complete(self, system, messages, **kw):
+            sent.append(messages[0]["content"])
+            return "TUTOR: and so on."
+
+    lt_client = lt.get_llm_client
+    try:
+        lt.get_llm_client = lambda *a, **k: _Stub()
+        asyncio.run(lt._expand_script("TUTOR: hello.", "Title"))
+        asyncio.run(lt._expand_script("TUTOR: hello.", "Title", overshot=1745))
+    finally:
+        lt.get_llm_client = lt_client
+
+    assert str(lt._MAX_SCRIPT_WORDS) in sent[0], "no ceiling was named"
+    assert "1745 words" in sent[1], "the retry did not carry the overshoot"

@@ -818,11 +818,13 @@ _EXPAND_TRIES = 3
 
 async def _grow_script(result: dict) -> None:
     """Lengthen a short script until it clears the floor, or run out of tries."""
+    overshot = 0
     for _ in range(_EXPAND_TRIES):
         script = str(result.get("audio_script") or "")
         if len(script.split()) >= _MIN_SCRIPT_WORDS:
             return
-        expanded = await _expand_script(script, str(result.get("title") or ""))
+        expanded = await _expand_script(
+            script, str(result.get("title") or ""), overshot=overshot)
         if not expanded or len(expanded.split()) <= len(script.split()):
             return
         # 🔬 Asked for 850 words, a model can hand back 1800. This used to keep
@@ -832,17 +834,21 @@ async def _grow_script(result: dict) -> None:
         # against the ~3300 the exam plays. An overshoot is not growth towards
         # the floor, it is a different fault, and there are tries left to spend.
         if len(expanded.split()) > _MAX_SCRIPT_WORDS:
-            logger.info(
-                "expansion overshot to %d words; asking again",
-                len(expanded.split()))
+            overshot = len(expanded.split())
+            logger.info("expansion overshot to %d words; asking again", overshot)
             continue
         # Kept even when it is still short: each round expands what the last
         # one produced, so two partial gains compound into a whole one.
+        overshot = 0
         result["audio_script"] = expanded
 
 
 async def _expand_script(
-    script: str, title: str, must_say: list[str] | None = None
+    script: str,
+    title: str,
+    must_say: list[str] | None = None,
+    *,
+    overshot: int = 0,
 ) -> str | None:
     """Single-call expansion — asks the model to lengthen without changing what
     the speakers established.
@@ -851,20 +857,36 @@ async def _expand_script(
     keyed to it. Reading's `_expand_passage` strikes the identical bargain with
     `must_name`: when the answer is right but unwritten, the SOURCE is made to
     contain it rather than the answer re-keyed to something weaker.
+
+    `overshot` is the length the LAST attempt came back at, when that length is
+    what got it thrown away. 🔬 Live 2026-09-02: this prompt asked for "at least
+    850 words" and named no ceiling, so a model answering 1745 was obeying it —
+    and the retry, being the identical prompt, obeyed it again at 1706. Three
+    tries, three overshoots, and the part shipped at the 441 words it started
+    with. Every other retry in this codebase carries the reason the last one
+    failed; this one now does too, and the range is stated rather than a floor.
     """
     if not script.strip():
         return None
     prompt = (
         f"Scenario title: {title}\n\nScript to expand:\n{script}\n\n"
-        f"Extend this listening script to at least {_MIN_SCRIPT_WORDS + 200} "
-        "words — one Part of real IELTS Listening runs about 4-5 minutes of "
-        "speech, around 850 words. Keep every "
+        f"This script is {len(script.split())} words. Extend it to between "
+        f"{_MIN_SCRIPT_WORDS + 200} and {_MAX_SCRIPT_WORDS} words — one Part of "
+        "real IELTS Listening is about four minutes of speech, around 850 "
+        f"words, and anything past {_MAX_SCRIPT_WORDS} is a recording no exam "
+        "would play. Keep every "
         "existing turn, speaker label, testable detail, and correction. Add "
         "more turns of natural conversation OR additional monologue detail "
         "as appropriate for the scenario. Do NOT change any answers that "
         "have already been introduced in the script. Return ONLY the "
         "expanded script text with speaker labels — no JSON, no commentary."
     )
+    if overshot:
+        prompt += (
+            f"\n\nYour last attempt came back at {overshot} words, which is "
+            f"past the {_MAX_SCRIPT_WORDS}-word ceiling and was thrown away. "
+            "Add much less this time: a few more turns, not a second half."
+        )
     if must_say:
         listed = "; ".join(sorted({str(w).strip() for w in must_say if str(w).strip()}))
         prompt += (
