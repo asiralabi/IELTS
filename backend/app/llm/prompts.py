@@ -370,6 +370,23 @@ Rules:
 }
 """
 
+DIAGRAM_MERGE_CALLOUT_SYSTEM = """You are an IELTS test writer editing the callouts printed beside a labelled diagram. You are given the figure's title and TWO callouts that point at the SAME part of the drawing. You must write them as ONE callout.
+
+Why: two leader lines into one shape ask the student to name that shape twice, and they cannot tell which line the answer they are writing belongs to. The exam prints one line per part, and a line may carry two blanks — "Whole tower can be raised for 23 .......... and the extraction of seaweed from the blades".
+
+Each callout contains a numbered blank written as `__N__`. Both numbers must appear in your answer, exactly once each, spelled exactly as they are given. They are the figure's only link to the questions: change one and the student is asked something nobody can mark.
+
+Rules:
+- ONE clause or sentence, at most 20 words. You are joining two captions, not stacking them — cut the scene-setting ("When the boat enters", "During the final stage") before you cut anything that describes the part.
+- Keep what each blank is asking for. The student matches the words around a blank against the passage, so the wording that survives has to be the wording that identifies it.
+- Do not add a new fact, and do not answer either blank.
+- If the two cannot be said in one line without losing what a blank asks, return an empty string. The caller can leave both alone; it cannot un-mangle a callout.
+- Return ONLY this JSON object:
+{
+  "callout": "<the merged callout>"
+}
+"""
+
 FLOW_RESTEP_SYSTEM = """You are an IELTS test writer editing ONE step of a printed flow chart. You are given the chart's title, one step from it, and the words that step must not contain. You must rewrite that step so it says the same thing without using those words.
 
 Why: another step of the chart has a numbered gap whose answer is one of those words. Printing it here hands the student the answer, and the question tests nothing.
@@ -660,14 +677,14 @@ Graph / chart visual — emit this when the question set includes chart_completi
   }
   - `series` is a list of named lines or bar groups; each `data` point is `[category, number]`. Use 3-6 categories and 1-3 series. A `pie` chart takes exactly ONE series whose values sum to 100. **Choose `pie` whenever the categories are shares of one whole and add up to about 100 — a set of shares drawn as bars is the wrong figure**, and a live set drew "what share of the world's freshwater sits in ice, groundwater and rivers" as a bar chart.
   - Every number must be one the passage states or plainly supports. The chart is the passage's data drawn, never new data.
-- `chart_completion` questions are gap-fill: the student reads a value or a label off the chart and writes it. Each question must name what it is asking for — "NO MORE THAN TWO WORDS AND/OR A NUMBER. According to the chart, garden use in 2020 was ______ litres per day." Number 3 to 6 of them.
+- `chart_completion` questions are gap-fill: the student reads the chart AND the passage, and writes what only the two together give. Each question must name what it is asking for — "NO MORE THAN TWO WORDS AND/OR A NUMBER. According to the chart, garden use rose after 1990 because households installed ______." Number 3 to 6 of them.
 - Do NOT put a `"__<n>__"` inside the chart data. The chart prints its real values; the gap lives in the question text, because the student is reading the figure rather than filling it in. (A TABLE is the opposite — see above — which is why the two are different question types.)
 - 🚨 **A chart question must NOT be answerable by copying a printed number.** Because the chart shows every value, it is fatally easy to write "According to the chart, the percentage of freshwater stored as ice is ______" keyed to "68.7" — a live set wrote nine of those in a row. That tests transcription, not reading: the student never opens the passage, and the figure has replaced the text instead of supporting it. Every chart question must need the PASSAGE as well as the chart. Ask what the figure does not print:
   * the reason behind a value the passage explains ("the fall after 1990 is attributed to ______");
   * the name the passage gives a category the chart labels plainly;
   * a comparison or trend the student must put into the passage's own words;
   * what the passage says follows from the figure.
-  Read each of your chart questions back and ask "could a student answer this with the passage covered up?" If yes, rewrite it.
+  Read each of your chart questions back and ask "could a student answer this with the passage covered up?" If yes, rewrite it. At most ONE question in the set may be a plain reading-off task; write the rest so the answer is in the text.
 
 Flow chart visual — emit this when the question set includes flow_chart_completion:
 - Cambridge prints the process a passage describes as a chain of boxes read top to bottom, and numbers some of the words inside them ("The Production of Bakelite", "Method of determining where the ancestors of turtles come from", "Generating biogas for domestic use in Dunga"). Measured over the books: 4-10 boxes, 3-7 numbered gaps, and the chain is a single line — no branches and no merges.
@@ -919,14 +936,14 @@ Graph / chart visual — emit this when the question set includes chart_completi
   }
   - `series` is a list of named lines or bar groups; each `data` point is `[category, number]`. Use 3-6 categories and 1-3 series. A `"pie"` chart takes exactly ONE series whose values sum to 100.
   - Every number must be one the SPEAKER says aloud, in the order the chart runs, so the student can follow the figure while the audio plays.
-- `chart_completion` questions are gap-fill: the student reads a value or a label off the chart. Each names what it asks for — "ONE WORD AND/OR A NUMBER. According to the chart, rainfall at the northern site in 2021 was ______ millimetres." Number 3 to 6 of them.
+- `chart_completion` questions are gap-fill: the student reads the chart AND listens, and writes what only the two together give. Each names what it asks for — "ONE WORD AND/OR A NUMBER. According to the chart, rainfall at the northern site fell in 2021 because the monsoon arrived ______." Number 3 to 6 of them.
 - Do NOT put a `"__<n>__"` inside the chart data. The chart prints its real values; the gap lives in the question text, because the student is reading the figure rather than filling it in. (A TABLE is the opposite — see above — which is why the two are different question types.)
 - 🚨 **A chart question must NOT be answerable by copying a printed number.** Because the chart shows every value, it is fatally easy to write "According to the chart, the percentage of freshwater stored as ice is ______" keyed to "68.7" — a live set wrote nine of those in a row. That tests transcription, not reading: the student never opens the passage, and the figure has replaced the text instead of supporting it. Every chart question must need the PASSAGE as well as the chart. Ask what the figure does not print:
   * the reason behind a value the passage explains ("the fall after 1990 is attributed to ______");
   * the name the passage gives a category the chart labels plainly;
   * a comparison or trend the student must put into the passage's own words;
   * what the passage says follows from the figure.
-  Read each of your chart questions back and ask "could a student answer this with the passage covered up?" If yes, rewrite it.
+  Read each of your chart questions back and ask "could a student answer this with the passage covered up?" If yes, rewrite it. At most ONE question in the set may be a plain reading-off task; write the rest so the answer is in the text.
 
 Flow chart visual — REQUIRED when the question set includes flow_chart_completion:
 - A Part 3 discussion is where the real exam prints one: the students work out a plan or a procedure, and the chart is that plan with some of its words left out ("Stages in the experiment", "Assignment plan", "Advice on exam preparation"). Measured over the books: 4-10 boxes, 3-7 numbered gaps, and the chain is a single line — no branches and no merges.

@@ -3,11 +3,12 @@ import logging
 import random
 import re
 from collections import Counter
-from functools import partial
 
 from app.agents._figure_pass import (
     repair_dangling_completions,
     redraw_diagram,
+    condense_doubled_callouts,
+    drop_chart_transcriptions,
     repair_self_answering_callouts,
 )
 from app.agents._diagram import (
@@ -18,6 +19,7 @@ from app.agents._diagram import (
     inaudible_diagram_error,
     is_diagram,
     is_picture,
+    merge_doubled_callouts,
     normalize_diagram,
     drop_duplicate_pictures,
     normalize_picture,
@@ -52,6 +54,7 @@ from app.agents.answerability import (
     dangling_structure_error,
     missing_map_error,
     qtype,
+    split_block_carrier,
     unlettered_map_error,
     unmarkable_matching_error,
     unnamed_place_error,
@@ -518,6 +521,44 @@ def validate_part(
     return None
 
 
+def _judge_reply(result: dict) -> str | None:
+    """Judge a fresh part, having first taken the two repairs it cannot judge.
+
+    The split runs BEFORE the rules rather than after the reply is accepted,
+    for the reason reading's twin of this hook spells out: a block carrier
+    breaks two rules at once, and the second belongs to `notes_error`, which is
+    handed the block and the questions rather than the set and so cannot know a
+    split is coming. `complete_json` judges the same dict it hands back, so the
+    caller keeps the repair.
+
+    `drop_chart_transcriptions` runs beside it for the same reason: its rule is
+    judged before the numbering and everything after it, so a part carrying two
+    questions read off the chart never reaches a repair at all — and `l_chart_r3` came back from
+    its corrective retry with the same two. It keeps the one such question the
+    rule tolerates and deletes the surplus.
+
+    The relaxations are this module's long-standing ones: a dangling completion
+    is repaired below, `_repair_unheard_answers` gets its turn at an answer the
+    script never says, and every figure repair — the redraw, the blankings, the
+    callout rewrite — runs before `_gate_after_figure_work` judges the lot.
+    """
+    split = split_block_carrier(result)
+    if split:
+        logger.info("split the block carrier into %d question(s): %s",
+                    len(split), ", ".join(split))
+    dropped = drop_chart_transcriptions(result)
+    if dropped:
+        logger.info("dropped chart question(s) answered off the figure: %s",
+                    ", ".join(dropped))
+    return validate_part(
+        result,
+        judge_structure=False,
+        judge_matching=False,
+        judge_verbatim=False,
+        judge_diagram=False,
+    )
+
+
 async def create_practice(
     question_types: list[str] | None = None,
     difficulty: str | None = None,
@@ -579,19 +620,7 @@ async def create_practice(
         LISTENING_TRAINER_SYSTEM,
         [{"role": "user", "content": "\n".join(parts)}],
         required_keys=("title", "audio_script", "questions", "answer_key"),
-        validate=partial(
-            validate_part,
-            judge_structure=False,
-            judge_matching=False,
-            # Skipped on the way IN so `_repair_unheard_answers` gets its turn;
-            # the gate below judges it at full strictness. Reading makes the
-            # same promise with `judge_verbatim=False` and keeps it the same
-            # way.
-            judge_verbatim=False,
-            # Likewise for the figure: `redraw_diagram` runs below and fixes
-            # both of the faults this drops.
-            judge_diagram=False,
-        ),
+        validate=_judge_reply,
         # A full part is a ~1.7-3.1k-token JSON object, but LLM_MAX_TOKENS is
         # 2048 locally — that truncates mid-JSON on the longer half of the
         # range, and each retry costs another ~5 min. The ~2.9k prompt plus
@@ -655,6 +684,17 @@ async def create_practice(
     # A callout carrying its own gap cannot be deleted without orphaning a
     # question, and now that it holds a clause there IS something to reword.
     await repair_self_answering_callouts(result)
+    # After the redraw, which replaces the whole figure, and before the gate.
+    # The join is free; the model is asked only for the pair too long to print
+    # as one line, which is what the refusal message has always suggested.
+    folded = merge_doubled_callouts(result)
+    if folded:
+        logger.info("folded doubled callouts on %s",
+                    ", ".join(f"{at} ({'+'.join(gaps)})" for at, gaps in folded))
+    condensed = await condense_doubled_callouts(result)
+    if condensed:
+        logger.info("condensed doubled callouts on %s",
+                    ", ".join(at for at, _ in condensed))
     # 🔬 LAST, after the rewrite above. `repair_self_answering_callouts`
     # rewords a callout through the model, and the wording it comes back
     # with can be the subject form this repair exists for — "The __1__
@@ -1075,6 +1115,23 @@ def _validate_full_test_part(
     return None
 
 
+def _judge_full_test_reply(result: dict) -> str | None:
+    """`_judge_reply` for the full-test path, which also counts the questions.
+
+    The split matters more here than in practice: a part written as one carrier
+    has ONE question where the paper needs ten, so it breaks the count rule as
+    well, and the seam `renumber` builds depends on that count being right.
+    """
+    split_block_carrier(result)
+    return _validate_full_test_part(
+        result,
+        judge_structure=False,
+        judge_matching=False,
+        judge_verbatim=False,
+        judge_diagram=False,
+    )
+
+
 async def create_part(
     part_number: int,
     difficulty: str | None = None,
@@ -1112,13 +1169,7 @@ async def create_part(
         LISTENING_TRAINER_SYSTEM,
         [{"role": "user", "content": "\n".join(parts)}],
         required_keys=("title", "audio_script", "questions", "answer_key"),
-        validate=partial(
-            _validate_full_test_part,
-            judge_structure=False,
-            judge_matching=False,
-            judge_verbatim=False,
-            judge_diagram=False,
-        ),
+        validate=_judge_full_test_reply,
         # A full part is a ~1.7-3.1k-token JSON object, but LLM_MAX_TOKENS is
         # 2048 locally — that truncates mid-JSON on the longer half of the
         # range, and each retry costs another ~5 min. The ~2.9k prompt plus
@@ -1171,6 +1222,16 @@ async def create_part(
                          source_label="Audio script")
     _blank_diagram_answers(result)
     await repair_self_answering_callouts(result)
+    # The practice path's pair, in the same place: fold what fits, and ask for
+    # the one line too long to print as a join.
+    folded = merge_doubled_callouts(result)
+    if folded:
+        logger.info("folded doubled callouts on %s",
+                    ", ".join(f"{at} ({'+'.join(gaps)})" for at, gaps in folded))
+    condensed = await condense_doubled_callouts(result)
+    if condensed:
+        logger.info("condensed doubled callouts on %s",
+                    ", ".join(at for at, _ in condensed))
     # 🔬 LAST, after the rewrite above. `repair_self_answering_callouts`
     # rewords a callout through the model, and the wording it comes back
     # with can be the subject form this repair exists for — "The __1__

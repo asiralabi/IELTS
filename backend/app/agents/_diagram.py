@@ -1234,6 +1234,82 @@ def blank_gapped_part_names(result: dict) -> list[tuple[str, str, str]]:
     return hits
 
 
+def merge_doubled_callouts(result: dict) -> list[tuple[str, list[str]]]:
+    """Fold two leader lines on one part into the single callout the rule allows.
+
+    `diagram_error` refuses a part carrying two numbered callouts, because two
+    leaders into one shape ask the student to name it twice. What it does NOT
+    refuse is one callout holding two blanks — "the __25__ behind blades, known
+    as __26__" — which is one line to one part and is what Cambridge prints. So
+    the illegal figure and the legal one differ by a join, and the refusal
+    message has always said so: "fold both blanks into a single callout".
+
+    🔬 Live 2026-09-02, `r_diagram_machine_r3`, a canal lock. Two callouts sat
+    on `gate` — "When the boat enters, the __2__ lowers to seal the lock" and
+    "During the final stage, the __8__ is lifted" — while `balance` carried
+    __6__ and __7__ in ONE callout, legally, in the same figure. The whole set
+    was thrown away over a join the model had already demonstrated it knew.
+
+    Deterministic, so repaired rather than retried: both callouts are already
+    about that part, the text of each is kept whole, and the order they are
+    printed in is the order they arrived. Nothing is guessed — least of all
+    which question belongs to which shape, which is the repair this codebase
+    has tested and rejected.
+
+    Returns (part, numbers folded) for the caller to log.
+    """
+    visual = result.get("visual")
+    if not is_diagram(visual):
+        return []
+    labels = diagram_labels(visual)
+    gapped: dict[str, list[dict]] = {}
+    for label in labels:
+        if not DIAGRAM_GAP_RE.search(_text(label.get("text"))):
+            continue
+        at = _slug(label.get("at") or label.get("target") or label.get("part"), "")
+        gapped.setdefault(at, []).append(label)
+
+    merged: list[tuple[str, list[str]]] = []
+    for at, group in gapped.items():
+        if len(group) < 2:
+            continue
+        joined = _join_callouts([_text(lb.get("text")) for lb in group])
+        # A join that overruns the cap is not a repair: the set would be
+        # refused for the callout's length instead of for its doubling, which
+        # is the same set lost and a worse sentence to diagnose it by.
+        # `condense_doubled_callouts` writes those as one clause, the way the
+        # exam prints a two-blank callout.
+        if len(joined.split()) > _MAX_LABEL_WORDS:
+            continue
+        keeper, rest = group[0], group[1:]
+        keeper["text"] = joined
+        # By identity, not equality: two callouts that happen to read alike
+        # are still two objects, and dropping the wrong one drops its gap.
+        visual["labels"] = [
+            lb for lb in diagram_labels(visual)
+            if not any(lb is dropped for dropped in rest)
+        ]
+        merged.append(
+            (at, DIAGRAM_GAP_RE.findall(_text(keeper.get("text")))))
+    return merged
+
+
+def _join_callouts(texts: list[str]) -> str:
+    """Two callouts as one line of the figure.
+
+    Whole sentences are kept whole and simply follow one another — the student
+    matches a callout's wording against the passage, so trimming it to fit
+    would cost them the match the gap is answered from. Fragments, which is
+    what the exam prints more often ("Float dropped into ocean and __23__ by
+    satellite"), are joined with a semicolon: a full stop after a phrase that
+    was never a sentence reads as a typo on the drawing.
+    """
+    parts = [t.strip() for t in texts if t.strip()]
+    if all(p.endswith((".", "!", "?")) for p in parts):
+        return " ".join(parts)
+    return "; ".join(p.rstrip(".") for p in parts)
+
+
 def blank_self_answering_labels(result: dict) -> list[tuple[str, str, str]]:
     """Rub out figure text that prints another gap's answer. Returns what went.
 

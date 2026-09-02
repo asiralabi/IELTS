@@ -255,6 +255,40 @@ def _value_key(value: object) -> str:
     return f"{number:g}"
 
 
+def chart_transcriptions(result: dict) -> list[str]:
+    """Chart questions whose answer is a number the chart already draws.
+
+    Shared with `drop_chart_transcriptions`, the way `dangling_completions` is
+    shared with the repair that rewrites it: a repair that deleted a different
+    set of questions than the rule complains about would leave the complaint
+    standing and the questions gone.
+    """
+    visual = result.get("visual")
+    if not isinstance(visual, dict) or str(visual.get("kind", "")).lower() != "chart":
+        return []
+    if str(visual.get("chart_type", "")).lower() == "table":
+        return []
+
+    printed: set[str] = set()
+    for row in visual.get("series") or []:
+        if not isinstance(row, dict):
+            continue
+        for point in row.get("data") or []:
+            if isinstance(point, (list, tuple)) and len(point) >= 2:
+                printed.add(_value_key(point[1]))
+    printed.discard("")
+    if not printed:
+        return []
+
+    answer_key = result.get("answer_key") or {}
+    return [
+        str(q.get("number"))
+        for q in result.get("questions") or []
+        if isinstance(q, dict) and qtype(q) == canon("chart_completion")
+        and _value_key(answer_key.get(str(q.get("number")))) in printed
+    ]
+
+
 def chart_transcription_error(result: dict) -> str | None:
     """Reject chart questions answered by reading a number off the chart.
 
@@ -272,30 +306,7 @@ def chart_transcription_error(result: dict) -> str | None:
     Tables are exempt: their answers are the cells the figure does NOT print,
     which is the opposite arrangement.
     """
-    visual = result.get("visual")
-    if not isinstance(visual, dict) or str(visual.get("kind", "")).lower() != "chart":
-        return None
-    if str(visual.get("chart_type", "")).lower() == "table":
-        return None
-
-    printed: set[str] = set()
-    for row in visual.get("series") or []:
-        if not isinstance(row, dict):
-            continue
-        for point in row.get("data") or []:
-            if isinstance(point, (list, tuple)) and len(point) >= 2:
-                printed.add(_value_key(point[1]))
-    printed.discard("")
-    if not printed:
-        return None
-
-    answer_key = result.get("answer_key") or {}
-    copied = [
-        str(q.get("number"))
-        for q in result.get("questions") or []
-        if isinstance(q, dict) and qtype(q) == canon("chart_completion")
-        and _value_key(answer_key.get(str(q.get("number")))) in printed
-    ]
+    copied = chart_transcriptions(result)
     if len(copied) < 2:
         # One such question is a reading-off task the exam does set. A block of
         # them is a figure standing in for the passage.
@@ -742,6 +753,145 @@ def unmarkable_matching_error(questions: list, answer_key: dict) -> str | None:
             "candidates as options, and key the single one that matches."
         )
     return None
+
+# The blank a repaired question shows, and the exam's printed form of a gap
+# belonging to a DIFFERENT question — its number and the dotted leader, which
+# is exactly what `visual.tsx` prints for that gap inside the block itself.
+_BLOCK_GAP = "______"
+_LEADER = "." * 12
+_BLOCK_SLOT_RE = re.compile(r"__(\d+)__")
+
+
+def _rendered_line(line: str, number: str) -> str:
+    """The block's line as ONE question asks it: its own gap open, the rest shown.
+
+    A summary sentence often carries two gaps ("came in __2__ when Goodyear
+    discovered __3__"), so the question for 2 has to print 3 as something. Left
+    as `__3__` it reads as debris; deleted, the sentence loses the shape the
+    student matches against the passage. Printed the way the block prints it,
+    the student reads the same sentence in both places.
+    """
+    def one(match: re.Match) -> str:
+        return _BLOCK_GAP if match.group(1) == number else f"{match.group(1)} {_LEADER}"
+
+    return _BLOCK_SLOT_RE.sub(one, line).strip()
+
+
+def _block_strings(visual: object) -> list[str]:
+    """Every string the printed block holds, in the order it prints them.
+
+    Read off the object rather than off one block type's schema, because the
+    fault this serves is not particular to summaries: a notes line, a table
+    cell and a flow step are all strings carrying `__N__`, and the repair wants
+    whichever one holds the gap.
+    """
+    out: list[str] = []
+
+    def walk(node: object) -> None:
+        if isinstance(node, str):
+            out.append(node)
+        elif isinstance(node, list):
+            for item in node:
+                walk(item)
+        elif isinstance(node, dict):
+            for value in node.values():
+                walk(value)
+
+    walk(visual)
+    return out
+
+
+def _carrier_split(result: dict) -> dict[str, dict] | None:
+    """The question each gap of a printed block would get, or None if it cannot.
+
+    Shared with `split_block_carrier` the way `dangling_completions` is shared
+    with the repair that rewrites it: a validator that forgave a set the repair
+    then failed to fix would send it to the gate with its retries spent.
+    """
+    slots = visual_slots(result.get("visual"))
+    if not slots:
+        return None
+    questions = [q for q in (result.get("questions") or []) if isinstance(q, dict)]
+    if not slots - {str(q.get("number")) for q in questions}:
+        return None
+
+    # The carrier is the question that swallowed the block: it is one of the
+    # block's own gaps and its text prints the others as well.
+    carrier = next(
+        (
+            q
+            for q in questions
+            if str(q.get("number")) in slots
+            and len(set(_BLOCK_SLOT_RE.findall(str(q.get("question") or "")))) > 1
+        ),
+        None,
+    )
+    if carrier is None:
+        return None
+    # The rubric the model wrote above the block ("NO MORE THAN THREE WORDS.
+    # Complete the summary below."), which every question it split into needs.
+    head = str(carrier.get("question") or "").splitlines()[0].strip()
+    rubric = "" if _BLOCK_SLOT_RE.search(head) else head
+
+    answer_key = result.get("answer_key") or {}
+    strings = _block_strings(result.get("visual"))
+    written: dict[str, dict] = {}
+    for number in sorted(slots, key=int):
+        if str(number) not in {str(k) for k in answer_key}:
+            return None
+        line = next((s for s in strings if f"__{number}__" in s), "")
+        rendered = _rendered_line(line, number)
+        # A line that says nothing besides its own gap gives the student
+        # nothing to answer from — a bare `__4__` table cell needs its column
+        # heading, which is `write_field_labels`' job and a model call.
+        if not rendered.replace(_BLOCK_GAP, "").strip(" .,:;-—"):
+            return None
+        written[number] = {
+            "number": int(number),
+            "type": carrier.get("type"),
+            "question": f"{rubric} {rendered}".strip(),
+            "options": None,
+            "word_limit": carrier.get("word_limit"),
+        }
+    return written
+
+
+def splittable_block_carrier(result: dict) -> bool:
+    """True if the numbering fault is one `split_block_carrier` will repair."""
+    return _carrier_split(result) is not None
+
+
+def split_block_carrier(result: dict) -> list[str]:
+    """Give each gap of a printed block a question of its own. Returns them.
+
+    🔬 Live 2026-09-02, `r_summary_r2`: the block was perfect — a four-sentence
+    summary carrying `__1__` to `__7__` — and the key held all seven answers,
+    but the model wrote ONE question whose text was the whole summary reprinted.
+    The set was refused on "question numbers and answer_key keys must match
+    exactly", having got everything right except how many questions a printed
+    block is. A retry has to rewrite the passage, the block and the key to say
+    what it already said.
+
+    Deterministic, so repaired rather than retried: the line holding `__N__` is
+    the line question N asks about, and there is nothing to infer. All of the
+    gaps or none — a partial split leaves the set failing the same gate it
+    failed before, having spent the one question that held the context.
+    """
+    written = _carrier_split(result)
+    if written is None:
+        return []
+    slots = set(written)
+    kept = [
+        q
+        for q in (result.get("questions") or [])
+        if isinstance(q, dict) and str(q.get("number")) not in slots
+    ]
+    result["questions"] = sorted(
+        kept + list(written.values()),
+        key=lambda q: int(q.get("number")) if str(q.get("number")).isdigit() else 0,
+    )
+    return sorted(slots, key=int)
+
 
 def dangling_completions(questions: list, visual: object) -> list[dict]:
     """Completion items that point at a block the student never sees.

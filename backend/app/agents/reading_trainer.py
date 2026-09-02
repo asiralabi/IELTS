@@ -4,11 +4,12 @@ import logging
 import random
 import re
 from collections import Counter
-from functools import partial
 
 from app.agents._figure_pass import (
     redraw_diagram,
     repair_dangling_completions,
+    condense_doubled_callouts,
+    drop_chart_transcriptions,
     repair_self_answering_callouts,
 )
 from app.agents._diagram import (
@@ -17,6 +18,7 @@ from app.agents._diagram import (
     blank_self_answering_labels,
     diagram_error,
     is_diagram,
+    merge_doubled_callouts,
     normalize_diagram,
     sparse_diagram_error,
 )
@@ -46,6 +48,7 @@ from app.agents.answerability import (
     qtype,
     self_answering_error,
     span_tokens,
+    split_block_carrier,
     visual_slots,
     word_limit_error,
 )
@@ -912,6 +915,56 @@ def _needs_a_figure(question_types: list[str] | None) -> bool:
     described one."""
     return bool(_FIGURE_TYPES.intersection(canon(t) for t in question_types or ()))
 
+
+def _judge_reply(result: dict) -> str | None:
+    """Judge a fresh reply, having first taken the two repairs it cannot judge.
+
+    Every other repair in this module runs after the reply is accepted, which
+    is the right place for anything a complaint can talk the model into fixing.
+    `split_block_carrier` is different: what it repairs raises not one
+    complaint but two — the numbers do not match the key, AND the block prints
+    a gap no question asks about. The second is `notes_error`'s, which is
+    handed the block and the questions rather than the set, so it cannot be
+    told that the carrier holding those questions is one split from legal;
+    relaxing it wholesale would forgive a genuinely orphaned gap, which no
+    repair cures and a retry sometimes does.
+
+    So the split happens here, before either rule looks. What the hook repairs
+    is what the caller keeps — `complete_json` judges the same dict it hands
+    back — and a set with one question per gap is what every repair below is
+    written against.
+
+    `drop_chart_transcriptions` is here for the other half of the same reason:
+    its rule is judged before the numbering and everything after it, so a set
+    carrying two questions read off the chart never reaches any repair at all, and the one live artifact
+    of it came back from the corrective retry with the same two questions. It
+    keeps the one such question the rule tolerates and deletes the surplus,
+    which cost a nine-question set two questions that tested nothing.
+
+    The rest are this module's long-standing way-in relaxations: the model's
+    own headings are discarded, its missing NOT GIVEN is written by a narrower
+    call, the passage is rewritten to name the answers keyed against it, and
+    every figure repair runs below.
+    """
+    split = split_block_carrier(result)
+    if split:
+        logger.info("split the block carrier into %d question(s): %s",
+                    len(split), ", ".join(split))
+    dropped = drop_chart_transcriptions(result)
+    if dropped:
+        logger.info("dropped chart question(s) answered off the figure: %s",
+                    ", ".join(dropped))
+    return validate_practice(
+        result,
+        judge_headings=False,
+        judge_notgiven=False,
+        judge_verbatim=False,
+        judge_diagram=False,
+        judge_structure=False,
+        judge_notes=False,
+    )
+
+
 async def create_practice(
     question_types: list[str] | None = None,
     difficulty: str | None = None,
@@ -968,15 +1021,7 @@ async def create_practice(
         READING_TRAINER_SYSTEM,
         [{"role": "user", "content": "\n".join(parts)}],
         required_keys=("title", "passage", "questions", "answer_key"),
-        validate=partial(
-            validate_practice,
-            judge_headings=False,
-            judge_notgiven=False,
-            judge_verbatim=False,
-            judge_diagram=False,
-            judge_structure=False,
-            judge_notes=False,
-        ),
+        validate=_judge_reply,
         # A ~1200-word passage plus 8-13 questions carrying full options lists
         # is a 3.5-5k-token JSON object; LLM_MAX_TOKENS is 2048 locally. A
         # truncation is expensive twice over — the corrective retry replays the
@@ -1064,6 +1109,17 @@ async def create_practice(
     # A callout carrying its own gap cannot be deleted without orphaning a
     # question, and now that it holds a clause there IS something to reword.
     await repair_self_answering_callouts(result)
+    # After the redraw, which replaces the whole figure, and before the gate.
+    # The join is free; the model is asked only for the pair too long to print
+    # as one line, which is what the refusal message has always suggested.
+    folded = merge_doubled_callouts(result)
+    if folded:
+        logger.info("folded doubled callouts on %s",
+                    ", ".join(f"{at} ({'+'.join(gaps)})" for at, gaps in folded))
+    condensed = await condense_doubled_callouts(result)
+    if condensed:
+        logger.info("condensed doubled callouts on %s",
+                    ", ".join(at for at, _ in condensed))
     # 🔬 LAST, after the rewrite above. `repair_self_answering_callouts`
     # rewords a callout through the model, and the wording it comes back
     # with can be the subject form this repair exists for — "The __1__

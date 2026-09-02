@@ -36,7 +36,12 @@ from copy import deepcopy
 from app.agents._diagram import (
     _APPARATUS_FORMS,
     _LAYER_FORMS,
+    # Aliased: this module's own `_MAX_LABEL_WORDS` is the cap on a FORM FIELD
+    # name (5 words), which is a different thing from a callout's clause (20).
+    _MAX_LABEL_WORDS as _MAX_CALLOUT_WORDS,
     _PANEL_FORMS,
+    _slug,
+    _text,
     DIAGRAM_GAP_RE,
     LAYERS,
     blank_gapped_part_names,
@@ -53,9 +58,11 @@ from app.agents._diagram import (
     self_answering_labels,
 )
 from app.agents._marking import norm
-from app.agents.answerability import dangling_completions
+from app.agents._numbering import renumber
+from app.agents.answerability import chart_transcriptions, dangling_completions
 from app.llm.client import get_llm_client
 from app.llm.prompts import (
+    DIAGRAM_MERGE_CALLOUT_SYSTEM,
     DIAGRAM_RECALLOUT_SYSTEM,
     FIGURE_DRAW_SYSTEM,
     FORM_WRITER_SYSTEM,
@@ -683,6 +690,159 @@ async def repair_self_answering_callouts(
             break
 
     return changed
+
+
+async def condense_doubled_callouts(result: dict) -> list[tuple[str, str]]:
+    """Write two callouts on one part as the single one the exam prints.
+
+    `merge_doubled_callouts` folds the pair whenever the join is short enough
+    to print, and stops where the join would overrun the callout word cap — which
+    is where this call takes over. It is the same bargain
+    `repair_self_answering_callouts` strikes: a few hundred tokens against a
+    ~4k-token regeneration of a set whose only fault is a join.
+
+    🔬 Live 2026-09-02, `r_diagram_machine_r3`. Two callouts sat on `gate` —
+    "When the boat enters, the __2__ lowers to seal the lock" and "During the
+    final stage, the __8__ is lifted, allowing the boat to exit" — 24 words
+    joined, four over the cap. The same figure carried __6__ and __7__ in ONE
+    legal callout on `balance`, so the model had already shown it knew the
+    shape; it simply did not apply it twice.
+
+    Judged rather than trusted, on exactly what makes the reply usable: both
+    gaps still there, spelled the same, printed once each, and inside the cap.
+    Anything else leaves the pair alone for the gate to refuse, which is what
+    would have happened anyway.
+    """
+    visual = result.get("visual")
+    if not is_diagram(visual):
+        return []
+    doubled: dict[str, list[dict]] = {}
+    for label in diagram_labels(visual):
+        if not DIAGRAM_GAP_RE.search(_text(label.get("text"))):
+            continue
+        at = _slug(label.get("at") or label.get("target") or label.get("part"), "")
+        doubled.setdefault(at, []).append(label)
+
+    title = str(visual.get("title") or "")
+    changed: list[tuple[str, str]] = []
+    for at, group in doubled.items():
+        if len(group) < 2:
+            continue
+        texts = [_text(lb.get("text")) for lb in group]
+        wanted = [gap for text in texts for gap in DIAGRAM_GAP_RE.findall(text)]
+        for _ in range(_REWRITE_ATTEMPTS):
+            merged = await _merge_callouts(texts, title)
+            if not merged:
+                continue
+            # The gaps are the figure's only coupling to the questions. The
+            # model habitually answers one instead of copying it through, which
+            # is why every reply in this module is judged.
+            if DIAGRAM_GAP_RE.findall(merged) != wanted:
+                continue
+            if len(merged.split()) > _MAX_CALLOUT_WORDS:
+                continue
+            group[0]["text"] = merged
+            visual["labels"] = [
+                lb for lb in diagram_labels(visual)
+                if not any(lb is dropped for dropped in group[1:])
+            ]
+            changed.append((at, merged))
+            break
+    return changed
+
+
+async def _merge_callouts(texts: list[str], title: str) -> str | None:
+    """Ask for two callouts as one. Returns None on anything unusable.
+
+    The gaps are sent as they stand rather than filled in with their answers,
+    which is the opposite of `_rewrite_callout`'s bargain and deliberate: that
+    repair needs the model to read around a blank it must not reproduce, where
+    this one needs both blanks copied through untouched. Handing over the
+    answers here would invite the model to write them into the line it returns,
+    and the figure would then print what its own questions ask for.
+    """
+    listed = "\n\n".join(f"Callout {i}: {t}" for i, t in enumerate(texts, start=1))
+    try:
+        # Hosted, like every other call in this module: this is figure text,
+        # and the checkpoint was never trained on any.
+        reply = await get_llm_client("generator", skip_finetune=True).complete_json(
+            DIAGRAM_MERGE_CALLOUT_SYSTEM,
+            [{"role": "user", "content":
+              f"Figure title: {title}\n\n{listed}\n\nWrite them as one callout."}],
+            required_keys=("callout",),
+            max_tokens=256,
+        )
+    except Exception:
+        return None
+    return str(reply.get("callout") or "").strip() or None
+
+
+# The fewest questions a set may be left holding after a deletion. The reading
+# corpus writes 8 at the mode and ranges 6-15, so six is the bottom of what the
+# corpus itself calls a set; below it the student has been handed a fragment.
+_MIN_KEPT_QUESTIONS = 6
+
+
+def drop_chart_transcriptions(result: dict) -> list[str]:
+    """Delete the chart questions a student can answer with the source covered.
+
+    A chart prints every value it holds, so "The number of visitors in March
+    was ______" keyed 150000 is answered off the drawing —
+    `chart_transcription_error` refuses a set carrying two or more, and
+    tolerates one, because reading a value off a figure is a task the exam does
+    set. This deletes the surplus and leaves that one.
+
+    🔬 Live 2026-09-02, `l_chart_r3`: nine questions, seven of them good — the
+    reason for the July dip, the category behind the August rise, the increase
+    expected next year, none answerable without the recording — and two that
+    simply read March and September off the line. The corrective retry came
+    back with the same fault and the whole part died: a 521-word script, its
+    audio, a chart and seven working questions, for two that tested nothing.
+
+    Deleting rather than rewriting, and deterministically: a replacement
+    question has to be answerable from the script, which is a model call that
+    can fail, where a question testing nothing is no loss to remove. The set
+    keeps contiguous numbering — `renumber` moves the key and the per-answer
+    metadata with it.
+
+    Practice only, and only while enough of the set survives. A full-test part
+    needs exactly ten questions, so there a deletion trades one refusal for
+    another and the part is regenerated instead.
+    """
+    flagged = chart_transcriptions(result)
+    # One is legal, so only the surplus goes — and the FIRST is kept, which is
+    # the one the student meets earliest in a block that ascends.
+    doomed = set(flagged[1:])
+    if not doomed:
+        return []
+    # 🔬 Live 2026-09-02, on the first sweep run after this repair was written:
+    # a chart part came back with SIX of its questions read off the figure, so
+    # the deletion would have shipped a four-question set. That is not the
+    # fault this repair is for — the rule's own words are "one such question is
+    # a task the exam sets, a block of them is a figure standing in for the
+    # passage" — and a set that is mostly transcription has to be written
+    # again, not trimmed. So the deletion stops where the set stops being one:
+    # the reading corpus writes 8 questions at the mode and ranges 6-15
+    # (`_numbering`), so a repaired set that keeps six is still inside what the
+    # corpus itself produces, and one that cannot is left for the retry.
+    if len(result.get("questions") or []) - len(doomed) < _MIN_KEPT_QUESTIONS:
+        return []
+
+    result["questions"] = [
+        q for q in (result.get("questions") or [])
+        if not (isinstance(q, dict) and str(q.get("number")) in doomed)
+    ]
+    # Before the renumbering, not after: `renumber` maps the numbers that
+    # SURVIVE, so a stale entry left under a dropped number would collide with
+    # whichever question renumbers onto it and one of the two would be lost.
+    for field in ("answer_key", "accepted_variants", "answer_positions"):
+        held = result.get(field)
+        if isinstance(held, dict):
+            result[field] = {
+                k: v for k, v in held.items() if str(k) not in doomed
+            }
+    renumber(result, 0)
+    return sorted(doomed, key=int)
 
 
 # ---------------------------------------------------------------------------
