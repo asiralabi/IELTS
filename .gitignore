@@ -49,3 +49,6 @@ Thumbs.db
 # Container env derived from backend/.env by scripts/env_for_docker.py.
 # Same secrets, different file name — never committed.
 .env.docker
+
+# Supabase connection string for the migration script — secret, never committed.
+.env.deploy

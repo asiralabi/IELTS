@@ -18,8 +18,16 @@ class VectorStore:
             from qdrant_client import QdrantClient
 
             if settings.qdrant_url:
-                self._client = QdrantClient(url=settings.qdrant_url)
+                # A managed cluster. The api_key is omitted rather than passed
+                # empty so a self-hosted Qdrant with auth switched off still
+                # connects on url alone.
+                kwargs: dict[str, Any] = {"url": settings.qdrant_url}
+                if settings.qdrant_api_key:
+                    kwargs["api_key"] = settings.qdrant_api_key
+                self._client = QdrantClient(**kwargs)
             else:
+                # Embedded: a directory on disk, single-writer. Nothing else may
+                # hold it open at the same time.
                 self._client = QdrantClient(path=settings.qdrant_path)
         return self._client
 

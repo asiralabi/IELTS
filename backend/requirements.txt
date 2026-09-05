@@ -1,6 +1,10 @@
 fastapi>=0.115
 uvicorn[standard]>=0.30
 sqlalchemy>=2.0
+# Postgres driver. SQLite is still the default and the local/container
+# story; this is what lets DATABASE_URL point at a managed Postgres
+# (Supabase) when the app runs somewhere with no durable disk.
+psycopg2-binary>=2.9
 pydantic>=2.7
 pydantic-settings>=2.3
 PyJWT>=2.8

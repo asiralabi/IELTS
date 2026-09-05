@@ -1,0 +1,29 @@
+# backend/data is ~12GB on the machine this was built on, and almost none of it
+# is read while SERVING. Everything the running app needs is either in Postgres
+# (DATABASE_URL) or a hosted vector store (QDRANT_URL); what is left below is
+# read-only book material the /assets mount serves.
+data/*
+!data/figure_knowledge
+!data/figure_knowledge/**
+
+# data/assets is 139MB of PAGE IMAGES extracted from the Cambridge books
+# (p001_i0.png and friends, books 1-4 and 18). Reading them on this machine is
+# personal use; serving them from a public URL is republishing someone else's
+# book. They stay out, which also keeps the bundle small. The Cambridge TEXT is
+# in Postgres and unaffected, and generated figures are drawn client-side from
+# the `visual` JSON, so no practice material depends on this directory.
+
+# 🚨 The source corpus. `books/` is 2.2GB of Cambridge PDFs and `Audios/` is
+# the recordings that go with them — the copyrighted material that GROUNDS
+# generation and must never be served. Nothing in app/ opens either while
+# serving; the knowledge base built from them lives in Qdrant.
+books/
+Audios/
+
+# Never needed at runtime.
+tests/
+tools/
+**/__pycache__/
+*.pyc
+.env
+.env.*

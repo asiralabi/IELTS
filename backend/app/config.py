@@ -66,6 +66,13 @@ class Settings(BaseSettings):
 
     # Listening audio (edge-tts neural voices). Synthesis is lazy + cached.
     tts_enabled: bool = True
+    # The warm pool is a BACKGROUND THREAD per process. That is right for one
+    # long-lived container and wrong anywhere the platform runs many short-lived
+    # instances of the app: each one would start its own warmer, generate against
+    # the same shared model quota, and write pre-generated sets no later instance
+    # is guaranteed to see. Off on serverless; the endpoints fall back to
+    # synchronous generation, which is slower for the student but correct.
+    practice_pool_enabled: bool = True
     tts_voice_rate: str = "-6%"  # exam-realistic pacing, slightly under natural
 
     # Speaking transcription (faster-whisper). The system design specifies
@@ -88,6 +95,10 @@ class Settings(BaseSettings):
     tts_cache_dir: str = "./data/tts_cache"
     qdrant_path: str = "./data/qdrant"
     qdrant_url: str = ""
+    # Required by a managed Qdrant (Qdrant Cloud rejects an unauthenticated
+    # connection). Empty for the local embedded store, which is a file on disk
+    # and has nothing to authenticate against.
+    qdrant_api_key: str = ""
     qdrant_collection: str = "ielts_knowledge"
     embedding_model: str = "BAAI/bge-small-en-v1.5"
     rag_chunk_size: int = 650

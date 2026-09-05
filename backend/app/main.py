@@ -78,12 +78,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     from app.services.practice_pool import get_warmer
 
-    warmer = get_warmer()
-    warmer.start()
+    # See `practice_pool_enabled`: a thread per process is a container idea, and
+    # a platform that runs many instances of the app would start one in each.
+    warmer = get_warmer() if settings.practice_pool_enabled else None
+    if warmer is not None:
+        warmer.start()
+    else:
+        logger.info("practice pool warmer disabled (practice_pool_enabled=false)")
     try:
         yield
     finally:
-        await warmer.stop()
+        if warmer is not None:
+            await warmer.stop()
         # Close the singleton httpx client that Ollama shares across requests.
         try:
             from app.llm.client import shutdown_llm_http_client
