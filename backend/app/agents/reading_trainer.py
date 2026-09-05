@@ -13,6 +13,7 @@ from app.agents._figure_pass import (
     repair_self_answering_callouts,
 )
 from app.agents._diagram import (
+    drop_doubled_gap_markers,
     gap_the_named_answers,
     blank_gapped_part_names,
     blank_self_answering_labels,
@@ -954,6 +955,10 @@ def _judge_reply(result: dict) -> str | None:
     if dropped:
         logger.info("dropped chart question(s) answered off the figure: %s",
                     ", ".join(dropped))
+    doubled = drop_doubled_gap_markers(result)
+    if doubled:
+        logger.info("dropped the gap printed on the part a callout already names: %s",
+                    ", ".join(f"{pid}=__{gap}__" for pid, gap in doubled))
     return validate_practice(
         result,
         judge_headings=False,

@@ -1234,6 +1234,72 @@ def blank_gapped_part_names(result: dict) -> list[tuple[str, str, str]]:
     return hits
 
 
+def drop_doubled_gap_markers(result: dict) -> list[tuple[str, str]]:
+    """Delete a gap printed on a part when a callout already carries it.
+
+    `diagram_error` refuses a figure that prints the same gap twice, because
+    one question then has two boxes and the student cannot tell which to fill.
+    That rule is judged on the way IN, so the whole set dies before any repair
+    in the pipeline gets a turn -- which is why this runs from `_judge_reply`
+    rather than beside the other figure repairs.
+
+    🔬 Live 2026-09-06, the first sweep after `openai/gpt-oss-120b` was retired
+    and `nvidia/nemotron-3-super-120b-a12b` took over. The replacement numbers
+    a figure BOTH ways at once: `helmet` is named `__1__` and a callout reads
+    "The __1__ protects the diver's head and face", for all six gaps. Four of
+    the seven refusals in a 40-set sweep were this one shape
+    (`r_diagram_apparatus`, `r_diagram_crosssec`, twice each), and a corrective
+    retry reproduced it -- the model is not being careless, it is drawing the
+    figure the way it thinks the exam prints it.
+
+    The callout is the copy worth keeping: it carries the clause that says
+    WHICH part is wanted, which a bare `__1__` on a shape does not, and the
+    part is then left unnamed -- exactly what `diagram_error` demands anyway of
+    a part whose own name is the answer.
+
+    Deterministic, so repaired rather than retried. Only a part whose name is
+    NOTHING BUT the gap is touched: a name like "The __3__ valve" would leave
+    "The valve" behind, printing the answer's own noun beside the gap keyed to
+    it. Two callouts holding one gap are `merge_doubled_callouts`' business,
+    not this one's, and a gap printed on two PARTS is left alone because
+    nothing here can say which shape the question meant.
+
+    Returns (part id, gap) for the caller to log.
+    """
+    visual = result.get("visual")
+    if not is_diagram(visual):
+        return []
+
+    # Where each gap is printed, kept apart by container: the repair is only
+    # safe when the surplus copy is the bare one on a part.
+    elsewhere: dict[str, int] = {}
+    for label in diagram_labels(visual):
+        for gap in DIAGRAM_GAP_RE.findall(_text(label.get("text"))):
+            elsewhere[gap] = elsewhere.get(gap, 0) + 1
+    for link in diagram_links(visual):
+        for gap in DIAGRAM_GAP_RE.findall(_text(link.get("label"))):
+            elsewhere[gap] = elsewhere.get(gap, 0) + 1
+
+    bare: dict[str, list[dict]] = {}
+    for part in diagram_parts(visual):
+        name = _text(part.get("name"))
+        gaps = DIAGRAM_GAP_RE.findall(name)
+        # Nothing but the gap: strip it and the name is empty.
+        if len(gaps) == 1 and not DIAGRAM_GAP_RE.sub("", name).strip():
+            bare.setdefault(gaps[0], []).append(part)
+
+    dropped: list[tuple[str, str]] = []
+    for gap, parts in bare.items():
+        # One bare part, and the callouts hold the gap exactly once. Anything
+        # else is a different fault with a different cure.
+        if len(parts) != 1 or elsewhere.get(gap, 0) != 1:
+            continue
+        part = parts[0]
+        part["name"] = None
+        dropped.append((str(part.get("id") or "?"), gap))
+    return dropped
+
+
 def merge_doubled_callouts(result: dict) -> list[tuple[str, list[str]]]:
     """Fold two leader lines on one part into the single callout the rule allows.
 
