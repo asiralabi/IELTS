@@ -77,7 +77,13 @@ async def list_feedback(
         )
     # compare_digest, not ==: a plain comparison returns as soon as two bytes
     # differ, which leaks the token one character at a time to a patient caller.
-    if not secrets.compare_digest(x_admin_token, expected):
+    #
+    # 🔬 Encoded to BYTES first, live 2026-09-06: compare_digest on `str` raises
+    # TypeError the moment either side holds a non-ASCII character, and headers
+    # reach us decoded as latin-1 — so `X-Admin-Token: café` came back 500
+    # "Internal Server Error" instead of 403. A wrong guess must look like a
+    # wrong guess, not like a way to make the server fall over.
+    if not secrets.compare_digest(x_admin_token.encode("utf-8"), expected.encode("utf-8")):
         raise HTTPException(status_code=403, detail="Invalid admin token.")
 
     return (

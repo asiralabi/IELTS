@@ -71,6 +71,28 @@ def test_listing_rejects_a_wrong_token(client, monkeypatch):
     assert resp.status_code == 403
 
 
+@pytest.mark.parametrize(
+    "guess",
+    ["café", "tok🔑", "ünicode-guess"],
+    ids=["accented", "emoji", "umlaut"],
+)
+def test_a_non_ascii_guess_is_refused_not_a_crash(client, monkeypatch, guess):
+    """A wrong token must look wrong, not knock the server over.
+
+    🔬 Live 2026-09-06: `X-Admin-Token: café` answered 500 "Internal Server
+    Error" from production. compare_digest on `str` raises TypeError the moment
+    either side holds a non-ASCII character, and a header arrives decoded as
+    latin-1, so any accented guess reached that comparison as non-ASCII.
+
+    Sent as BYTES because that is what a client actually puts on the wire —
+    httpx refuses to encode a non-ASCII `str` header at all, so passing one
+    would test the test client rather than the route.
+    """
+    monkeypatch.setattr(settings, "feedback_admin_token", "the-real-token")
+    resp = client.get("/feedback", headers={"X-Admin-Token": guess.encode("utf-8")})
+    assert resp.status_code == 403, resp.text
+
+
 def test_listing_returns_newest_first_with_the_token(client, monkeypatch):
     monkeypatch.setattr(settings, "feedback_admin_token", "the-real-token")
     client.post("/feedback", json={"email": "a@gmail.com", "message": "first note"})
