@@ -76,4 +76,8 @@ class FeedbackOut(BaseModel):
     message: str
     rating: int | None
     page: str | None
+    # Exposed on purpose: it is the field that turns "the timer sits on top of
+    # the essay box" into a reproducible bug. Stored but unexposed, the column
+    # was dead weight -- nobody reading the inbox could see it.
+    user_agent: str | None
     created_at: datetime

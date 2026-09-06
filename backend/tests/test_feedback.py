@@ -18,6 +18,9 @@ def test_a_stranger_can_leave_feedback(client):
     assert body["message"] == MESSAGE
     assert body["rating"] == 4
     assert body["user_id"] is None
+    # Exposed, not merely stored: the inbox reader shows which browser a bug
+    # came from, and it cannot show a field the API keeps to itself.
+    assert "user_agent" in body
 
 
 def test_a_signed_in_sender_is_attributed_to_their_account(client, auth_headers):
