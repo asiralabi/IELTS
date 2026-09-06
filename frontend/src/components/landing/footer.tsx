@@ -45,10 +45,10 @@ export function Footer() {
             <span className="flex size-7 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-secondary">
               <Sparkles className="size-4 text-white" aria-hidden />
             </span>
-            <span className="font-display font-semibold text-foreground">AI IELTS</span>
+            <span className="font-display font-semibold text-foreground">Oratio</span>
           </div>
           <p>Built with an AI instructor, examiner &amp; mentor at its core.</p>
-          <p>© {new Date().getFullYear()} AI IELTS</p>
+          <p>© {new Date().getFullYear()} Oratio</p>
         </div>
       </div>
     </footer>

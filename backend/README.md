@@ -1,4 +1,4 @@
-# AI IELTS Instructor & Examiner — Backend
+# Oratio — AI IELTS Instructor & Examiner — Backend
 
 A FastAPI backend that acts as a personal IELTS instructor and examiner. It combines RAG (official band descriptors, exam-format notes and strategy guides in an embedded vector store) with a set of specialised LLM agents: an instructor chat coach, exam-authentic question generators, strict Writing/Speaking examiners, Reading/Listening trainers with clerical answer checking, a weakness analyst, a study-plan coach, and a full mock-exam orchestrator.
 

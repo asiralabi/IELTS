@@ -48,7 +48,7 @@ export function Navbar() {
             <Sparkles className="size-5 text-white" aria-hidden />
           </span>
           <span className="font-display text-lg font-bold tracking-tight">
-            AI&nbsp;IELTS
+            Oratio
           </span>
         </Link>
 

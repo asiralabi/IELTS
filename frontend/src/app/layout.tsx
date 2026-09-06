@@ -21,8 +21,8 @@ const bricolage = Bricolage_Grotesque({
 
 export const metadata: Metadata = {
   title: {
-    default: "AI IELTS — Your Personal AI IELTS Instructor",
-    template: "%s · AI IELTS",
+    default: "Oratio — Your Personal AI IELTS Instructor",
+    template: "%s · Oratio",
   },
   description:
     "Practice. Learn. Improve. Achieve your dream IELTS band with an AI instructor that teaches, evaluates, explains mistakes, and creates unlimited IELTS-style exams.",

@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-# AI IELTS Instructor & Examiner — backend (FastAPI).
+# Oratio — AI IELTS Instructor & Examiner — backend (FastAPI).
 #
 # The image carries CODE ONLY. Everything the app reads or writes at runtime —
 # the SQLite DB, the Qdrant store, the extracted figure assets, the TTS cache —

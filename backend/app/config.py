@@ -8,7 +8,7 @@ _DEFAULT_JWT_SECRET = "change-me-in-production"
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    app_name: str = "AI IELTS Instructor & Examiner"
+    app_name: str = "Oratio — AI IELTS Instructor & Examiner"
     debug: bool = False
 
     database_url: str = "sqlite:///./data/ielts.db"

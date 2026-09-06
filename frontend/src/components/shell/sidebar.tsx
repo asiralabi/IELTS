@@ -57,7 +57,7 @@ export function Sidebar() {
           transition={{ duration: 0.15 }}
           className="whitespace-nowrap font-display text-lg font-bold"
         >
-          AI IELTS
+          Oratio
         </motion.span>
       </Link>
 
@@ -190,7 +190,7 @@ export function MobileDrawer() {
                   <span className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-secondary shadow-glow">
                     <Sparkles className="size-5 text-white" aria-hidden />
                   </span>
-                  <span className="font-display text-lg font-bold">AI IELTS</span>
+                  <span className="font-display text-lg font-bold">Oratio</span>
                 </div>
                 <button
                   type="button"

@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-# AI IELTS Instructor & Examiner — frontend (Next.js 16, standalone output).
+# Oratio — AI IELTS Instructor & Examiner — frontend (Next.js 16, standalone output).
 
 FROM node:22-alpine AS deps
 WORKDIR /app

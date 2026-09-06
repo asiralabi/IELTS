@@ -13,7 +13,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         <span className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-secondary shadow-glow">
           <Sparkles className="size-5 text-white" aria-hidden />
         </span>
-        <span className="font-display text-xl font-bold tracking-tight">AI IELTS</span>
+        <span className="font-display text-xl font-bold tracking-tight">Oratio</span>
       </Link>
 
       {children}

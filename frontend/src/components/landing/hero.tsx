@@ -45,11 +45,11 @@ export function Hero() {
             variants={fadeUp}
             className="font-display text-4xl font-bold leading-[1.08] tracking-tight sm:text-6xl"
           >
-            Your Personal{" "}
+            Meet{" "}
             <span className="text-gradient animate-gradient-x bg-[length:200%_auto]">
-              AI IELTS
-            </span>{" "}
-            Instructor
+              Oratio
+            </span>
+            , your AI IELTS instructor
           </motion.h1>
 
           <motion.p
