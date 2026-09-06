@@ -20,6 +20,7 @@ import uuid
 from pathlib import Path
 
 import httpx
+from playwright.sync_api import TimeoutError as PlaywrightTimeout
 from playwright.sync_api import sync_playwright
 
 OUT = Path("tools/browser_shots")
@@ -73,6 +74,21 @@ def make_account() -> dict:
     }
 
 
+def await_thank_you(page, label: str, failures: list[str]) -> None:
+    """Wait for the acknowledgement, not for a fixed number of seconds.
+
+    A cold serverless function takes seconds to answer its first request, and a
+    sleep short enough to keep the check quick is short enough to fail against
+    a deployment that has been idle. Waiting on the outcome is both faster when
+    warm and honest when cold.
+    """
+    try:
+        page.get_by_text("Got it", exact=False).wait_for(state="visible", timeout=90_000)
+    except PlaywrightTimeout:
+        body = " | ".join(page.locator("#feedback").inner_text().split("\n"))
+        failures.append(f"no thank-you after {label} send; section said: {body[:220]!r}")
+
+
 def fill_and_send(page, *, email: str | None, message: str, stars: int | None) -> None:
     page.get_by_role("link", name="Feedback").first.click()
     page.wait_for_timeout(900)
@@ -113,10 +129,7 @@ def main() -> int:
             failures.append("anonymous email field is read-only; it must be typable")
 
         page.get_by_role("button", name="Send Feedback").click()
-        page.wait_for_timeout(2500)
-        body = page.locator("body").inner_text()
-        if "Got it" not in body:
-            failures.append(f"no thank-you after anonymous send; body head: {body[:200]!r}")
+        await_thank_you(page, "anonymous", failures)
         shot(page, "21_feedback_anonymous_sent")
 
         # --- pass 2: a signed-in tester ------------------------------------
@@ -142,9 +155,7 @@ def main() -> int:
         shot(page, "22_feedback_signed_in_prefilled")
 
         page.get_by_role("button", name="Send Feedback").click()
-        page.wait_for_timeout(2500)
-        if "Got it" not in page.locator("body").inner_text():
-            failures.append("no thank-you after signed-in send")
+        await_thank_you(page, "signed-in", failures)
         shot(page, "23_feedback_signed_in_sent")
 
         if errors:
