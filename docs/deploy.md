@@ -149,6 +149,20 @@ seed instead of the Cambridge corpus.
   and the setting is unused. It matters only if the frontend moves to a
   different origin (Vercel, say): name that origin instead of leaving `*`, which
   lets any site on the internet call the API with a logged-in student's token.
+
+  🚨 **A new frontend domain is not just a DNS change.** The Vercel deployment
+  pins this to the exact origins it serves, so adding
+  `oratio-ielts.vercel.app` without adding it here too gives a site that loads
+  and then fails every API call — the preflight answers 400 and the student
+  sees a working page that cannot log in. Add the origin, redeploy the API,
+  and check a preflight before sharing the link:
+
+  ```bash
+  curl -sD - -o /dev/null -X OPTIONS https://YOUR-API/feedback     -H "Origin: https://YOUR-NEW-DOMAIN"     -H "Access-Control-Request-Method: POST" | grep -i access-control-allow-origin
+  ```
+
+  Keep the OLD origin in the list too; a link someone already has should not
+  stop working the day you rename.
 * **HTTPS** — a tunnel supplies it. On your own domain, remove `auto_https off`
   from the `Caddyfile` and replace `:8080` with the hostname; Caddy then gets
   and renews a certificate by itself.
