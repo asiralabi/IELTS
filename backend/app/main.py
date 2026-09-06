@@ -27,6 +27,7 @@ ROUTER_MODULES = [
     "app.routers.progress",
     "app.routers.knowledge",
     "app.routers.cambridge",
+    "app.routers.feedback",
 ]
 
 

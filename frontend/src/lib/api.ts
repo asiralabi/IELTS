@@ -8,6 +8,7 @@ import type {
   ChatReply,
   ChatSession,
   CheckResult,
+  FeedbackEntry,
   FullListeningTest,
   FullReadingTest,
   FullSpeakingTest,
@@ -351,6 +352,16 @@ export const api = {
     request<CambridgeWritingTask>(
       `/cambridge/${encodeURIComponent(book_id)}/${test_number}/writing?task=${task}`
     ),
+
+  // --- feedback ---
+  // No `auth: false`: the route is public, but a signed-in tester should be
+  // recorded under their account rather than under whatever the form holds.
+  submitFeedback: (payload: {
+    email: string;
+    message: string;
+    rating?: number | null;
+    page?: string | null;
+  }) => request<FeedbackEntry>("/feedback", { method: "POST", body: payload }),
 
   // --- knowledge ---
   knowledgeStatus: () => request<{ documents: number }>("/knowledge/status"),

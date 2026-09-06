@@ -56,3 +56,24 @@ class ChatMessageOut(BaseModel):
     role: str
     content: str
     created_at: datetime
+
+
+class FeedbackCreate(BaseModel):
+    email: EmailStr
+    message: str = Field(min_length=1, max_length=4000)
+    # Optional on purpose: a tester with a bug to report should not have to
+    # rate the product first, and a forced rating is a rating nobody means.
+    rating: int | None = Field(default=None, ge=1, le=5)
+    page: str | None = Field(default=None, max_length=200)
+
+
+class FeedbackOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    user_id: int | None
+    email: EmailStr
+    message: str
+    rating: int | None
+    page: str | None
+    created_at: datetime

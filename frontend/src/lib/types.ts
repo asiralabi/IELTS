@@ -520,3 +520,13 @@ export type WeaknessProfile = {
 } & {
   details: { [K in WeaknessCriterion]: string };
 };
+
+export interface FeedbackEntry {
+  id: number;
+  user_id: number | null;
+  email: string;
+  message: string;
+  rating: number | null;
+  page: string | null;
+  created_at: string;
+}

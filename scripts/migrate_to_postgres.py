@@ -31,6 +31,9 @@ SQLITE = ROOT / "backend" / "data" / "ielts.db"
 ENV_FILE = ROOT / ".env.deploy"
 
 # Parents before children: every FK here points at a table listed above it.
+# `feedback` is deliberately absent: this script seeds a fresh deployment FROM
+# this laptop, and pilot feedback is written on the deployment, not here. Adding
+# it would push local test notes into the real inbox and nothing the other way.
 ORDER = [
     "users",
     "cambridge_tests",

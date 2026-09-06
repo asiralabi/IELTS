@@ -80,3 +80,37 @@ def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
     return user
+
+
+# Same bearer scheme, but `auto_error=False` so a missing header is None
+# instead of a 401 raised before the route ever runs.
+oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="/auth/login", auto_error=False)
+
+
+def get_optional_user(
+    token: str | None = Depends(oauth2_scheme_optional),
+    db: Session = Depends(get_db),
+) -> User | None:
+    """The signed-in user, or None — for routes a stranger may also reach.
+
+    `get_current_user` answers 401 to anyone without a token, which is right
+    for a student's own work and wrong for the public feedback box: a visitor
+    who never registered still has something worth hearing.
+
+    A token that is present but bad is treated as anonymous rather than as an
+    error. The alternative punishes the wrong person: a tester whose session
+    expired in a tab left open overnight would have their message rejected
+    with "Token expired" and no way to understand it. Nothing here is
+    protected by that token — the identity only decorates a note the caller is
+    already allowed to leave.
+    """
+    if not token:
+        return None
+    try:
+        payload = decode_token(token)
+    except HTTPException:
+        return None
+    if payload.get("type") != "access":
+        return None
+    user = db.get(User, int(payload["sub"]))
+    return user if user is not None and user.is_active else None

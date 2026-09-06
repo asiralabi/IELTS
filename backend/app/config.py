@@ -89,6 +89,11 @@ class Settings(BaseSettings):
     # internet make authenticated calls on a logged-in student's behalf.
     cors_origins: str = "*"
 
+    # Shared secret for reading the pilot feedback inbox (GET /feedback with
+    # an X-Admin-Token header). There is no admin role in this app; unset
+    # means that route stays closed rather than open to anyone.
+    feedback_admin_token: str = ""
+
     data_dir: str = "./data"
     upload_dir: str = "./data/uploads"
     assets_dir: str = "./data/assets"

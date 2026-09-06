@@ -188,3 +188,32 @@ class WeaknessProfile(Base):
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Feedback(Base):
+    """A pilot tester's note, kept with an address we can answer it at.
+
+    ``user_id`` is nullable and ``email`` is not. The box sits on the public
+    landing page, where most testers have not signed in yet, and a report with
+    no way to reply is a report we cannot follow up on. When the sender IS
+    signed in both are stored, and the address is taken off the account rather
+    than the form -- a typed address is a claim, an account's is a fact.
+    """
+
+    __tablename__ = "feedback"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id"), nullable=True, index=True
+    )
+    email: Mapped[str] = mapped_column(String(255), index=True)
+    message: Mapped[str] = mapped_column(Text)
+    rating: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Where they were standing when they wrote it, and in what browser. A
+    # pilot report is mostly useless without them: "the audio never played"
+    # is a different bug on Safari than on Chrome.
+    page: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(400), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, index=True
+    )

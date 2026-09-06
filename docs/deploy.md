@@ -154,6 +154,17 @@ seed instead of the Cambridge corpus.
   and renews a certificate by itself.
 * **Backups** — `data/ielts.db` is every account and every band score anyone has
   earned. Copy it somewhere.
+* **`FEEDBACK_ADMIN_TOKEN`** — needed only to READ the pilot feedback box back.
+  Leaving the box itself unconfigured is fine: `POST /feedback` is public so a
+  tester who never registered can still report a bug. Set the token and the
+  inbox opens to whoever holds it:
+
+  ```bash
+  curl -s https://YOUR-HOST/api/feedback -H "X-Admin-Token: $FEEDBACK_ADMIN_TOKEN"
+  ```
+
+  Left unset, that route answers 403 to everyone — which is the safe default,
+  since the rows carry every tester's email address.
 
 ## Troubleshooting
 
