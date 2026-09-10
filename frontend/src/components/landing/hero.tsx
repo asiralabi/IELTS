@@ -1,23 +1,83 @@
 "use client";
 
+import * as React from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
-import { ArrowRight, GraduationCap } from "lucide-react";
+import { ArrowRight, GraduationCap, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { fadeUp, staggerContainer } from "@/lib/motion";
 
+/** The still stand-in: same footprint, no WebGL, nothing animating. */
+function HeroOrb() {
+  return (
+    <div className="flex h-full items-center justify-center">
+      <div className="relative flex items-center justify-center">
+        <div
+          aria-hidden
+          className="absolute size-64 rounded-full bg-gradient-to-br from-primary/30 via-secondary/25 to-accent/20 blur-3xl sm:size-80"
+        />
+        <span className="glass relative flex size-32 items-center justify-center rounded-[38px] shadow-soft sm:size-40">
+          <Sparkles className="size-14 text-primary sm:size-16" aria-hidden />
+        </span>
+      </div>
+    </div>
+  );
+}
+
 const RobotHero = dynamic(() => import("@/components/three/robot"), {
   ssr: false,
-  loading: () => (
-    <div className="flex h-full items-center justify-center">
-      <div className="size-40 animate-pulse-glow rounded-full bg-primary/10" />
-    </div>
-  ),
+  loading: () => <HeroOrb />,
 });
 
+/**
+ * Whether this visit gets the 3D robot at all.
+ *
+ * three + drei are ~875KB of JavaScript for one decorative mascot, and a
+ * dynamic import only downloads when something renders it -- so a phone that
+ * never mounts the Canvas never pays for the bundle. Two ways to opt out:
+ *
+ *   - `prefers-reduced-motion`, where a mascot that floats and tracks the
+ *     pointer is exactly what the setting is asking us not to do;
+ *   - narrow screens, which are also where the download costs most and where
+ *     the hero is a single column with the robot below the copy anyway.
+ *
+ * Starts false so the first paint never waits on the decision, and the import
+ * begins after hydration rather than competing with it.
+ */
+function useRobotAllowed() {
+  const [allowed, setAllowed] = React.useState(false);
+
+  React.useEffect(() => {
+    const queries = [
+      window.matchMedia("(prefers-reduced-motion: no-preference)"),
+      window.matchMedia("(min-width: 1024px)"),
+    ];
+    const update = () => setAllowed(queries.every((q) => q.matches));
+
+    // Wait for a quiet moment before the first mount. Mounting immediately
+    // starts an 871KB download and a WebGL context while the page is still
+    // hydrating and fetching fonts, which is the worst possible time to ask
+    // for either. Idle costs the mascot a beat and costs the reader nothing.
+    const idle = window.requestIdleCallback
+      ? window.requestIdleCallback(update, { timeout: 2000 })
+      : window.setTimeout(update, 700);
+
+    queries.forEach((q) => q.addEventListener("change", update));
+    return () => {
+      if (window.cancelIdleCallback) window.cancelIdleCallback(idle as number);
+      else window.clearTimeout(idle as number);
+      queries.forEach((q) => q.removeEventListener("change", update));
+    };
+  }, []);
+
+  return allowed;
+}
+
 export function Hero() {
+  const robotAllowed = useRobotAllowed();
+
   return (
     <section id="home" className="relative overflow-hidden pt-36 pb-20 sm:pt-44">
       {/* Ambient blurred orbs */}
@@ -103,7 +163,7 @@ export function Hero() {
           transition={{ duration: 0.8, delay: 0.3, ease: [0.22, 1, 0.36, 1] }}
           className="relative h-[380px] sm:h-[480px]"
         >
-          <RobotHero className="h-full w-full" />
+          {robotAllowed ? <RobotHero className="h-full w-full" /> : <HeroOrb />}
         </motion.div>
       </div>
     </section>

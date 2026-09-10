@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import dynamic from "next/dynamic";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ClipboardList,
@@ -12,13 +13,6 @@ import {
   CloudUpload,
   Flag,
 } from "lucide-react";
-import {
-  Radar,
-  RadarChart,
-  PolarGrid,
-  PolarAngleAxis,
-  ResponsiveContainer,
-} from "recharts";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import type { MockExam, MockExamResult, PracticeQuestion, Visual } from "@/lib/types";
@@ -27,6 +21,12 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { ExaminerLoading } from "@/components/practice/examiner-loading";
+// recharts is ~278KB for the one radar on the results screen, so it is fetched
+// when a student actually reaches that screen rather than shipped with the page.
+const BandRadar = dynamic(() => import("@/components/practice/band-radar"), {
+  ssr: false,
+  loading: () => <div className="size-full animate-pulse rounded-2xl bg-muted/40" />,
+});
 import { NeuralAudioPlayer } from "@/components/practice/neural-audio-player";
 import { QuestionList } from "@/components/practice/question-list";
 import { Visuals } from "@/components/practice/visual";
@@ -573,22 +573,7 @@ export default function MockTestPage() {
             <div className="glass-strong flex flex-col items-center gap-8 rounded-[28px] p-8 shadow-soft md:flex-row md:justify-around">
               <BandRing band={result.overall_band} size={170} label="Overall Band" />
               <div className="h-56 w-full max-w-sm">
-                <ResponsiveContainer width="100%" height="100%">
-                  <RadarChart data={radarData} outerRadius="75%">
-                    <PolarGrid stroke="currentColor" strokeOpacity={0.15} />
-                    <PolarAngleAxis
-                      dataKey="skill"
-                      tick={{ fill: "currentColor", fontSize: 12, opacity: 0.7 }}
-                    />
-                    <Radar
-                      dataKey="band"
-                      stroke="#7C4DFF"
-                      fill="#5B5CEB"
-                      fillOpacity={0.35}
-                      isAnimationActive
-                    />
-                  </RadarChart>
-                </ResponsiveContainer>
+                <BandRadar data={radarData} />
               </div>
             </div>
 
