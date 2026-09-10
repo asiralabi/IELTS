@@ -2,7 +2,6 @@ import { Navbar } from "@/components/landing/navbar";
 import { Hero } from "@/components/landing/hero";
 import { Features } from "@/components/landing/features";
 import { Modules } from "@/components/landing/modules";
-import { Pricing } from "@/components/landing/pricing";
 import { Feedback } from "@/components/landing/feedback";
 import { Footer } from "@/components/landing/footer";
 
@@ -13,7 +12,6 @@ export default function LandingPage() {
       <Hero />
       <Features />
       <Modules />
-      <Pricing />
       <Feedback />
       <Footer />
     </main>

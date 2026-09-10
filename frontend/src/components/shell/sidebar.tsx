@@ -17,6 +17,8 @@ import {
   Library,
   Settings,
   Sparkles,
+  Home,
+  MessageSquareHeart,
   Menu,
   X,
 } from "lucide-react";
@@ -34,6 +36,17 @@ const items = [
   { icon: CalendarCheck, label: "Study Plan", href: "/study-plan" },
   { icon: Library, label: "Resources", href: "/resources" },
   { icon: Settings, label: "Settings", href: "/settings" },
+];
+
+// The landing page and its feedback box live OUTSIDE the app shell, and until
+// now nothing in here pointed at them: the logo goes to /dashboard, so a
+// signed-in tester had no route back to `/` and could not reach the feedback
+// form a second time. These two are plain hrefs, not app routes -- they never
+// take an active state, which is also why they are not in `items` (a "/" entry
+// there would light up on every page, since the match is startsWith).
+const outboundItems = [
+  { icon: Home, label: "Home", href: "/" },
+  { icon: MessageSquareHeart, label: "Feedback", href: "/#feedback" },
 ];
 
 export function Sidebar() {
@@ -68,7 +81,7 @@ export function Sidebar() {
             <Link
               key={item.href}
               href={item.href}
-              aria-label={item.label}
+                aria-label={item.label}
               aria-current={active ? "page" : undefined}
               className={cn(
                 "group relative flex items-center gap-3 rounded-2xl px-3.5 py-2.5 text-sm font-medium transition-all",
@@ -99,6 +112,29 @@ export function Sidebar() {
           );
         })}
       </nav>
+
+      <div className="mt-2 border-t border-border/60 pt-2">
+        {outboundItems.map((item) => (
+          <Link
+            key={item.href}
+            href={item.href}
+            aria-label={item.label}
+            className="group relative flex items-center gap-3 rounded-2xl px-3.5 py-2.5 text-sm font-medium text-muted-foreground transition-all hover:bg-muted hover:text-foreground"
+          >
+            <item.icon
+              className="relative size-5 shrink-0 transition-transform duration-200 group-hover:scale-110"
+              aria-hidden
+            />
+            <motion.span
+              animate={{ opacity: expanded ? 1 : 0 }}
+              transition={{ duration: 0.15 }}
+              className="relative whitespace-nowrap"
+            >
+              {item.label}
+            </motion.span>
+          </Link>
+        ))}
+      </div>
     </motion.aside>
   );
 }
@@ -211,7 +247,7 @@ export function MobileDrawer() {
                     <Link
                       key={item.href}
                       href={item.href}
-                      onClick={() => setOpen(false)}
+                                onClick={() => setOpen(false)}
                       aria-current={active ? "page" : undefined}
                       className={cn(
                         "flex items-center gap-3 rounded-2xl px-3.5 py-2.5 text-sm font-medium transition-all",
@@ -226,6 +262,20 @@ export function MobileDrawer() {
                   );
                 })}
               </nav>
+
+              <div className="mt-2 border-t border-border/60 pt-2">
+                {outboundItems.map((item) => (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                            onClick={() => setOpen(false)}
+                    className="flex items-center gap-3 rounded-2xl px-3.5 py-2.5 text-sm font-medium text-muted-foreground transition-all hover:bg-muted hover:text-foreground"
+                  >
+                    <item.icon className="size-5 shrink-0" aria-hidden />
+                    {item.label}
+                  </Link>
+                ))}
+              </div>
             </motion.aside>
           </>
         )}

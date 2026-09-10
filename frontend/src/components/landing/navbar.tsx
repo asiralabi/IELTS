@@ -5,6 +5,7 @@ import Link from "next/link";
 import { motion, useScroll } from "framer-motion";
 import { Menu, X, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/lib/store";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { cn } from "@/lib/utils";
 
@@ -12,13 +13,28 @@ const links = [
   { label: "Home", href: "#home" },
   { label: "Features", href: "#features" },
   { label: "Mock Test", href: "#modules" },
-  { label: "Pricing", href: "#pricing" },
   { label: "Feedback", href: "#feedback" },
   { label: "About", href: "#about" },
 ];
 
+// Read through useSyncExternalStore, not the zustand hook: the store rehydrates
+// from localStorage in the BROWSER only, so a subscribed read renders one thing
+// during prerender and another after hydration. The third argument is the
+// server snapshot -- nobody is signed in during a prerender.
+const subscribeToAuth = (onChange: () => void) => useAuth.subscribe(onChange);
+const readSignedIn = () => useAuth.getState().accessToken !== null;
+const signedOutOnServer = () => false;
+
 export function Navbar() {
   const { scrollY } = useScroll();
+  // A signed-in tester who came back here for the feedback box was offered
+  // "Login" and "Start Free" -- both wrong, and neither a way back into the
+  // app. Send them to the dashboard instead.
+  const signedIn = React.useSyncExternalStore(
+    subscribeToAuth,
+    readSignedIn,
+    signedOutOnServer
+  );
   const [scrolled, setScrolled] = React.useState(false);
   const [open, setOpen] = React.useState(false);
 
@@ -66,14 +82,22 @@ export function Navbar() {
 
         <div className="hidden items-center gap-2 md:flex">
           <ThemeToggle />
-          <Link href="/login">
-            <Button variant="ghost" size="sm">
-              Login
-            </Button>
-          </Link>
-          <Link href="/register">
-            <Button size="sm">Start Free</Button>
-          </Link>
+          {signedIn ? (
+            <Link href="/dashboard">
+              <Button size="sm">Go to Dashboard</Button>
+            </Link>
+          ) : (
+            <>
+              <Link href="/login">
+                <Button variant="ghost" size="sm">
+                  Login
+                </Button>
+              </Link>
+              <Link href="/register">
+                <Button size="sm">Start Free</Button>
+              </Link>
+            </>
+          )}
         </div>
 
         <button
@@ -103,14 +127,22 @@ export function Navbar() {
           ))}
           <div className="mt-2 flex items-center gap-2">
             <ThemeToggle />
-            <Link href="/login" className="flex-1">
-              <Button variant="secondary" className="w-full">
-                Login
-              </Button>
-            </Link>
-            <Link href="/register" className="flex-1">
-              <Button className="w-full">Start Free</Button>
-            </Link>
+            {signedIn ? (
+              <Link href="/dashboard" className="flex-1">
+                <Button className="w-full">Go to Dashboard</Button>
+              </Link>
+            ) : (
+              <>
+                <Link href="/login" className="flex-1">
+                  <Button variant="secondary" className="w-full">
+                    Login
+                  </Button>
+                </Link>
+                <Link href="/register" className="flex-1">
+                  <Button className="w-full">Start Free</Button>
+                </Link>
+              </>
+            )}
           </div>
         </motion.div>
       )}
