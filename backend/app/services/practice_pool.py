@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from time import monotonic as _monotonic
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable
@@ -271,6 +272,74 @@ class PoolWarmer:
                 except asyncio.TimeoutError:
                     pass
         logger.info("practice pool warmer stopped")
+
+    async def top_up_once(
+        self,
+        *,
+        budget_s: float = 3000.0,
+        max_sets: int | None = None,
+        on_event: Callable[[str], None] | None = None,
+    ) -> dict[str, Any]:
+        """Fill every bucket that is below target ONCE, then return a report.
+
+        `_run` loops forever and sleeps when it has nothing to do, which is the
+        right shape for a process that stays alive. A scheduled job is the
+        opposite: it has to finish, say what it did and exit. So this walks the
+        catalog a single time under a wall-clock budget.
+
+        The budget is checked BEFORE starting a set, never during -- a producer
+        that is halfway through a full paper is holding an expensive hosted call
+        and abandoning it wastes the call without filling the bucket.
+        """
+        started = _monotonic()
+        report: dict[str, Any] = {
+            "produced": 0,
+            "failed": 0,
+            "skipped_budget": 0,
+            "buckets": [],
+        }
+
+        def say(msg: str) -> None:
+            logger.info(msg)
+            if on_event is not None:
+                on_event(msg)
+
+        for bucket in self._buckets:
+            label = f"{bucket.section}/{bucket.question_type or '*'}"
+            with SessionLocal() as db:
+                have = count_available(db, bucket.section, bucket.question_type)
+            missing = max(0, bucket.target_size - have)
+            entry = {"bucket": label, "before": have, "target": bucket.target_size,
+                     "produced": 0, "failed": 0}
+            report["buckets"].append(entry)
+            if missing == 0:
+                say(f"{label}: {have}/{bucket.target_size}, full")
+                continue
+
+            for _ in range(missing):
+                if max_sets is not None and report["produced"] >= max_sets:
+                    report["skipped_budget"] += 1
+                    continue
+                left = budget_s - (_monotonic() - started)
+                if left <= 0:
+                    report["skipped_budget"] += 1
+                    continue
+                say(f"{label}: producing (need {bucket.target_size - have - entry['produced']}, {left:.0f}s of budget left)")
+                ok = await self._produce(bucket)
+                if ok:
+                    entry["produced"] += 1
+                    report["produced"] += 1
+                else:
+                    entry["failed"] += 1
+                    report["failed"] += 1
+                    # One broken producer must not eat the whole budget.
+                    break
+
+            with SessionLocal() as db:
+                entry["after"] = count_available(db, bucket.section, bucket.question_type)
+
+        report["elapsed_s"] = round(_monotonic() - started, 1)
+        return report
 
     def _needs_topup(self, bucket: Bucket) -> bool:
         with SessionLocal() as db:

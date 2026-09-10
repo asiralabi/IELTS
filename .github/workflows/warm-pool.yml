@@ -1,0 +1,81 @@
+# Keep the practice pool warm.
+#
+# The pool's background warmer cannot run where this app is deployed: a Vercel
+# function is frozen the moment it answers a request and killed when it goes
+# idle, so a loop started at app startup never survives to finish a set. That
+# is why PRACTICE_POOL_ENABLED is false in production. This workflow is the
+# scheduler that replaces it -- it checks the catalog, generates what is short,
+# and exits.
+#
+# Why here and not a Vercel cron: Hobby crons fire once a DAY, and a function
+# is capped at 300s, which a full mock paper (seven heavy generations) cannot
+# finish inside. A runner has neither limit. This repo is PUBLIC, so Actions
+# minutes are unlimited and free -- this costs nothing to run forever.
+#
+# Cost control is in the tool, not the schedule: when every bucket is at
+# target the run generates nothing and exits in seconds, so a frequent cron is
+# cheap. It only does real work after students have actually consumed sets.
+
+name: warm practice pool
+
+on:
+  schedule:
+    # Every 30 minutes. Consumption has been running ~25 sets/day; a run that
+    # finds the pool full is a no-op, so this is mostly free polling.
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+    inputs:
+      report_only:
+        description: "Only report the pool, generate nothing"
+        type: boolean
+        default: false
+
+# Only `schedule` and `workflow_dispatch` -- deliberately NOT pull_request, so
+# a fork of this public repo can never run with these secrets.
+permissions:
+  contents: read
+
+concurrency:
+  # Two overlapping runs would generate the same bucket twice and waste calls
+  # against the free model quota. Never cancel a run in flight: it is holding
+  # hosted calls that are already paid for in time.
+  group: warm-practice-pool
+  cancel-in-progress: false
+
+jobs:
+  warm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install
+        working-directory: backend
+        run: pip install -r requirements.txt
+
+      - name: Top up the pool
+        working-directory: backend
+        env:
+          DATABASE_URL: ${{ secrets.POOL_DATABASE_URL }}
+          QDRANT_URL: ${{ secrets.POOL_QDRANT_URL }}
+          QDRANT_API_KEY: ${{ secrets.POOL_QDRANT_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.POOL_OPENAI_API_KEY }}
+          LLM_PROVIDER: openai
+          # Not secrets, so they are readable here rather than hidden -- but
+          # they ARE duplicated from the API's Vercel env. gpt-oss-120b was
+          # retired mid-project and returned 410 Gone on every call; if that
+          # happens again, this file is the SECOND place to update.
+          OPENAI_BASE_URL: https://integrate.api.nvidia.com/v1
+          OPENAI_MODEL: nvidia/nemotron-3-super-120b-a12b
+          # Under the 55-minute job timeout with room for the install and for
+          # a set that is already in flight when the budget runs out.
+          POOL_BUDGET_SECONDS: "2400"
+        run: |
+          python tools/warm_pool_once.py \
+            ${{ inputs.report_only && '--report-only' || '' }}
