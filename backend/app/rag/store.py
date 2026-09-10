@@ -1,8 +1,11 @@
+import logging
 import uuid
 from functools import lru_cache
 from typing import Any
 
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class VectorStore:
@@ -11,6 +14,7 @@ class VectorStore:
         self._embedder: Any = None
         self._dim: int | None = None
         self._cached_embed: Any = None
+        self._source_index_ready = False
 
     @property
     def client(self) -> Any:
@@ -83,6 +87,39 @@ class VectorStore:
                 collection_name=settings.qdrant_collection,
                 vectors_config=VectorParams(size=self._get_dim(), distance=Distance.COSINE),
             )
+        self._ensure_source_index()
+
+    def _ensure_source_index(self) -> None:
+        """Give `source` a payload index, because a filtered search needs one.
+
+        🚨 An embedded Qdrant filters on any payload field whether it is
+        indexed or not, so `search(source=...)` worked in every test and every
+        local run. A managed cluster refuses:
+
+            400 Index required but not found for "source"
+
+        Which meant that in PRODUCTION every source-filtered retrieval failed,
+        and reading full tests could not be generated at all -- the mock exam's
+        reading paper had been falling back to cold generation since the day it
+        moved to Qdrant Cloud. Found by running the pool warmer against prod;
+        no local test could have caught it.
+
+        Creating an index that already exists is a no-op, and a failure here
+        must never take down search -- an unfiltered query still works.
+        """
+        if self._source_index_ready:
+            return
+        self._source_index_ready = True
+        try:
+            from qdrant_client.models import PayloadSchemaType
+
+            self.client.create_payload_index(
+                collection_name=settings.qdrant_collection,
+                field_name="source",
+                field_schema=PayloadSchemaType.KEYWORD,
+            )
+        except Exception as exc:  # noqa: BLE001 — search still works unfiltered
+            logger.debug("source payload index not created: %s", exc)
 
     def index_chunks(self, chunks: list[dict]) -> int:
         from qdrant_client.models import PointStruct
