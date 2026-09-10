@@ -66,8 +66,26 @@ async def main() -> int:
     if not args.with_audio:
         os.environ.setdefault("TTS_ENABLED", "false")
 
+    from app.config import settings
     from app.database import SessionLocal
     from app.services.practice_pool import BUCKETS, PoolWarmer, count_available
+
+    # 🚨 Refuse to generate into a throwaway database.
+    #
+    # `database_url` defaults to a local SQLite file, so a scheduled run whose
+    # DATABASE_URL secret is missing or misspelled does not fail -- it creates
+    # an empty SQLite on the runner, reports every bucket as empty, spends the
+    # whole budget filling it, and throws it away. Every thirty minutes,
+    # forever, against a free model quota, with a green tick on every run. A
+    # scheduler must not be able to fail this quietly.
+    if settings.database_url.startswith("sqlite") and os.environ.get("CI"):
+        print(
+            "\nFAIL: DATABASE_URL is not set, so this would generate into a\n"
+            "      throwaway SQLite on the runner and discard the result.\n"
+            "      Set the POOL_DATABASE_URL secret on the repository.",
+            file=sys.stderr,
+        )
+        return 2
 
     def snapshot() -> list[tuple[str, int, int]]:
         rows = []
