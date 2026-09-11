@@ -43,6 +43,62 @@ def _bar(n: int, target: int) -> str:
     return "[" + "#" * full + "." * max(0, target - full) + "]"
 
 
+def _missing_secret(settings) -> str | None:
+    """The reason this run must not start, phrased as the thing to go fix.
+
+    Returns None when the environment is good enough to generate into. Every
+    message names the REPOSITORY SECRET rather than the environment variable,
+    because the variable is what the workflow calls it and the secret is what
+    a human has to go and set.
+    """
+    from sqlalchemy.engine import make_url
+
+    in_ci = bool(os.environ.get("CI"))
+
+    url = (settings.database_url or "").strip()
+    if not url:
+        return """DATABASE_URL is empty, so there is no database to fill.
+      The POOL_DATABASE_URL secret is unset, misnamed, or saved with an
+      empty value. An unset secret interpolates to "" -- it does not
+      leave the variable alone, which is why this is not a DSN problem.
+      Prove the value first: python tools/pool_secrets_check.py"""
+    if url.startswith("sqlite") and in_ci:
+        return """DATABASE_URL is SQLite, so this would generate into a throwaway
+      file on the runner and discard every set it paid for.
+      Set the POOL_DATABASE_URL secret on the repository."""
+    try:
+        parsed = make_url(url)
+    except Exception as exc:  # noqa: BLE001 -- any parse failure is the same fix
+        return f"""DATABASE_URL is not a connection string SQLAlchemy can read
+      ({type(exc).__name__}). Check POOL_DATABASE_URL for a truncated
+      paste or a stray line break."""
+
+    # A truncated paste still PARSES -- chop this URL anywhere after the scheme
+    # and `make_url` is perfectly happy with it. Only opening the connection
+    # tells the difference, and one extra connect is nothing next to a run that
+    # would otherwise die mid-report with a stack trace.
+    if not url.startswith("sqlite"):
+        from sqlalchemy import create_engine
+
+        try:
+            create_engine(url, connect_args={"connect_timeout": 10}).connect().close()
+        except Exception as exc:  # noqa: BLE001 -- the fix is the same either way
+            return f"""DATABASE_URL parses but will not connect to {parsed.host}
+      ({type(exc).__name__}). Check POOL_DATABASE_URL for a truncated
+      paste, a rotated password, or a paused database."""
+
+    if in_ci and not (settings.qdrant_url or "").strip():
+        return """QDRANT_URL is empty, so retrieval would fall back to an EMBEDDED
+      Qdrant on this runner's own disk -- every set would generate
+      ungrounded and look completely normal.
+      Set the POOL_QDRANT_URL secret on the repository."""
+    if in_ci and not (settings.openai_api_key or "").strip():
+        return """OPENAI_API_KEY is empty, so every producer would error after the
+      run had already spent its time getting there.
+      Set the POOL_OPENAI_API_KEY secret on the repository."""
+    return None
+
+
 async def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument(
@@ -74,9 +130,7 @@ async def main() -> int:
     args = ap.parse_args()
 
     from app.config import settings
-    from app.database import SessionLocal
     from app.services import blob_store
-    from app.services.practice_pool import BUCKETS, PoolWarmer, count_available
 
     # See the module docstring: ~100s a set is worth spending only if the
     # result outlives this runner. Turning TTS off is what makes `_warm_audio`
@@ -85,22 +139,36 @@ async def main() -> int:
     audio = blob_store.enabled() if args.audio is None else args.audio
     settings.tts_enabled = audio
 
-    # 🚨 Refuse to generate into a throwaway database.
+    # 🚨 Refuse to start on a secret that is not there.
     #
-    # `database_url` defaults to a local SQLite file, so a scheduled run whose
-    # DATABASE_URL secret is missing or misspelled does not fail -- it creates
-    # an empty SQLite on the runner, reports every bucket as empty, spends the
-    # whole budget filling it, and throws it away. Every thirty minutes,
-    # forever, against a free model quota, with a green tick on every run. A
-    # scheduler must not be able to fail this quietly.
-    if settings.database_url.startswith("sqlite") and os.environ.get("CI"):
-        print(
-            "\nFAIL: DATABASE_URL is not set, so this would generate into a\n"
-            "      throwaway SQLite on the runner and discard the result.\n"
-            "      Set the POOL_DATABASE_URL secret on the repository.",
-            file=sys.stderr,
-        )
+    # A scheduler must not be able to fail quietly, and the three checked here
+    # each fail quietly in their own way: an absent database becomes a
+    # throwaway SQLite on the runner that gets filled and deleted; an absent
+    # QDRANT_URL becomes an EMBEDDED Qdrant on that same disposable disk, so
+    # every set generates ungrounded and looks fine; an absent key just errors
+    # every producer after the budget has already been spent getting there.
+    #
+    # 🔬 And the first version of this guard never once fired. It tested
+    # `database_url.startswith("sqlite")`, reasoning that a missing secret
+    # leaves the default in place. It does not: a workflow that says
+    # `DATABASE_URL: ${{ secrets.POOL_DATABASE_URL }}` with that secret unset
+    # does not leave the variable unset, it sets it to the EMPTY STRING, and
+    # pydantic takes "" over the default. So the run died four frames deep in
+    # SQLAlchemy with `Could not parse SQLAlchemy URL from given URL string`,
+    # which reads exactly like a malformed connection string and is not one --
+    # it cost a round of chasing the DSN format instead of the missing secret.
+    # Measured on runs #1-#7, every one of which failed this way.
+    if problem := _missing_secret(settings):
+        print(f"\nFAIL: {problem}", file=sys.stderr)
         return 2
+
+    # 🚨 Imported AFTER the guard, and that is the whole point. `app.database`
+    # calls `create_engine(settings.database_url)` at MODULE IMPORT time, so
+    # with an empty DATABASE_URL the import itself raises before any check in
+    # this file can speak. The guard used to sit below these lines and could
+    # therefore never run on the failure it was written for.
+    from app.database import SessionLocal
+    from app.services.practice_pool import BUCKETS, PoolWarmer, count_available
 
     def snapshot() -> list[tuple[str, int, int]]:
         rows = []
