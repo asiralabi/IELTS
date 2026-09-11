@@ -95,6 +95,32 @@ jobs:
       # at a different database than the API, which is worth keeping, but
       # nobody should lose an afternoon to a prefix. Prefixed wins when both
       # exist; the unprefixed name is accepted and reported as such.
+      # 🔎 These five exist to make a missing secret legible from OUTSIDE the
+      # log. Reading an Actions log needs admin on the repository; step NAMES
+      # and CONCLUSIONS are public on a public repo. Each runs only when its
+      # secret is absent under both accepted names, so in the run's step list:
+      #
+      #     success  -> that secret is MISSING
+      #     skipped  -> that secret is present
+      #
+      # Nothing is printed but the name, and they sit above the gate below so
+      # the whole set is evaluated before anything fails.
+      - name: "absent: POOL_DATABASE_URL / DATABASE_URL"
+        if: ${{ secrets.POOL_DATABASE_URL == '' && secrets.DATABASE_URL == '' }}
+        run: "true"
+      - name: "absent: POOL_QDRANT_URL / QDRANT_URL"
+        if: ${{ secrets.POOL_QDRANT_URL == '' && secrets.QDRANT_URL == '' }}
+        run: "true"
+      - name: "absent: POOL_QDRANT_API_KEY / QDRANT_API_KEY"
+        if: ${{ secrets.POOL_QDRANT_API_KEY == '' && secrets.QDRANT_API_KEY == '' }}
+        run: "true"
+      - name: "absent: POOL_OPENAI_API_KEY / OPENAI_API_KEY"
+        if: ${{ secrets.POOL_OPENAI_API_KEY == '' && secrets.OPENAI_API_KEY == '' }}
+        run: "true"
+      - name: "absent: BLOB_READ_WRITE_TOKEN"
+        if: ${{ secrets.BLOB_READ_WRITE_TOKEN == '' }}
+        run: "true"
+
       - name: Check every secret is present
         run: |
           missing=0
