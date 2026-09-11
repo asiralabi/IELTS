@@ -26,6 +26,10 @@ is on a mounted volume:
 | `data/figure_knowledge` | figure conventions read while drawing |
 | `data/tts_cache` | synthesised listening audio, regenerated on demand |
 
+The last row is only durable storage because this volume is. On a platform
+with no disk it is not, and `BLOB_READ_WRITE_TOKEN` is what replaces it — see
+**Where the audio lives** below.
+
 `books/` and `Audios/` are never in the image. They are the copyrighted source
 material that grounds generation, and the north star is that a student sees
 generated work, never a scanned page.
@@ -141,6 +145,43 @@ Railway, a VPS. What it must have:
 An empty `data/` volume still boots: `seed_knowledge_base()` falls back to the
 markdown seed bundled in `app/rag/seed/`. Generation works, grounded on that
 seed instead of the Cambridge corpus.
+
+## Where the audio lives
+
+A Listening recording is ~100 seconds of neural synthesis and 1-3.5MB of MP3,
+so it is cached rather than made twice. Under this compose stack the cache is
+`data/tts_cache` on the volume and there is nothing else to set up.
+
+Serverless is the case that needs `BLOB_READ_WRITE_TOKEN`, because there the
+disk is a lie twice over: an instance gets a fresh `/tmp` and is killed when it
+goes idle, and the CI job that warms the practice pool deletes its whole runner
+when it finishes. Both were voicing recordings into storage that was about to
+be thrown away, so the wait the warm pool exists to remove landed on the
+student anyway. Linking a Blob store puts the recording somewhere both can
+reach:
+
+```bash
+cd backend
+vercel blob create-store oratio-audio --access public --yes
+```
+
+That sets the variable on the project by itself. Copy the same value into the
+`BLOB_READ_WRITE_TOKEN` repository secret so the pool warmer writes to the
+store the app reads from — without it the workflow still runs, and still
+achieves nothing for the audio.
+
+Two consequences worth knowing before changing any of it:
+
+* **The store is public and the blobs are named by a sha256 of the script.**
+  That is what lets `/listening/audio/{id}` answer with a 307 the browser
+  follows to the edge — a Vercel function response is capped at 4.5MB and a
+  Part 3 recording has measured 3.25MB, so the MP3 could not keep travelling
+  through the function. The address is unguessable, but it is not access
+  controlled: anyone holding the URL can play the recording.
+* **`tools/blob_store_check.py` is the thing to run when audio is slow.** The
+  suite mocks the store, so it cannot tell you the wire contract still holds.
+  `python tools/blob_store_check.py --env-file .env.local` does a real
+  put/head/get and checks the CORS and range headers the player depends on.
 
 ## Before real students use it
 

@@ -75,6 +75,17 @@ class Settings(BaseSettings):
     practice_pool_enabled: bool = True
     tts_voice_rate: str = "-6%"  # exam-realistic pacing, slightly under natural
 
+    # Durable storage for the rendered recordings (Vercel Blob). Vercel sets
+    # this on the project the moment a Blob store is linked, and the store id
+    # is encoded inside it, so there is nothing else to configure. Blank —
+    # local runs, the Docker stack, a fork — falls back to the disk cache
+    # alone, which is correct anywhere the disk actually survives.
+    blob_read_write_token: str = ""
+    # The Blob API's own address, spelled out because a hosted endpoint moving
+    # under this app is not hypothetical: the LLM did exactly that mid-project
+    # and answered 410 on every call. An env var fixes that without a deploy.
+    blob_api_url: str = "https://vercel.com/api/blob"
+
     # Speaking transcription (faster-whisper). The system design specifies
     # Whisper Large-v3; on a CPU-only box "large-v3" is accurate but slow, so
     # this is overridable (e.g. WHISPER_MODEL=small.en for a faster dev loop).

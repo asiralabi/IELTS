@@ -382,10 +382,10 @@ class PoolWarmer:
             # 🔬 Measured 2026-09-02: the set itself pops from this pool in
             # 0.3s, and then the listener waited 102 SECONDS staring at a dead
             # player while ~1900 words were spoken on demand. The audio is
-            # cached on disk keyed by script+voices, so the second request came
-            # back in 0.2s — every student was simply paying for the first one.
-            # The whole point of this warmer is to move that wait off the
-            # student, and it was pre-generating the script but not the sound.
+            # cached keyed by script+voices, so the second request came back in
+            # 0.2s — every student was simply paying for the first one. The
+            # whole point of this warmer is to move that wait off the student,
+            # and it was pre-generating the script but not the sound.
             await _warm_audio(bucket, payload)
             try:
                 with SessionLocal() as db:
@@ -405,6 +405,12 @@ async def _warm_audio(bucket: Bucket, payload: dict[str, Any]) -> None:
 
     A full test carries its parts as separate scripts, so each is warmed on its
     own; that is how `/listening/audio/{id}?part=N` will ask for them.
+
+    🚨 This asks for the recording to EXIST, not for its bytes. Where this
+    warmer actually runs — a CI job whose runner is deleted when it finishes —
+    downloading the MP3 back into the process would be minutes of transfer
+    into a machine that is about to be destroyed. What has to outlive the run
+    is the blob, and `ensure_recording` is the call that guarantees it.
     """
     if bucket.section != "listening":
         return
@@ -418,7 +424,7 @@ async def _warm_audio(bucket: Bucket, payload: dict[str, Any]) -> None:
         if not script.strip():
             continue
         try:
-            await tts.synthesize_script(script, part.get("speakers"))
+            await tts.ensure_recording(script, part.get("speakers"))
         except Exception as exc:  # noqa: BLE001 — the set is still worth keeping
             logger.warning("pool could not pre-render audio: %s", exc)
             return

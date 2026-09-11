@@ -25,6 +25,12 @@ settings.data_dir = str(_TMP / "data")
 settings.upload_dir = str(_TMP / "data" / "uploads")
 settings.qdrant_path = str(_TMP / "data" / "qdrant")
 settings.qdrant_url = ""
+settings.tts_cache_dir = str(_TMP / "data" / "tts_cache")
+# No Blob store in the suite. A developer whose shell already holds a real
+# BLOB_READ_WRITE_TOKEN -- which is how the app is meant to be run locally --
+# would otherwise have the tests write fixtures into the production store and
+# read production audio back out of it.
+settings.blob_read_write_token = ""
 settings.jwt_secret = "test-secret-key-for-the-ielts-test-suite-only"
 
 from app.database import init_db  # noqa: E402  (engine now bound to temp sqlite)

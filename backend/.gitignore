@@ -51,6 +51,10 @@ tools/_*
 # same secrets under a different name.
 .env.backup*
 .env.*.backup
+# `vercel env pull` / `vercel blob create-store` write the project's real
+# secrets here, BLOB_READ_WRITE_TOKEN among them. Named explicitly rather than
+# as `.env*`, which would also hide the committed `.env.example`.
+.env.local
 
 # IDE / OS
 .idea/

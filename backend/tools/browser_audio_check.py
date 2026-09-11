@@ -1,9 +1,15 @@
 """Live browser click-through of the neural Listening audio.
 
 Generates a single-part AI recording, clicks Play, and asserts the frontend
-fetched the backend MP3 blob and actually started playback (audio element
-advancing), plus the 2-play badge incremented. Prod build only (headless
-Next.js dev renders blank — see project memory).
+fetched the MP3 and actually started playback (audio element advancing), plus
+the 2-play badge incremented. Prod build only (headless Next.js dev renders
+blank — see project memory).
+
+The MP3 arrives one of two ways and BOTH are correct: as bytes from the API
+where there is no Blob store (a container, a local run), or as a 307 the
+browser follows to the edge where there is one. The second is the case worth
+proving here, because it is the one that depends on the blob being publicly
+readable and sending CORS headers — something no unit test can see.
 """
 
 from __future__ import annotations
@@ -55,7 +61,9 @@ def get_auth_state() -> dict:
 
 
 def main() -> int:
-    audio_responses: list[tuple[int, str, int]] = []  # (status, content-type, bytes)
+    # (url, status, content-type, bytes) for the API route AND the edge it
+    # may redirect to.
+    audio_responses: list[tuple[str, int, str, int]] = []
     ok = True
 
     with sync_playwright() as p:
@@ -70,13 +78,18 @@ def main() -> int:
         page.on("pageerror", lambda e: logs.append(f"[pageerror] {e}"))
 
         def on_response(resp):
-            if "/listening/audio" in resp.url:
+            if "/listening/audio" in resp.url or "blob.vercel-storage.com" in resp.url:
                 try:
                     body_len = len(resp.body())
                 except Exception:
                     body_len = -1
                 audio_responses.append(
-                    (resp.status, resp.headers.get("content-type", "?"), body_len)
+                    (
+                        resp.url,
+                        resp.status,
+                        resp.headers.get("content-type", "?"),
+                        body_len,
+                    )
                 )
 
         page.on("response", on_response)
@@ -138,10 +151,15 @@ def main() -> int:
 
         # -------------------- assertions --------------------
         print("\n[6] results:")
-        got_audio = any(s == 200 and "audio/mpeg" in ct for s, ct, _ in audio_responses)
-        print(f"    /listening/audio responses: {audio_responses}")
+        api_hits = [h for h in audio_responses if "/listening/audio" in h[0]]
+        got_audio = any(s == 200 and "audio/mpeg" in ct for _, s, ct, _ in audio_responses)
+        via_edge = any(s == 307 for _, s, _, _ in api_hits)
+        print(f"    audio responses: {audio_responses}")
+        print(f"    served {'from the edge (307)' if via_edge else 'as bytes by the API'}")
         checks = {
-            "audio blob fetched 200 audio/mpeg": got_audio,
+            "audio route answered": bool(api_hits)
+            and all(s in (200, 307) for _, s, _, _ in api_hits),
+            "an MP3 arrived (200 audio/mpeg)": got_audio,
             "audio element has blob src": bool(state.get("srcBlob")),
             "playback advanced (currentTime>0.15)": state.get("currentTime", 0) > 0.15,
             "play badge -> 1/2": "1/2" in badge_after,

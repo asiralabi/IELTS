@@ -8,8 +8,13 @@ system design.  This module turns that script into a realistic, multi-voice
 recording using edge-tts neural voices: each distinct speaker gets a voice
 matching its accent/gender, is spoken at its target WPM, and turns are
 stitched into one MP3 with the requested pauses between them.  Synthesis is
-lazy and cached to disk keyed by the script *and* the performance spec, so a
-part is only ever voiced once per direction.
+lazy and cached keyed by the script *and* the performance spec, so a part is
+only ever voiced once per direction.
+
+That cache has two tiers. Local disk is the fast one and the only one a
+container needs. Object storage is the one that survives: see
+`app.services.blob_store` for why a recording cached only on disk was, in
+production, a recording cached nowhere.
 """
 
 from __future__ import annotations
@@ -17,11 +22,16 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import re
 from collections import defaultdict
+from dataclasses import dataclass
 from pathlib import Path
 
 from app.config import settings
+from app.services import blob_store
+
+logger = logging.getLogger(__name__)
 
 # en-GB neural voices, split by perceived gender so a two-speaker Part 1
 # sounds like a natural male/female pair. Used for the heuristic fallback when
@@ -274,11 +284,48 @@ def _spec_fingerprint(specs: dict[str, dict]) -> str:
     return json.dumps(trimmed, sort_keys=True)
 
 
-def _cache_path(script: str, specs: dict[str, dict]) -> Path:
-    digest = hashlib.sha256(
+def _digest(script: str, specs: dict[str, dict]) -> str:
+    """One stable name for one recording, in every cache tier."""
+    return hashlib.sha256(
         f"{settings.tts_voice_rate}|{_spec_fingerprint(specs)}|{script}".encode("utf-8")
     ).hexdigest()
+
+
+def _cache_path(digest: str) -> Path:
     return Path(settings.tts_cache_dir) / f"{digest}.mp3"
+
+
+def _blob_pathname(digest: str) -> str:
+    """Where the recording lives in the Blob store.
+
+    Foldered so the store stays readable in the dashboard next to anything
+    else this app ever needs to keep.
+    """
+    return f"listening/{digest}.mp3"
+
+
+def _read_disk(path: Path) -> bytes | None:
+    """The cached recording, or None — including when there is no disk."""
+    try:
+        return path.read_bytes()
+    except OSError:
+        return None
+
+
+def _write_disk(path: Path, audio: bytes) -> None:
+    """Cache the recording beside this process, if it has somewhere to put it.
+
+    In a container this is the tier that does the work. On Vercel only /tmp is
+    writable and it lasts as long as one instance, which is why the blob tier
+    exists — and why failing to write here must never fail a playback.
+    """
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".mp3.part")
+        tmp.write_bytes(audio)
+        tmp.replace(path)
+    except OSError as exc:
+        logger.warning("could not cache audio at %s: %s", path, exc)
 
 
 async def _synthesize(script: str, specs: dict[str, dict]) -> bytes:
@@ -303,12 +350,21 @@ async def _synthesize(script: str, specs: dict[str, dict]) -> bytes:
     return bytes(audio)
 
 
-async def synthesize_script(script: str, speakers: object = None) -> bytes:
-    """Return MP3 bytes for a labelled script, synthesizing + caching on first use.
+@dataclass(frozen=True)
+class Recording:
+    """Where a rendered recording can be had from.
 
-    ``speakers`` is the optional Audio Performance Instructions array from the
-    generator; when absent, voices fall back to the gender heuristic.
+    Exactly one field is set. ``url`` means the edge network already holds it
+    and nothing needs to move through this process; ``audio`` means it does.
+    Anything answering a browser should prefer the URL — a Vercel function
+    response is capped at 4.5MB and a Part 3 recording has measured 3.25MB.
     """
+
+    url: str | None = None
+    audio: bytes | None = None
+
+
+async def _ensure(script: str, speakers: object) -> tuple[str, Recording]:
     if not settings.tts_enabled:
         raise RuntimeError("TTS is disabled")
     script = (script or "").strip()
@@ -316,16 +372,54 @@ async def synthesize_script(script: str, speakers: object = None) -> bytes:
         raise RuntimeError("Empty script")
 
     specs = _specs_by_label(speakers)
-    path = _cache_path(script, specs)
-    if path.exists():
-        return path.read_bytes()
+    digest = _digest(script, specs)
+    pathname = _blob_pathname(digest)
 
-    async with _locks[path.name]:
-        if path.exists():  # another request may have finished while we waited
-            return path.read_bytes()
-        audio = await _synthesize(script, specs)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(".mp3.part")
-        tmp.write_bytes(audio)
-        tmp.replace(path)
-        return audio
+    # Ask the durable tier first: it is the one that is still populated after
+    # the instance that filled it has been thrown away, and answering from it
+    # costs one HEAD against a CDN.
+    if blob_store.enabled():
+        url = await blob_store.head(pathname)
+        if url:
+            return digest, Recording(url=url)
+
+    path = _cache_path(digest)
+    audio = _read_disk(path)
+    if audio is None:
+        async with _locks[digest]:
+            # Another request may have finished the synthesis while we waited.
+            audio = _read_disk(path)
+            if audio is None:
+                audio = await _synthesize(script, specs)
+                _write_disk(path, audio)
+
+    if blob_store.enabled():
+        url = await blob_store.put(pathname, audio, "audio/mpeg")
+        if url:
+            return digest, Recording(url=url)
+    return digest, Recording(audio=audio)
+
+
+async def ensure_recording(script: str, speakers: object = None) -> Recording:
+    """Make sure a labelled script has been voiced, and say where it now is.
+
+    ``speakers`` is the optional Audio Performance Instructions array from the
+    generator; when absent, voices fall back to the gender heuristic.
+    """
+    return (await _ensure(script, speakers))[1]
+
+
+async def synthesize_script(script: str, speakers: object = None) -> bytes:
+    """Return MP3 bytes for a labelled script, synthesizing on first use.
+
+    Prefer `ensure_recording` in anything serving a browser: this pulls the
+    whole recording into the process even when the edge could have served it
+    directly. It is here for the tools that genuinely want the bytes.
+    """
+    digest, recording = await _ensure(script, speakers)
+    if recording.audio is not None:
+        return recording.audio
+    audio = await blob_store.get(_blob_pathname(digest))
+    if audio is None:
+        raise RuntimeError("Stored recording could not be read back")
+    return audio

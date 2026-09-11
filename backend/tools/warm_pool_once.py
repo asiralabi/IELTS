@@ -14,13 +14,14 @@ short, report, exit. Run it from CI on a cron.
     python tools/warm_pool_once.py --budget-seconds 900 --max-sets 4
     python tools/warm_pool_once.py --report-only
 
-🔊 A note on audio. A warmed listening set carries its script but NOT its
-recording, because `_warm_audio` caches MP3s on local disk keyed by script --
-and a CI runner throws that disk away, exactly as a serverless instance does.
-Warming it here would burn ~100s a set building a cache nobody can read. So
-this runs with TTS off by default and the student still pays synthesis on
-first play. Making that wait disappear needs the cache to live somewhere
-shared (Blob storage), which is a separate piece of work.
+🔊 A note on audio. Whether a warmed listening set carries its recording
+depends on whether there is anywhere durable to put it, so this decides for
+itself: audio is ON when BLOB_READ_WRITE_TOKEN names a Blob store and OFF when
+it does not. Without one, `_warm_audio` would spend ~100s a set writing MP3s
+onto the runner's own disk, which is deleted when the job ends -- a cache
+nobody can ever read. With one, that ~100s is the wait a student would
+otherwise spend staring at a dead player, which is the whole reason this job
+exists. Override either way with --with-audio / --no-audio.
 
 Output is ASCII: the log lands in a CI viewer and in Windows terminals that
 still use a legacy codepage, and a report you cannot read is not a report.
@@ -57,18 +58,32 @@ async def main() -> int:
         help="stop after this many sets (default: as many as the budget allows)",
     )
     ap.add_argument("--report-only", action="store_true", help="show the pool, generate nothing")
-    ap.add_argument("--with-audio", action="store_true", help="also pre-render TTS (see module docstring)")
+    ap.add_argument(
+        "--with-audio",
+        dest="audio",
+        action="store_true",
+        default=None,
+        help="pre-render TTS even with no Blob store (a host with a real disk)",
+    )
+    ap.add_argument(
+        "--no-audio",
+        dest="audio",
+        action="store_false",
+        help="skip TTS and spend the whole budget on scripts",
+    )
     args = ap.parse_args()
-
-    # Off before the app imports settings, so `_warm_audio` short-circuits on
-    # the RuntimeError synthesize_script raises when TTS is disabled -- which
-    # the pool already catches and treats as "set is still worth keeping".
-    if not args.with_audio:
-        os.environ.setdefault("TTS_ENABLED", "false")
 
     from app.config import settings
     from app.database import SessionLocal
+    from app.services import blob_store
     from app.services.practice_pool import BUCKETS, PoolWarmer, count_available
+
+    # See the module docstring: ~100s a set is worth spending only if the
+    # result outlives this runner. Turning TTS off is what makes `_warm_audio`
+    # short-circuit -- it raises, and the pool already treats that as "the set
+    # is still worth keeping".
+    audio = blob_store.enabled() if args.audio is None else args.audio
+    settings.tts_enabled = audio
 
     # 🚨 Refuse to generate into a throwaway database.
     #
@@ -114,8 +129,11 @@ async def main() -> int:
         print("\nnothing to do.")
         return 0
 
+    why = "" if args.audio is not None else (
+        " (blob store)" if audio else " (no blob store: BLOB_READ_WRITE_TOKEN unset)"
+    )
     print(f"\ntopping up (budget {args.budget_seconds:.0f}s, audio "
-          f"{'on' if args.with_audio else 'off'})")
+          f"{'on' if audio else 'off'}{why})")
     warmer = PoolWarmer()
     report = await warmer.top_up_once(
         budget_s=args.budget_seconds,

@@ -8,6 +8,7 @@ from app.agents import orchestrator
 from app.auth import get_current_user
 from app.database import get_db
 from app.models import MockExam, User
+from app.routers._audio import serve_recording
 from app.routers._payload import ANSWER_FIELDS
 from app.services import tts
 
@@ -74,7 +75,7 @@ async def get_exam_audio(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> Response:
-    """Stream the recording for one Listening part of a mock exam.
+    """Serve the recording for one Listening part of a mock exam.
 
     The mock exam printed its `audio_script` on screen, so a student sat the
     Listening paper by READING the transcript — which is a reading test with a
@@ -83,7 +84,8 @@ async def get_exam_audio(
     snapshot inside `MockExam.exam` with no id of its own.
 
     Synthesis is lazy and cached by the TTS service, so the first play of a
-    part pays for it and every later play is free.
+    part pays for it and every later play is free — everywhere, not just on
+    the instance that happened to render it.
     """
     exam = _get_owned_exam(exam_id, db, user)
     parts = ((exam.exam or {}).get("listening") or {}).get("parts") or []
@@ -99,15 +101,11 @@ async def get_exam_audio(
         raise HTTPException(status_code=404, detail="No recording for this part")
 
     try:
-        audio = await tts.synthesize_script(script, speakers)
+        recording = await tts.ensure_recording(script, speakers)
     except Exception:
         raise HTTPException(status_code=503, detail="Audio synthesis unavailable")
 
-    return Response(
-        content=audio,
-        media_type="audio/mpeg",
-        headers={"Cache-Control": "private, max-age=86400"},
-    )
+    return serve_recording(recording)
 
 
 @router.get("/{exam_id}")

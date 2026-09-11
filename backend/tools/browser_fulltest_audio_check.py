@@ -70,7 +70,7 @@ def main() -> int:
         page.on("pageerror", lambda e: logs.append(f"[pageerror] {e}"))
 
         def on_response(resp):
-            if "/listening/audio" in resp.url:
+            if "/listening/audio" in resp.url or "blob.vercel-storage.com" in resp.url:
                 try:
                     n = len(resp.body())
                 except Exception:
@@ -141,19 +141,27 @@ def main() -> int:
         parts_fetched = sorted(
             {re.search(r"part=(\d+)", u).group(1) for u, *_ in audio_hits if "part=" in u}
         )
-        all_ok_type = all(s == 200 and "audio/mpeg" in ct for _, s, ct, _ in audio_hits)
+        # Both endings are correct: 200 with the bytes where there is no Blob
+        # store, or a 307 the browser follows to the edge where there is one.
+        api_hits = [h for h in audio_hits if "/listening/audio" in h[0]]
+        answered = bool(api_hits) and all(s in (200, 307) for _, s, _, _ in api_hits)
+        mp3s = sum(1 for _, s, ct, _ in audio_hits if s == 200 and "audio/mpeg" in ct)
         playing_now = sum(1 for a in advanced if a["srcBlob"] and a["t"] > 0.15)
         checks = {
             "4 part players rendered": n_players == 4,
             "all 4 parts fetched (1,2,3,4)": parts_fetched == ["1", "2", "3", "4"],
-            "every audio response 200 audio/mpeg": all_ok_type and len(audio_hits) >= 4,
+            "every audio route answered": answered,
+            "4 MP3s arrived": mp3s >= 4,
             "all 4 audio elements advancing": playing_now == 4,
             "no page errors": not any("pageerror" in l for l in logs),
         }
         for name, passed in checks.items():
             print(f"    [{'PASS' if passed else 'FAIL'}] {name}")
             ok = ok and passed
-        print(f"    parts fetched: {parts_fetched}  bytes: "
+        served = "from the edge (307)" if any(
+            s == 307 for _, s, _, _ in api_hits
+        ) else "as bytes by the API"
+        print(f"    parts fetched: {parts_fetched} {served}  bytes: "
               f"{[n for *_, n in audio_hits]}")
 
         errs = [l for l in logs if "pageerror" in l or "[error]" in l]

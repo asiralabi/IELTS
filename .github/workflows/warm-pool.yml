@@ -66,6 +66,11 @@ jobs:
           QDRANT_URL: ${{ secrets.POOL_QDRANT_URL }}
           QDRANT_API_KEY: ${{ secrets.POOL_QDRANT_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.POOL_OPENAI_API_KEY }}
+          # Without this the runner voices every Listening part into its own
+          # disk and then deletes the disk, which is exactly the wait this job
+          # exists to remove. Copy it from the ielts-api project on Vercel,
+          # where linking the Blob store set it automatically.
+          BLOB_READ_WRITE_TOKEN: ${{ secrets.BLOB_READ_WRITE_TOKEN }}
           LLM_PROVIDER: openai
           # Not secrets, so they are readable here rather than hidden -- but
           # they ARE duplicated from the API's Vercel env. gpt-oss-120b was

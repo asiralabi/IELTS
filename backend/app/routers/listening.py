@@ -6,6 +6,7 @@ from app.agents import listening_trainer
 from app.auth import get_current_user
 from app.database import get_db
 from app.models import GeneratedQuestion, PracticeAttempt, User
+from app.routers._audio import serve_recording
 from app.routers._payload import public, strip_sections
 from app.services import practice_pool, tts
 
@@ -104,10 +105,12 @@ async def get_audio(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> Response:
-    """Stream a multi-speaker neural recording of a listening script.
+    """Serve a multi-speaker neural recording of a listening script.
 
     Serves a full-test Part when ``?part=N`` is given, otherwise the single
-    practice set's script. Synthesis is lazy + cached in the TTS service.
+    practice set's script. Synthesis is lazy + cached in the TTS service, and
+    once a recording is in durable storage this hands back a redirect to the
+    edge rather than the bytes — see `Recording`.
     """
     question = db.get(GeneratedQuestion, practice_id)
     if (
@@ -134,15 +137,11 @@ async def get_audio(
         raise HTTPException(status_code=404, detail="No recording for this material")
 
     try:
-        audio = await tts.synthesize_script(script, speakers)
+        recording = await tts.ensure_recording(script, speakers)
     except Exception:
         raise HTTPException(status_code=503, detail="Audio synthesis unavailable")
 
-    return Response(
-        content=audio,
-        media_type="audio/mpeg",
-        headers={"Cache-Control": "private, max-age=86400"},
-    )
+    return serve_recording(recording)
 
 
 @router.post("/full-test")
