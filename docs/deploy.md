@@ -182,6 +182,11 @@ Two consequences worth knowing before changing any of it:
   suite mocks the store, so it cannot tell you the wire contract still holds.
   `python tools/blob_store_check.py --env-file .env.local` does a real
   put/head/get and checks the CORS and range headers the player depends on.
+* **`tools/pool_secrets_check.py --from-local` proves all five warm-pool
+  secrets before you paste them into GitHub** -- database, vector store, model
+  and blob token, each checked by using it. A repository secret cannot be read
+  back, so the alternative to checking is finding out in a month that the cron
+  has been green and useless.
 
 ## Before real students use it
 

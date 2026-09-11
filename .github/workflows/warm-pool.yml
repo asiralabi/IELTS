@@ -15,6 +15,16 @@
 # Cost control is in the tool, not the schedule: when every bucket is at
 # target the run generates nothing and exits in seconds, so a frequent cron is
 # cheap. It only does real work after students have actually consumed sets.
+#
+# The five secrets below cannot be read back once set, and every way they go
+# wrong in this project has gone wrong quietly. Before setting them -- and
+# after rotating any of them -- prove the values by USING them:
+#
+#     cd backend && python tools/pool_secrets_check.py --from-local
+#
+# It is deliberately NOT a step in this job: it makes a real model call and
+# writes a blob, which is not worth doing every thirty minutes to re-learn
+# something that only changes when a human changes it.
 
 name: warm practice pool
 
