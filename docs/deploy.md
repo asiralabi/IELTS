@@ -187,6 +187,13 @@ Two consequences worth knowing before changing any of it:
   and blob token, each checked by using it. A repository secret cannot be read
   back, so the alternative to checking is finding out in a month that the cron
   has been green and useless.
+* **The first four secrets are accepted under either name.** `POOL_DATABASE_URL`
+  or `DATABASE_URL`, `POOL_QDRANT_URL` or `QDRANT_URL`, and so on: the prefixed
+  form wins when both exist, because the prefix is what lets the pool job point
+  at a different database than the API. Eight failed runs went into that prefix
+  once, and the run's first step now prints which name supplied each value.
+  `BLOB_READ_WRITE_TOKEN` has no alias -- without it a run fills the pool,
+  reports success, and leaves every recording unvoiced.
 
 ## Before real students use it
 
