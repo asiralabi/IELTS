@@ -41,10 +41,19 @@ on:
     # and :00 and :30 are the most contended minutes of the hour. Odd offsets
     # are the documented mitigation.
     #
-    # So treat the schedule as "eventually" and never as a guarantee. When the
-    # pool must be filled NOW -- after a burst of students, or right after
-    # fixing the secrets -- use Run workflow, which dispatches immediately.
+    # So treat the schedule as "eventually" and never as a guarantee.
     - cron: "7,37 * * * *"
+
+  # A push IS delivered, every time, which the schedule is not -- so this is
+  # the trigger to rely on when the pool has to be filled now. It is not just a
+  # manual handle: `main` changing is a perfectly good moment to check the
+  # pool, because the job costs nothing when there is nothing to do. A full
+  # pool with every recording stored backfills ten HEAD requests, prints
+  # "nothing to generate" and exits in about a minute. Concurrency below
+  # serialises a burst of pushes, and the second run finds the pool full.
+  push:
+    branches: [main]
+
   workflow_dispatch:
     inputs:
       report_only:
@@ -52,8 +61,9 @@ on:
         type: boolean
         default: false
 
-# Only `schedule` and `workflow_dispatch` -- deliberately NOT pull_request, so
-# a fork of this public repo can never run with these secrets.
+# `push` here only ever fires on this repository's own main. Deliberately NOT
+# `pull_request`, which is the one that would hand these secrets to a fork of
+# this public repo.
 permissions:
   contents: read
 
