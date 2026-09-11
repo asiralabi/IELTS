@@ -74,9 +74,7 @@ async def main() -> int:
     args = ap.parse_args()
 
     from app.config import settings
-    from app.database import SessionLocal
     from app.services import blob_store
-    from app.services.practice_pool import BUCKETS, PoolWarmer, count_available
 
     # See the module docstring: ~100s a set is worth spending only if the
     # result outlives this runner. Turning TTS off is what makes `_warm_audio`
@@ -93,14 +91,18 @@ async def main() -> int:
     # whole budget filling it, and throws it away. Every thirty minutes,
     # forever, against a free model quota, with a green tick on every run. A
     # scheduler must not be able to fail this quietly.
-    if settings.database_url.startswith("sqlite") and os.environ.get("CI"):
+    database_url = settings.database_url.strip()
+    if os.environ.get("CI") and (not database_url or database_url.startswith("sqlite")):
         print(
-            "\nFAIL: DATABASE_URL is not set, so this would generate into a\n"
+            "\nFAIL: DATABASE_URL is empty or not set, so this would generate into a\n"
             "      throwaway SQLite on the runner and discard the result.\n"
             "      Set the POOL_DATABASE_URL secret on the repository.",
             file=sys.stderr,
         )
         return 2
+
+    from app.database import SessionLocal
+    from app.services.practice_pool import BUCKETS, PoolWarmer, count_available
 
     def snapshot() -> list[tuple[str, int, int]]:
         rows = []
