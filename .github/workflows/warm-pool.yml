@@ -72,40 +72,48 @@ jobs:
       # 🚨 Step one, before the checkout and before the 40-second install,
       # because the failure this catches is a MISNAMED SECRET and every way of
       # finding that out later is worse. `secrets.X != ''` evaluates to a
-      # boolean, so no value is ever printed.
+      # boolean, so no value is ever printed -- only which NAME supplied it.
       #
       # 🔬 2026-09-11: POOL_DATABASE_URL had been saved as DATABASE_URL. An
       # unset secret does not leave the variable alone -- it interpolates to
       # "" -- so the run died four frames inside SQLAlchemy with "Could not
       # parse SQLAlchemy URL from given URL string", which reads exactly like a
-      # malformed connection string. Three runs and a wrong diagnosis went into
-      # a value that was correct all along. This step reports ALL five at once;
-      # the guard in warm_pool_once.py can only report the first one it hits.
+      # malformed connection string. Eight failed runs and one confident wrong
+      # diagnosis went into a value that was correct the whole time.
+      #
+      # Hence the fallback below: the POOL_ prefix exists so this job CAN point
+      # at a different database than the API, which is worth keeping, but
+      # nobody should lose an afternoon to a prefix. Prefixed wins when both
+      # exist; the unprefixed name is accepted and reported as such.
       - name: Check every secret is present
         run: |
           missing=0
+          # $1 preferred name, $2 fallback name ("-" for none),
+          # $3 preferred present?, $4 fallback present?
           check () {
-            if [ "$2" = "true" ]; then
+            if [ "$3" = "true" ]; then
               echo "  present  $1"
-            else
+            elif [ "$4" = "true" ]; then
+              echo "  present  $2  (accepted as $1)"
+            elif [ "$2" = "-" ]; then
               echo "  MISSING  $1"
+              missing=1
+            else
+              echo "  MISSING  $1  (and no $2 either)"
               missing=1
             fi
           }
-          check POOL_DATABASE_URL     "${{ secrets.POOL_DATABASE_URL != '' }}"
-          check POOL_QDRANT_URL       "${{ secrets.POOL_QDRANT_URL != '' }}"
-          check POOL_QDRANT_API_KEY   "${{ secrets.POOL_QDRANT_API_KEY != '' }}"
-          check POOL_OPENAI_API_KEY   "${{ secrets.POOL_OPENAI_API_KEY != '' }}"
-          check BLOB_READ_WRITE_TOKEN "${{ secrets.BLOB_READ_WRITE_TOKEN != '' }}"
+          check POOL_DATABASE_URL     DATABASE_URL   "${{ secrets.POOL_DATABASE_URL   != '' }}" "${{ secrets.DATABASE_URL   != '' }}"
+          check POOL_QDRANT_URL       QDRANT_URL     "${{ secrets.POOL_QDRANT_URL     != '' }}" "${{ secrets.QDRANT_URL     != '' }}"
+          check POOL_QDRANT_API_KEY   QDRANT_API_KEY "${{ secrets.POOL_QDRANT_API_KEY != '' }}" "${{ secrets.QDRANT_API_KEY != '' }}"
+          check POOL_OPENAI_API_KEY   OPENAI_API_KEY "${{ secrets.POOL_OPENAI_API_KEY != '' }}" "${{ secrets.OPENAI_API_KEY != '' }}"
+          check BLOB_READ_WRITE_TOKEN -              "${{ secrets.BLOB_READ_WRITE_TOKEN != '' }}" false
           if [ "$missing" = "1" ]; then
             echo
             echo "Set the missing ones under Settings -> Secrets and variables -> Actions."
-            echo "Mind the POOL_ prefix on four of the five: the value for"
-            echo "POOL_DATABASE_URL lives in a file that calls it DATABASE_URL, and"
-            echo "saving it under that name is what broke the first three attempts."
-            echo
-            echo "BLOB_READ_WRITE_TOKEN is required too. Without it the run still"
-            echo "fills the pool, but leaves every recording unvoiced -- and the"
+            echo "Either name works for the first four. BLOB_READ_WRITE_TOKEN has"
+            echo "no alias: without it the run still fills the pool and still"
+            echo "reports success, but leaves every recording unvoiced -- and the"
             echo "student pays ~100s of synthesis on the first press of PLAY,"
             echo "which is the wait this whole job exists to remove."
             exit 1
@@ -126,10 +134,13 @@ jobs:
       - name: Top up the pool
         working-directory: backend
         env:
-          DATABASE_URL: ${{ secrets.POOL_DATABASE_URL }}
-          QDRANT_URL: ${{ secrets.POOL_QDRANT_URL }}
-          QDRANT_API_KEY: ${{ secrets.POOL_QDRANT_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.POOL_OPENAI_API_KEY }}
+          # `||` yields the first non-falsy operand and an unset secret is "",
+          # so the prefixed name wins when it exists and the plain one is
+          # accepted when it does not. See the check step above for why.
+          DATABASE_URL: ${{ secrets.POOL_DATABASE_URL || secrets.DATABASE_URL }}
+          QDRANT_URL: ${{ secrets.POOL_QDRANT_URL || secrets.QDRANT_URL }}
+          QDRANT_API_KEY: ${{ secrets.POOL_QDRANT_API_KEY || secrets.QDRANT_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.POOL_OPENAI_API_KEY || secrets.OPENAI_API_KEY }}
           # Without this the runner voices every Listening part into its own
           # disk and then deletes the disk, which is exactly the wait this job
           # exists to remove. Copy it from the ielts-api project on Vercel,
