@@ -78,6 +78,22 @@ jobs:
   warm:
     runs-on: ubuntu-latest
     timeout-minutes: 55
+    # 🚨 Booleans, not values. The `secrets` context is NOT available in a
+    # step-level `if:` -- a workflow that tries it does not fail the step, it
+    # fails to COMPILE, and the run appears with zero jobs and no explanation.
+    # `jobs.<id>.env` does support secrets, and `env` is available in `if:`,
+    # so the presence test is computed once here and read everywhere below.
+    # Nothing but "true"/"false" ever enters the environment.
+    env:
+      HAS_DATABASE_URL: ${{ (secrets.POOL_DATABASE_URL || secrets.DATABASE_URL) != '' }}
+      HAS_QDRANT_URL: ${{ (secrets.POOL_QDRANT_URL || secrets.QDRANT_URL) != '' }}
+      HAS_QDRANT_API_KEY: ${{ (secrets.POOL_QDRANT_API_KEY || secrets.QDRANT_API_KEY) != '' }}
+      HAS_OPENAI_API_KEY: ${{ (secrets.POOL_OPENAI_API_KEY || secrets.OPENAI_API_KEY) != '' }}
+      HAS_BLOB_TOKEN: ${{ secrets.BLOB_READ_WRITE_TOKEN != '' }}
+      PREFIXED_DATABASE_URL: ${{ secrets.POOL_DATABASE_URL != '' }}
+      PREFIXED_QDRANT_URL: ${{ secrets.POOL_QDRANT_URL != '' }}
+      PREFIXED_QDRANT_API_KEY: ${{ secrets.POOL_QDRANT_API_KEY != '' }}
+      PREFIXED_OPENAI_API_KEY: ${{ secrets.POOL_OPENAI_API_KEY != '' }}
     steps:
       # 🚨 Step one, before the checkout and before the 40-second install,
       # because the failure this catches is a MISNAMED SECRET and every way of
@@ -106,19 +122,19 @@ jobs:
       # Nothing is printed but the name, and they sit above the gate below so
       # the whole set is evaluated before anything fails.
       - name: "absent: POOL_DATABASE_URL / DATABASE_URL"
-        if: ${{ secrets.POOL_DATABASE_URL == '' && secrets.DATABASE_URL == '' }}
+        if: env.HAS_DATABASE_URL != 'true'
         run: "true"
       - name: "absent: POOL_QDRANT_URL / QDRANT_URL"
-        if: ${{ secrets.POOL_QDRANT_URL == '' && secrets.QDRANT_URL == '' }}
+        if: env.HAS_QDRANT_URL != 'true'
         run: "true"
       - name: "absent: POOL_QDRANT_API_KEY / QDRANT_API_KEY"
-        if: ${{ secrets.POOL_QDRANT_API_KEY == '' && secrets.QDRANT_API_KEY == '' }}
+        if: env.HAS_QDRANT_API_KEY != 'true'
         run: "true"
       - name: "absent: POOL_OPENAI_API_KEY / OPENAI_API_KEY"
-        if: ${{ secrets.POOL_OPENAI_API_KEY == '' && secrets.OPENAI_API_KEY == '' }}
+        if: env.HAS_OPENAI_API_KEY != 'true'
         run: "true"
       - name: "absent: BLOB_READ_WRITE_TOKEN"
-        if: ${{ secrets.BLOB_READ_WRITE_TOKEN == '' }}
+        if: env.HAS_BLOB_TOKEN != 'true'
         run: "true"
 
       - name: Check every secret is present
@@ -139,11 +155,11 @@ jobs:
               missing=1
             fi
           }
-          check POOL_DATABASE_URL     DATABASE_URL   "${{ secrets.POOL_DATABASE_URL   != '' }}" "${{ secrets.DATABASE_URL   != '' }}"
-          check POOL_QDRANT_URL       QDRANT_URL     "${{ secrets.POOL_QDRANT_URL     != '' }}" "${{ secrets.QDRANT_URL     != '' }}"
-          check POOL_QDRANT_API_KEY   QDRANT_API_KEY "${{ secrets.POOL_QDRANT_API_KEY != '' }}" "${{ secrets.QDRANT_API_KEY != '' }}"
-          check POOL_OPENAI_API_KEY   OPENAI_API_KEY "${{ secrets.POOL_OPENAI_API_KEY != '' }}" "${{ secrets.OPENAI_API_KEY != '' }}"
-          check BLOB_READ_WRITE_TOKEN -              "${{ secrets.BLOB_READ_WRITE_TOKEN != '' }}" false
+          check POOL_DATABASE_URL     DATABASE_URL   "$PREFIXED_DATABASE_URL"   "$HAS_DATABASE_URL"
+          check POOL_QDRANT_URL       QDRANT_URL     "$PREFIXED_QDRANT_URL"     "$HAS_QDRANT_URL"
+          check POOL_QDRANT_API_KEY   QDRANT_API_KEY "$PREFIXED_QDRANT_API_KEY" "$HAS_QDRANT_API_KEY"
+          check POOL_OPENAI_API_KEY   OPENAI_API_KEY "$PREFIXED_OPENAI_API_KEY" "$HAS_OPENAI_API_KEY"
+          check BLOB_READ_WRITE_TOKEN -              "$HAS_BLOB_TOKEN"          false
           if [ "$missing" = "1" ]; then
             echo
             echo "Set the missing ones under Settings -> Secrets and variables -> Actions."
