@@ -94,6 +94,12 @@ jobs:
       PREFIXED_QDRANT_URL: ${{ secrets.POOL_QDRANT_URL != '' }}
       PREFIXED_QDRANT_API_KEY: ${{ secrets.POOL_QDRANT_API_KEY != '' }}
       PREFIXED_OPENAI_API_KEY: ${{ secrets.POOL_OPENAI_API_KEY != '' }}
+      # The same page holds Secrets and Variables on two tabs, and a value on
+      # the wrong tab is invisible to `secrets.*` while looking perfectly set.
+      # This only ever reports WHICH TAB something is on -- the workflow never
+      # reads a variable for real, because a variable is not masked in logs and
+      # a connection string with a password in it must not be one.
+      AS_VAR: ${{ (vars.POOL_DATABASE_URL || vars.DATABASE_URL || vars.POOL_QDRANT_URL || vars.QDRANT_URL || vars.POOL_OPENAI_API_KEY || vars.OPENAI_API_KEY || vars.BLOB_READ_WRITE_TOKEN) != '' }}
     steps:
       # 🚨 Step one, before the checkout and before the 40-second install,
       # because the failure this catches is a MISNAMED SECRET and every way of
@@ -136,6 +142,12 @@ jobs:
       - name: "absent: BLOB_READ_WRITE_TOKEN"
         if: env.HAS_BLOB_TOKEN != 'true'
         run: "true"
+      # If THIS one runs, the values exist -- on the Variables tab, where
+      # `secrets.*` cannot see them. Move them to Secrets rather than teaching
+      # this workflow to read them: variables are printed in logs verbatim.
+      - name: "found on the Variables tab instead of Secrets"
+        if: env.AS_VAR == 'true'
+        run: "true"
 
       - name: Check every secret is present
         run: |
@@ -163,6 +175,14 @@ jobs:
           if [ "$missing" = "1" ]; then
             echo
             echo "Set the missing ones under Settings -> Secrets and variables -> Actions."
+            echo
+            echo "If you believe you already did, check all three of these:"
+            echo "  * the SECRETS tab, not the Variables tab next to it;"
+            echo "  * Repository secrets, not Environment secrets -- an"
+            echo "    environment secret reaches only a job that declares"
+            echo "    'environment:', and this job does not;"
+            echo "  * this repository, asiralabi/IELTS."
+            echo
             echo "Either name works for the first four. BLOB_READ_WRITE_TOKEN has"
             echo "no alias: without it the run still fills the pool and still"
             echo "reports success, but leaves every recording unvoiced -- and the"
