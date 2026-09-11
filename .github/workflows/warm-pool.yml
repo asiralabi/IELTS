@@ -15,6 +15,8 @@
 # Cost control is in the tool, not the schedule: when every bucket is at
 # target the run generates nothing and exits in seconds, so a frequent cron is
 # cheap. It only does real work after students have actually consumed sets.
+# (The schedule turns out to be far less frequent than it asks for -- see the
+# measurement on the cron line below.)
 #
 # The five secrets below cannot be read back once set, and every way they go
 # wrong in this project has gone wrong quietly. Before setting them -- and
@@ -30,9 +32,19 @@ name: warm practice pool
 
 on:
   schedule:
-    # Every 30 minutes. Consumption has been running ~25 sets/day; a run that
-    # finds the pool full is a no-op, so this is mostly free polling.
-    - cron: "*/30 * * * *"
+    # Twice an hour, and deliberately NOT at :00/:30.
+    #
+    # 🔬 Measured 2026-09-11 over the first 37 hours of this workflow: `*/30`
+    # scheduled 74 runs and GitHub delivered FIVE. The gaps were 2.0h, 2.3h,
+    # 3.5h and 4.9h -- not a 30-minute cadence by any reading. GitHub runs
+    # scheduled jobs on a shared best-effort pool and drops them under load,
+    # and :00 and :30 are the most contended minutes of the hour. Odd offsets
+    # are the documented mitigation.
+    #
+    # So treat the schedule as "eventually" and never as a guarantee. When the
+    # pool must be filled NOW -- after a burst of students, or right after
+    # fixing the secrets -- use Run workflow, which dispatches immediately.
+    - cron: "7,37 * * * *"
   workflow_dispatch:
     inputs:
       report_only:
