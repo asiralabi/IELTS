@@ -75,6 +75,29 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # 🔎 A throwaway diagnostic, to be deleted the moment it has answered.
+  #
+  # Run #12 found all five secrets absent as REPOSITORY secrets and absent as
+  # variables, which leaves environment secrets: those reach only a job that
+  # declares `environment:`, and `warm` does not. This repository has exactly
+  # one environment, `copilot`, created by the Copilot coding agent whose setup
+  # flow invites you to add secrets to it. So this job asks that environment
+  # the same question and answers in step conclusions, which are public even
+  # though logs are not. It reports presence only, never a value, and cannot
+  # fail the workflow.
+  where-are-the-secrets:
+    runs-on: ubuntu-latest
+    environment: copilot
+    env:
+      IN_ENV: ${{ (secrets.POOL_DATABASE_URL || secrets.DATABASE_URL) != '' }}
+    steps:
+      - name: "FOUND: the secrets live in the 'copilot' environment"
+        if: env.IN_ENV == 'true'
+        run: "true"
+      - name: "not in the 'copilot' environment either"
+        if: env.IN_ENV != 'true'
+        run: "true"
+
   warm:
     runs-on: ubuntu-latest
     timeout-minutes: 55
