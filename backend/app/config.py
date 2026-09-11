@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _DEFAULT_JWT_SECRET = "change-me-in-production"
@@ -7,6 +8,28 @@ _DEFAULT_JWT_SECRET = "change-me-in-production"
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def _strip_whitespace(cls, value: object) -> object:
+        """Trim every string setting, because these arrive by being pasted.
+
+        🔬 Measured 2026-09-11 and it cost hours. A `DATABASE_URL` saved into a
+        GitHub secret with one trailing newline -- the kind a copy picks up
+        without anyone seeing it -- still PARSES: SQLAlchemy reads the newline
+        as part of the database name and the connection fails in two seconds
+        complaining that a database whose name ends in a newline does not
+        exist -- which looks like a dead database rather than a dirty string.
+        Nothing upstream trims it: a
+        secret is stored byte for byte, and pydantic hands the value on as it
+        found it.
+
+        Trimming here rather than at each call site means the guard in
+        `warm_pool_once.py` and `app.database` can never disagree about what
+        the value is -- which is exactly how this hid, the guard having
+        stripped the URL for its own probe while the engine used the raw one.
+        """
+        return value.strip() if isinstance(value, str) else value
 
     app_name: str = "Oratio — AI IELTS Instructor & Examiner"
     debug: bool = False
