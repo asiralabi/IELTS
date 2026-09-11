@@ -168,7 +168,12 @@ async def main() -> int:
     # this file can speak. The guard used to sit below these lines and could
     # therefore never run on the failure it was written for.
     from app.database import SessionLocal
-    from app.services.practice_pool import BUCKETS, PoolWarmer, count_available
+    from app.services.practice_pool import (
+        BUCKETS,
+        PoolWarmer,
+        backfill_audio,
+        count_available,
+    )
 
     def snapshot() -> list[tuple[str, int, int]]:
         rows = []
@@ -193,8 +198,23 @@ async def main() -> int:
 
     if args.report_only:
         return 0
+    # Sets already in the pool when durable storage arrived have no recording,
+    # and topping up would never notice: their bucket is at target, so the
+    # warmer reports "full" and exits having left a silent player behind every
+    # one of them. Runs before the top-up so the oldest waits die first, and
+    # runs even when there is nothing to generate -- which is most runs.
+    if audio:
+        print("\nbackfilling audio for sets already in the pool")
+        back = await backfill_audio(
+            budget_s=args.budget_seconds,
+            on_event=lambda m: print(f"  {m}", flush=True),
+        )
+        print(f"  voiced {back['voiced']}, already stored {back['already']}, "
+              f"failed {back['failed']}, left for next run {back['skipped_budget']}, "
+              f"in {back['elapsed_s']}s")
+
     if short == 0:
-        print("\nnothing to do.")
+        print("\nnothing to generate.")
         return 0
 
     why = "" if args.audio is not None else (

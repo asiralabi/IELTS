@@ -430,6 +430,85 @@ async def _warm_audio(bucket: Bucket, payload: dict[str, Any]) -> None:
             return
 
 
+async def backfill_audio(
+    *,
+    budget_s: float = 600.0,
+    on_event: Callable[[str], None] | None = None,
+) -> dict[str, Any]:
+    """Voice listening sets that are already in the pool but have no recording.
+
+    `_warm_audio` runs when a set is INSERTED, which covers everything made
+    from now on and nothing made before. Every listening set already sitting in
+    the pool when durable storage arrived still has a silent player waiting
+    behind it — and the worst of them is a full test, whose four parts are the
+    ~4000 words a student meets at the very start of a Listening paper.
+
+    🔬 Measured on the production pool 2026-09-11: the set generated minutes
+    earlier was stored, and the full test from the day before had all four
+    parts missing. Topping up alone would never have fixed that, because that
+    bucket was already at target — the warmer would report "full" and exit
+    having done nothing, forever, while the wait sat there.
+
+    This is also what makes an otherwise idle run useful: when every bucket is
+    at target there is still real work here, and it costs no model calls at
+    all, only synthesis.
+    """
+    say = on_event or (lambda _m: None)
+    started = _monotonic()
+    report: dict[str, Any] = {"voiced": 0, "already": 0, "failed": 0, "skipped_budget": 0}
+
+    from app.services import tts
+
+    with SessionLocal() as db:
+        rows = db.execute(
+            select(PreGeneratedPractice)
+            .where(
+                and_(
+                    PreGeneratedPractice.section == "listening",
+                    PreGeneratedPractice.consumed_at.is_(None),
+                )
+            )
+            .order_by(PreGeneratedPractice.created_at.asc())
+        ).scalars().all()
+        # Detach the payloads: synthesis is minutes of work and holding a
+        # pooled connection open across it is how a transaction-mode pooler
+        # runs out of slots for the app that is actually serving students.
+        payloads = [(row.id, row.payload) for row in rows]
+
+    for row_id, payload in payloads:
+        parts = (
+            payload.get("parts")
+            if isinstance(payload, dict) and isinstance(payload.get("parts"), list)
+            else [payload]
+        )
+        for part in parts:
+            if not isinstance(part, dict):
+                continue
+            script = str(part.get("audio_script") or "")
+            if not script.strip():
+                continue
+            if _monotonic() - started > budget_s:
+                report["skipped_budget"] += 1
+                continue
+            try:
+                # `ensure_recording` answers from the store when it is already
+                # there, so a part that needs nothing costs one HEAD.
+                before = _monotonic()
+                await tts.ensure_recording(script, part.get("speakers"))
+            except Exception as exc:  # noqa: BLE001 — one bad part is not the run
+                report["failed"] += 1
+                say(f"set {row_id} part {part.get('part', '-')}: {exc}")
+                continue
+            if _monotonic() - before < 2.0:
+                report["already"] += 1
+            else:
+                report["voiced"] += 1
+                say(f"set {row_id} part {part.get('part', '-')}: voiced")
+
+    report["elapsed_s"] = round(_monotonic() - started, 1)
+    return report
+
+
 _warmer: PoolWarmer | None = None
 
 
