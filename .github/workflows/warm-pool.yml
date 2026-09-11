@@ -69,6 +69,48 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 55
     steps:
+      # 🚨 Step one, before the checkout and before the 40-second install,
+      # because the failure this catches is a MISNAMED SECRET and every way of
+      # finding that out later is worse. `secrets.X != ''` evaluates to a
+      # boolean, so no value is ever printed.
+      #
+      # 🔬 2026-09-11: POOL_DATABASE_URL had been saved as DATABASE_URL. An
+      # unset secret does not leave the variable alone -- it interpolates to
+      # "" -- so the run died four frames inside SQLAlchemy with "Could not
+      # parse SQLAlchemy URL from given URL string", which reads exactly like a
+      # malformed connection string. Three runs and a wrong diagnosis went into
+      # a value that was correct all along. This step reports ALL five at once;
+      # the guard in warm_pool_once.py can only report the first one it hits.
+      - name: Check every secret is present
+        run: |
+          missing=0
+          check () {
+            if [ "$2" = "true" ]; then
+              echo "  present  $1"
+            else
+              echo "  MISSING  $1"
+              missing=1
+            fi
+          }
+          check POOL_DATABASE_URL     "${{ secrets.POOL_DATABASE_URL != '' }}"
+          check POOL_QDRANT_URL       "${{ secrets.POOL_QDRANT_URL != '' }}"
+          check POOL_QDRANT_API_KEY   "${{ secrets.POOL_QDRANT_API_KEY != '' }}"
+          check POOL_OPENAI_API_KEY   "${{ secrets.POOL_OPENAI_API_KEY != '' }}"
+          check BLOB_READ_WRITE_TOKEN "${{ secrets.BLOB_READ_WRITE_TOKEN != '' }}"
+          if [ "$missing" = "1" ]; then
+            echo
+            echo "Set the missing ones under Settings -> Secrets and variables -> Actions."
+            echo "Mind the POOL_ prefix on four of the five: the value for"
+            echo "POOL_DATABASE_URL lives in a file that calls it DATABASE_URL, and"
+            echo "saving it under that name is what broke the first three attempts."
+            echo
+            echo "BLOB_READ_WRITE_TOKEN is required too. Without it the run still"
+            echo "fills the pool, but leaves every recording unvoiced -- and the"
+            echo "student pays ~100s of synthesis on the first press of PLAY,"
+            echo "which is the wait this whole job exists to remove."
+            exit 1
+          fi
+
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
