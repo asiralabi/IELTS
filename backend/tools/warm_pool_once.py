@@ -82,6 +82,12 @@ def _missing_secret(settings) -> str | None:
 
         try:
             create_engine(url, connect_args={"connect_timeout": 10}).connect().close()
+        except ImportError as exc:
+            # Not the secret: the URL names a driver that is not installed.
+            # 2026-09-24 this was reported as a bad paste for three days.
+            return f"""DATABASE_URL is fine, but its database driver is not installed
+      ({exc}). This is a dependency problem, not a secret problem --
+      see _pin_postgres_driver in app/config.py."""
         except Exception as exc:  # noqa: BLE001 -- the fix is the same either way
             return f"""DATABASE_URL parses but will not connect to {parsed.host}
       ({type(exc).__name__}). Check POOL_DATABASE_URL for a truncated

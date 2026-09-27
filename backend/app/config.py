@@ -31,6 +31,24 @@ class Settings(BaseSettings):
         """
         return value.strip() if isinstance(value, str) else value
 
+    @field_validator("database_url")
+    @classmethod
+    def _pin_postgres_driver(cls, value: str) -> str:
+        """Name the Postgres driver instead of letting SQLAlchemy pick one.
+
+        🔬 2026-09-24: SQLAlchemy 2.1 changed the driver a bare `postgresql://`
+        means from psycopg2 to psycopg (v3). requirements.txt is unpinned and
+        installs psycopg2-binary only, so the first warm-pool run on 2.1.0 died
+        with ModuleNotFoundError and every run after it did too -- same commit,
+        same secrets. Supabase hands out bare `postgresql://` (and some tools
+        `postgres://`) URLs, so this is fixed here, once, for the app, the pool
+        job and every tool that reads settings.
+        """
+        for scheme in ("postgresql://", "postgres://"):
+            if value.startswith(scheme):
+                return "postgresql+psycopg2://" + value[len(scheme):]
+        return value
+
     app_name: str = "Oratio — AI IELTS Instructor & Examiner"
     debug: bool = False
 
