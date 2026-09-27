@@ -231,6 +231,18 @@ jobs:
           # happens again, this file is the SECOND place to update.
           OPENAI_BASE_URL: https://integrate.api.nvidia.com/v1
           OPENAI_MODEL: nvidia/nemotron-3-super-120b-a12b
+          # 🚨 These four are not optional, even though the app has defaults.
+          # 🔬 2026-09-27: without them the runner fell back to
+          # max_tokens=4096 and the model's DEFAULT reasoning effort (high,
+          # ~43k chars of thinking per reply -- see app/config.py), and both
+          # full tests failed every time: one reply was nothing but reasoning,
+          # the other ran past the runaway cap. It went unnoticed for two
+          # weeks because a full pool never generates. Keep this block equal
+          # to the API's Vercel env and backend/.env.
+          LLM_MAX_TOKENS: "16384"
+          OPENAI_REASONING_EFFORT: medium
+          LLM_TEMPERATURE: "0.4"
+          LLM_TIMEOUT: "600"
           # Under the 55-minute job timeout with room for the install and for
           # a set that is already in flight when the budget runs out.
           POOL_BUDGET_SECONDS: "2400"
