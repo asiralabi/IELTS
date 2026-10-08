@@ -41,7 +41,7 @@ def test_health_is_public(client):
 def test_register_returns_user(client):
     resp = client.post(
         "/auth/register",
-        json={"email": EMAIL, "password": PASSWORD, "full_name": "Auth Tester", "target_band": 7.5},
+        json={"email": EMAIL, "password": PASSWORD, "full_name": "Auth Tester", "target_band": 7.5, "accept_terms": True},
     )
     assert resp.status_code in (200, 201)
     body = resp.json()
@@ -53,7 +53,7 @@ def test_register_returns_user(client):
 
 def test_register_duplicate_email_409(client):
     resp = client.post(
-        "/auth/register", json={"email": EMAIL, "password": PASSWORD}
+        "/auth/register", json={"email": EMAIL, "password": PASSWORD, "accept_terms": True}
     )
     assert resp.status_code == 409
 

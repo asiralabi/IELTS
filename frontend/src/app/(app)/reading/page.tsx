@@ -153,15 +153,15 @@ export default function ReadingPage() {
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
-            className="glass-strong mx-auto max-w-xl rounded-[28px] p-10 text-center shadow-soft"
+            className="glass-strong mx-auto max-w-xl rounded-2xl p-10 text-center shadow-soft"
           >
-            <span className="mx-auto mb-5 flex size-16 items-center justify-center rounded-[22px] bg-gradient-to-br from-violet-500/20 to-purple-500/10 text-violet-500">
+            <span className="mx-auto mb-5 flex size-16 items-center justify-center rounded-xl bg-primary/10 text-primary">
               <BookOpen className="size-8" aria-hidden />
             </span>
-            <h2 className="font-display text-2xl font-bold">Academic Reading Practice</h2>
+            <h2 className="font-display text-2xl font-medium">Academic Reading Practice</h2>
             <p className="mx-auto mt-3 max-w-md text-sm text-muted-foreground">
-              The AI will write a fresh IELTS-style passage with authentic
-              question types, then mark your answers instantly.
+              A fresh IELTS-style passage with the real question types. Your
+              answers are marked the moment you finish.
             </p>
             <div className="mt-8 flex flex-col items-center gap-3">
               <Button size="lg" onClick={generate}>
@@ -218,7 +218,7 @@ export default function ReadingPage() {
               <motion.div
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className="glass-strong flex flex-col items-center gap-6 rounded-[28px] p-8 shadow-soft sm:flex-row sm:justify-between"
+                className="glass-strong flex flex-col items-center gap-6 rounded-2xl p-8 shadow-soft sm:flex-row sm:justify-between"
                 role="status"
                 aria-live="polite"
               >
@@ -229,7 +229,7 @@ export default function ReadingPage() {
                     label="Band est."
                   />
                   <div>
-                    <div className="font-display text-3xl font-bold">
+                    <div className="font-display text-3xl font-medium">
                       {result.score ?? "—"}/{result.total ?? questions.length}
                     </div>
                     <p className="text-sm text-muted-foreground">correct answers</p>
@@ -269,7 +269,7 @@ export default function ReadingPage() {
                   className={cn(
                     "flex-1 rounded-xl px-4 py-2 text-sm font-medium transition-all",
                     mobileTab === t.id
-                      ? "bg-gradient-to-r from-primary to-secondary text-white shadow-glow"
+                      ? "bg-primary text-primary-foreground"
                       : "text-muted-foreground hover:text-foreground"
                   )}
                 >
@@ -285,14 +285,14 @@ export default function ReadingPage() {
                 role="tabpanel"
                 aria-labelledby="tab-passage"
                 className={cn(
-                  "glass max-h-[70vh] overflow-y-auto rounded-[24px] p-7 shadow-soft lg:sticky lg:top-6 lg:block",
+                  "glass max-h-[70vh] overflow-y-auto rounded-2xl p-7 shadow-soft lg:sticky lg:top-6 lg:block",
                   mobileTab === "passage" ? "block" : "hidden lg:block"
                 )}
               >
                 <Badge variant="secondary" className="mb-3">
                   Passage
                 </Badge>
-                <h2 className="font-display text-xl font-semibold">
+                <h2 className="font-display text-xl font-medium">
                   {practice.title ?? "Reading Passage"}
                 </h2>
                 <div className="mt-4 whitespace-pre-wrap text-[15px] leading-[1.8] text-foreground/90">

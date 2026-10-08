@@ -4,7 +4,7 @@ export function Skeleton({ className, ...props }: React.HTMLAttributes<HTMLDivEl
   return (
     <div
       className={cn(
-        "animate-shimmer rounded-2xl bg-[linear-gradient(110deg,transparent_25%,rgb(100_116_139/0.15)_50%,transparent_75%)] bg-[length:200%_100%] bg-muted/60",
+        "animate-shimmer rounded-xl bg-[linear-gradient(110deg,transparent_25%,rgb(27_35_31/0.06)_50%,transparent_75%)] bg-[length:200%_100%] bg-muted/60",
         className
       )}
       {...props}

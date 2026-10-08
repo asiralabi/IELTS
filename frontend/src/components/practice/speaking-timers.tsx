@@ -88,7 +88,7 @@ export function Part2Timer({
           : "Time's up";
 
   return (
-    <div className="glass rounded-[24px] p-6 shadow-soft" role="timer" aria-live="polite">
+    <div className="glass rounded-2xl p-6 shadow-soft" role="timer" aria-live="polite">
       <div className="flex flex-col items-center gap-4 sm:flex-row sm:justify-between">
         <div className="flex items-center gap-3">
           <span
@@ -97,14 +97,14 @@ export function Part2Timer({
               phase === "speaking"
                 ? "bg-danger/15 text-danger"
                 : phase === "prep"
-                  ? "bg-amber-500/15 text-amber-600"
+                  ? "bg-warning/15 text-warning"
                   : "bg-primary/10 text-primary"
             )}
           >
             <TimerIcon className="size-5" aria-hidden />
           </span>
           <div>
-            <div className="font-display text-sm font-semibold">{label}</div>
+            <div className="font-display text-sm font-medium">{label}</div>
             <div className="text-xs text-muted-foreground">
               {phase === "idle"
                 ? `${prepSeconds}s prep · ${speakingSeconds}s speaking`
@@ -129,7 +129,7 @@ export function Part2Timer({
               repeat: warning ? Infinity : 0,
             }}
             className={cn(
-              "font-display text-4xl font-bold tabular-nums",
+              "font-display text-4xl font-medium tabular-nums",
               warning ? "text-danger" : "text-foreground"
             )}
           >
@@ -141,7 +141,7 @@ export function Part2Timer({
             <button
               type="button"
               onClick={start}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-primary to-secondary px-4 py-2 text-sm font-medium text-white shadow-glow transition-transform hover:scale-[1.02]"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-transform hover:scale-[1.02]"
             >
               <Play className="size-4" aria-hidden />
               Start prep
@@ -192,7 +192,7 @@ export function SpeakingElapsedHint({
     <div
       className={cn(
         "inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium",
-        over ? "bg-amber-500/15 text-amber-600" : "bg-muted text-muted-foreground"
+        over ? "bg-warning/15 text-warning" : "bg-muted text-muted-foreground"
       )}
       role="status"
       aria-live="polite"

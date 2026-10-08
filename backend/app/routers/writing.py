@@ -24,8 +24,8 @@ _PAPER = (
 
 class WritingSubmitRequest(BaseModel):
     task_type: Literal["task1", "task2"]
-    prompt: str
-    essay: str = Field(min_length=50)
+    prompt: str = Field(max_length=4000)
+    essay: str = Field(min_length=50, max_length=12000)
     visual: dict[str, Any] | None = None
     # A Task 1 map is two plans of one place, so it arrives as a list rather
     # than in `visual`. Both are carried: a chart task still sends `visual`.
@@ -33,8 +33,8 @@ class WritingSubmitRequest(BaseModel):
 
 
 class WritingTaskAnswer(BaseModel):
-    prompt: str
-    essay: str = Field(min_length=50)
+    prompt: str = Field(max_length=4000)
+    essay: str = Field(min_length=50, max_length=12000)
     visual: dict[str, Any] | None = None
     visuals: list[dict[str, Any]] | None = None
 

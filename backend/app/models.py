@@ -190,6 +190,23 @@ class WeaknessProfile(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class Consent(Base):
+    """Proof that a student agreed to the terms and privacy policy.
+
+    Bangladesh's Personal Data Protection Ordinance 2025 asks a service to show
+    that consent was given, to what, and when. The version is the date of the
+    policy text they saw, so a later change to the policy is not mistaken for
+    something they agreed to.
+    """
+
+    __tablename__ = "consents"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    policy_version: Mapped[str] = mapped_column(String(20))
+    accepted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class Feedback(Base):
     """A pilot tester's note, kept with an address we can answer it at.
 

@@ -94,10 +94,10 @@ export default function VocabularyPage() {
             key="done"
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="glass-strong rounded-[28px] p-10 text-center shadow-soft"
+            className="glass-strong rounded-2xl p-10 text-center shadow-soft"
           >
             <div className="font-display text-5xl">🎉</div>
-            <h2 className="mt-4 font-display text-2xl font-bold">Deck complete!</h2>
+            <h2 className="mt-4 font-display text-2xl font-medium">Deck complete!</h2>
             <p className="mt-2 text-sm text-muted-foreground">
               You marked {knownCount} of {DECK.length} words as mastered.
             </p>
@@ -125,11 +125,11 @@ export default function VocabularyPage() {
                 className="relative h-72 w-full [transform-style:preserve-3d]"
               >
                 {/* Front */}
-                <div className="glass-strong absolute inset-0 flex flex-col items-center justify-center rounded-[28px] p-8 shadow-soft [backface-visibility:hidden]">
+                <div className="glass-strong absolute inset-0 flex flex-col items-center justify-center rounded-2xl p-8 shadow-soft [backface-visibility:hidden]">
                   <Badge variant="secondary" className="mb-4">
                     Tap to flip
                   </Badge>
-                  <div className="font-display text-4xl font-bold text-gradient">
+                  <div className="font-display text-4xl font-medium text-gradient">
                     {card.word}
                   </div>
                   {verdicts[card.word] === "known" && (
@@ -139,7 +139,7 @@ export default function VocabularyPage() {
                   )}
                 </div>
                 {/* Back */}
-                <div className="glass-strong absolute inset-0 flex rotate-y-180 flex-col items-center justify-center rounded-[28px] p-8 text-center shadow-soft [backface-visibility:hidden] [transform:rotateY(180deg)]">
+                <div className="glass-strong absolute inset-0 flex rotate-y-180 flex-col items-center justify-center rounded-2xl p-8 text-center shadow-soft [backface-visibility:hidden] [transform:rotateY(180deg)]">
                   <p className="text-lg font-medium">{card.meaning}</p>
                   <p className="mt-4 text-sm italic text-muted-foreground">
                     “{card.example}”

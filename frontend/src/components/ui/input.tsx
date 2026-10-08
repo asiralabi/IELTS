@@ -7,7 +7,7 @@ export const Input = React.forwardRef<HTMLInputElement, React.InputHTMLAttribute
       ref={ref}
       type={type}
       className={cn(
-        "h-11 w-full rounded-2xl border border-input bg-background/60 px-4 text-sm shadow-soft backdrop-blur-sm transition-all placeholder:text-muted-foreground focus:border-primary/50 focus:shadow-glow focus:outline-none disabled:cursor-not-allowed disabled:opacity-50",
+        "h-11 w-full rounded-xl border border-input bg-card px-4 text-sm transition-[border-color,box-shadow] placeholder:text-muted-foreground/80 focus:border-primary focus:shadow-[0_0_0_3px_color-mix(in_oklab,var(--primary)_14%,transparent)] focus:outline-none disabled:cursor-not-allowed disabled:opacity-50",
         className
       )}
       {...props}
@@ -23,7 +23,7 @@ export const Textarea = React.forwardRef<
   <textarea
     ref={ref}
     className={cn(
-      "w-full rounded-2xl border border-input bg-background/60 px-4 py-3 text-sm shadow-soft backdrop-blur-sm transition-all placeholder:text-muted-foreground focus:border-primary/50 focus:shadow-glow focus:outline-none disabled:cursor-not-allowed disabled:opacity-50",
+      "w-full rounded-xl border border-input bg-card px-4 py-3 text-sm leading-relaxed transition-[border-color,box-shadow] placeholder:text-muted-foreground/80 focus:border-primary focus:shadow-[0_0_0_3px_color-mix(in_oklab,var(--primary)_14%,transparent)] focus:outline-none disabled:cursor-not-allowed disabled:opacity-50",
       className
     )}
     {...props}

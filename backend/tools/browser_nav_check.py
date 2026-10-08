@@ -40,7 +40,7 @@ def make_account() -> dict:
     email = f"navcheck-{uuid.uuid4().hex[:8]}@gmail.com"
     httpx.post(
         f"{API}/auth/register",
-        json={"email": email, "password": "password123", "full_name": "Nav Tester"},
+        json={"email": email, "password": "password123", "full_name": "Nav Tester", "accept_terms": True},
         timeout=30,
     ).raise_for_status()
     tokens = httpx.post(
@@ -110,7 +110,7 @@ def main() -> int:
         shot(page, "40_landing_no_pricing")
 
         # The sections that must survive the removal.
-        for section in ("#home", "#features", "#modules", "#feedback", "#about"):
+        for section in ("#home", "#route", "#pack", "#feedback", "#about"):
             if not page.locator(section).count():
                 failures.append(f"{section} disappeared with the price box")
         ctx.close()

@@ -25,14 +25,14 @@ export function PracticeError({
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      className="glass-strong mx-auto max-w-xl rounded-[28px] p-8 text-center shadow-soft"
+      className="glass-strong mx-auto max-w-xl rounded-2xl p-8 text-center shadow-soft"
       role="alert"
       aria-live="assertive"
     >
-      <span className="mx-auto mb-4 flex size-14 items-center justify-center rounded-[20px] bg-gradient-to-br from-rose-500/20 to-red-500/10 text-rose-500">
+      <span className="mx-auto mb-4 flex size-14 items-center justify-center rounded-xl bg-danger/10 text-danger">
         <AlertTriangle className="size-7" aria-hidden />
       </span>
-      <h3 className="font-display text-xl font-semibold">{title}</h3>
+      <h3 className="font-display text-xl font-medium">{title}</h3>
       <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">{message}</p>
       <div className="mt-6 flex flex-wrap justify-center gap-3">
         <Button onClick={onRetry}>

@@ -8,7 +8,7 @@ export function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElemen
   return (
     <div
       className={cn(
-        "glass rounded-[24px] shadow-soft transition-shadow duration-300",
+        "rounded-2xl border border-border bg-card shadow-soft transition-[border-color,box-shadow] duration-300",
         className
       )}
       {...props}
@@ -16,6 +16,7 @@ export function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElemen
   );
 }
 
+/** A card that answers the pointer: it lifts a hair and its edge darkens. */
 export function GlowCard({
   className,
   children,
@@ -23,10 +24,10 @@ export function GlowCard({
 }: HTMLMotionProps<"div">) {
   return (
     <motion.div
-      whileHover={{ y: -6 }}
-      transition={{ type: "spring", stiffness: 300, damping: 20 }}
+      whileHover={{ y: -2 }}
+      transition={{ type: "spring", stiffness: 260, damping: 24 }}
       className={cn(
-        "group glass rounded-[24px] shadow-soft transition-shadow duration-300 hover:shadow-glow",
+        "group rounded-2xl border border-border bg-card shadow-soft transition-[border-color,box-shadow] duration-300 hover:border-foreground/25 hover:shadow-lift",
         className
       )}
       {...props}
@@ -41,7 +42,7 @@ export function CardHeader({ className, ...props }: React.HTMLAttributes<HTMLDiv
 }
 
 export function CardTitle({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>) {
-  return <h3 className={cn("font-display text-lg font-semibold tracking-tight", className)} {...props} />;
+  return <h3 className={cn("text-base font-semibold tracking-tight", className)} {...props} />;
 }
 
 export function CardDescription({ className, ...props }: React.HTMLAttributes<HTMLParagraphElement>) {

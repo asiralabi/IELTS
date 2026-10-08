@@ -283,15 +283,15 @@ export default function MockTestPage() {
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
-            className="glass-strong mx-auto max-w-xl rounded-[28px] p-10 text-center shadow-soft"
+            className="glass-strong mx-auto max-w-xl rounded-2xl p-10 text-center shadow-soft"
           >
-            <span className="mx-auto mb-5 flex size-16 items-center justify-center rounded-[22px] bg-gradient-to-br from-primary/20 to-secondary/10 text-primary">
+            <span className="mx-auto mb-5 flex size-16 items-center justify-center rounded-xl bg-primary/10 text-primary">
               <ClipboardList className="size-8" aria-hidden />
             </span>
-            <h2 className="font-display text-2xl font-bold">Full AI Mock Exam</h2>
+            <h2 className="font-display text-2xl font-medium">Full Mock Exam</h2>
             <p className="mx-auto mt-3 max-w-md text-sm text-muted-foreground">
               All four skills in one sitting, generated at your target band.
-              The AI examiner scores everything and returns your overall band.
+              Every section is marked and you get your overall band.
             </p>
             <p className="mt-2 text-xs text-muted-foreground/70">
               Full papers are written in the background ahead of time. If they
@@ -314,7 +314,7 @@ export default function MockTestPage() {
         {phase === "exam" && exam && (
           <motion.div key="exam" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-5">
             {/* Exam header: navigator + timer + autosave */}
-            <div className="glass-strong sticky top-3 z-30 flex flex-wrap items-center justify-between gap-3 rounded-[24px] p-3 shadow-soft">
+            <div className="glass-strong sticky top-3 z-30 flex flex-wrap items-center justify-between gap-3 rounded-2xl p-3 shadow-soft">
               <div className="flex gap-1.5">
                 {/* A navigator, not a menu. A section already sat is closed and
                     one not yet reached has not opened — the same as the real
@@ -340,7 +340,7 @@ export default function MockTestPage() {
                       className={cn(
                         "flex items-center gap-2 rounded-2xl px-3.5 py-2 text-sm font-medium transition-all",
                         current
-                          ? "bg-gradient-to-r from-primary to-secondary text-white shadow-glow"
+                          ? "bg-primary text-primary-foreground"
                           : done
                             ? "text-muted-foreground/70 line-through"
                             : "text-muted-foreground/40",
@@ -415,12 +415,12 @@ export default function MockTestPage() {
                 {section === "listening" &&
                   listeningParts.map((part) => (
                     <div key={part.key} className="space-y-4">
-                      <div className="glass rounded-[24px] p-6 shadow-soft">
+                      <div className="glass rounded-2xl p-6 shadow-soft">
                         <Badge variant="accent" className="mb-3">
                           {listeningParts.length > 1 ? part.label : "Recording script"}
                         </Badge>
                         {part.title && (
-                          <h3 className="mb-2 font-display text-lg font-semibold">
+                          <h3 className="mb-2 font-display text-lg font-medium">
                             {part.title}
                           </h3>
                         )}
@@ -481,12 +481,12 @@ export default function MockTestPage() {
                 {section === "reading" &&
                   readingPassages.map((passage) => (
                     <div key={passage.key} className="grid gap-6 lg:grid-cols-2">
-                      <div className="glass max-h-[65vh] overflow-y-auto rounded-[24px] p-6 shadow-soft lg:sticky lg:top-24">
+                      <div className="glass max-h-[65vh] overflow-y-auto rounded-2xl p-6 shadow-soft lg:sticky lg:top-24">
                         <Badge variant="secondary" className="mb-3">
                           {readingPassages.length > 1 ? passage.label : "Passage"}
                         </Badge>
                         {passage.title && (
-                          <h3 className="mb-2 font-display text-lg font-semibold">
+                          <h3 className="mb-2 font-display text-lg font-medium">
                             {passage.title}
                           </h3>
                         )}
@@ -516,7 +516,7 @@ export default function MockTestPage() {
                   (["task1", "task2"] as const).map((t) => {
                     const taskVisual = extractVisual(writing[t]);
                     return (
-                      <div key={t} className="glass rounded-[24px] p-6 shadow-soft">
+                      <div key={t} className="glass rounded-2xl p-6 shadow-soft">
                         <Badge variant="warning" className="mb-3">
                           {t === "task1" ? "Task 1 (150+ words)" : "Task 2 (250+ words)"}
                         </Badge>
@@ -544,7 +544,7 @@ export default function MockTestPage() {
 
                 {section === "speaking" &&
                   (["part1", "part2", "part3"] as const).map((p) => (
-                    <div key={p} className="glass rounded-[24px] p-6 shadow-soft">
+                    <div key={p} className="glass rounded-2xl p-6 shadow-soft">
                       <Badge variant="success" className="mb-3">
                         {p === "part1" ? "Part 1" : p === "part2" ? "Part 2 — Cue card" : "Part 3"}
                       </Badge>
@@ -570,7 +570,7 @@ export default function MockTestPage() {
 
         {phase === "results" && result && (
           <motion.div key="results" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
-            <div className="glass-strong flex flex-col items-center gap-8 rounded-[28px] p-8 shadow-soft md:flex-row md:justify-around">
+            <div className="glass-strong flex flex-col items-center gap-8 rounded-2xl p-8 shadow-soft md:flex-row md:justify-around">
               <BandRing band={result.overall_band} size={170} label="Overall Band" />
               <div className="h-56 w-full max-w-sm">
                 <BandRadar data={radarData} />
@@ -584,10 +584,10 @@ export default function MockTestPage() {
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.15 * i }}
-                  className="glass rounded-[24px] p-5 text-center shadow-soft"
+                  className="glass rounded-2xl p-5 text-center shadow-soft"
                 >
                   <s.icon className="mx-auto size-6 text-primary" aria-hidden />
-                  <div className="mt-2 font-display text-2xl font-bold">
+                  <div className="mt-2 font-display text-2xl font-medium">
                     {formatBand(sectionBands[s.id] ?? null)}
                   </div>
                   <div className="text-xs text-muted-foreground">{s.label}</div>

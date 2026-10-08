@@ -21,10 +21,10 @@ export default function AppError({
       role="alert"
       aria-live="assertive"
     >
-      <span className="mx-auto mb-5 flex size-16 items-center justify-center rounded-[22px] bg-gradient-to-br from-rose-500/20 to-red-500/10 text-rose-500">
+      <span className="mx-auto mb-5 flex size-16 items-center justify-center rounded-xl bg-danger/10 text-danger">
         <AlertTriangle className="size-8" aria-hidden />
       </span>
-      <h2 className="font-display text-2xl font-bold">This page had a problem</h2>
+      <h2 className="font-display text-2xl font-medium">This page had a problem</h2>
       <p className="mx-auto mt-3 max-w-md text-sm text-muted-foreground">
         {error.message || "We hit an unexpected error loading this section."}
       </p>

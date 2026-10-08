@@ -32,6 +32,9 @@ settings.tts_cache_dir = str(_TMP / "data" / "tts_cache")
 # read production audio back out of it.
 settings.blob_read_write_token = ""
 settings.jwt_secret = "test-secret-key-for-the-ielts-test-suite-only"
+# Hundreds of requests from one "client" would trip the per-caller budgets.
+# test_security.py switches it back on for the cases that test it.
+settings.rate_limit_enabled = False
 
 from app.database import init_db  # noqa: E402  (engine now bound to temp sqlite)
 from app.llm.client import LLMClient, set_llm_client  # noqa: E402
@@ -335,7 +338,7 @@ def client():
 def _register_and_login(client, email: str, password: str = "password123") -> dict:
     resp = client.post(
         "/auth/register",
-        json={"email": email, "password": password, "full_name": "Test User", "target_band": 7.0},
+        json={"email": email, "password": password, "full_name": "Test User", "target_band": 7.0, "accept_terms": True},
     )
     assert resp.status_code in (200, 201), resp.text
     resp = client.post("/auth/login", data={"username": email, "password": password})

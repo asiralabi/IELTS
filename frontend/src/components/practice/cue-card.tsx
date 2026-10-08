@@ -30,13 +30,13 @@ export function CueCard({ question }: { question: string | CueCardObject }) {
 
   const bullets = Array.isArray(question.bullets) ? question.bullets : [];
   return (
-    <div className="glass-strong rounded-[20px] border border-primary/20 p-5 shadow-soft">
+    <div className="glass-strong rounded-xl border border-primary/20 p-5 shadow-soft">
       <div className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-primary">
         <CreditCard className="size-4" aria-hidden />
         Cue card
       </div>
       {question.topic && (
-        <p className="font-display text-lg font-semibold leading-snug">
+        <p className="font-display text-lg font-medium leading-snug">
           {question.topic}
         </p>
       )}

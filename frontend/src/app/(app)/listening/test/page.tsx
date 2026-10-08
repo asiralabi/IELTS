@@ -115,17 +115,16 @@ export default function ListeningTestPage() {
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
-            className="glass-strong mx-auto max-w-xl rounded-[28px] p-10 text-center shadow-soft"
+            className="glass-strong mx-auto max-w-xl rounded-2xl p-10 text-center shadow-soft"
           >
-            <span className="mx-auto mb-5 flex size-16 items-center justify-center rounded-[22px] bg-gradient-to-br from-sky-500/20 to-blue-500/10 text-sky-500">
+            <span className="mx-auto mb-5 flex size-16 items-center justify-center rounded-xl bg-primary/10 text-primary">
               <Headphones className="size-8" aria-hidden />
             </span>
-            <h2 className="font-display text-2xl font-bold">Full Listening Test</h2>
+            <h2 className="font-display text-2xl font-medium">Full Listening Test</h2>
             <p className="mx-auto mt-3 max-w-md text-sm text-muted-foreground">
               A complete IELTS Listening test — 4 parts, 40 questions, each with
-              its own recording and figures. The AI writes the whole test,
-              multi-voice neural narration plays each recording, and you get a
-              band score at the end.
+              its own recording and figures. Each recording is read
+              by several voices, and you get a band score at the end.
             </p>
             <p className="mx-auto mt-2 max-w-md text-xs text-muted-foreground/80">
               Generating all four parts takes a minute or two.
@@ -176,13 +175,13 @@ export default function ListeningTestPage() {
               <motion.div
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className="glass-strong rounded-[28px] p-8 shadow-soft"
+                className="glass-strong rounded-2xl p-8 shadow-soft"
               >
                 <div className="flex flex-col items-center gap-6 sm:flex-row sm:justify-between">
                   <div className="flex items-center gap-6">
                     <BandRing band={result.band_estimate ?? null} size={120} label="Band" />
                     <div>
-                      <div className="font-display text-3xl font-bold">
+                      <div className="font-display text-3xl font-medium">
                         {result.score ?? "—"}/{result.total ?? totalQuestions}
                       </div>
                       <p className="text-sm text-muted-foreground">correct answers</p>
@@ -206,7 +205,7 @@ export default function ListeningTestPage() {
                         className="rounded-2xl bg-muted/50 px-4 py-3 text-center"
                       >
                         <div className="text-xs text-muted-foreground">Part {p.part}</div>
-                        <div className="font-display text-lg font-semibold">
+                        <div className="font-display text-lg font-medium">
                           {p.score ?? "—"}/{p.total ?? 10}
                         </div>
                       </div>
@@ -226,7 +225,7 @@ export default function ListeningTestPage() {
                       Part {part.part}
                     </Badge>
                     {part.title && (
-                      <h3 className="font-display text-lg font-semibold">{part.title}</h3>
+                      <h3 className="font-display text-lg font-medium">{part.title}</h3>
                     )}
                     <span className="text-xs text-muted-foreground">
                       Questions {(part.part - 1) * 10 + 1}–{(part.part - 1) * 10 + questions.length}
@@ -235,7 +234,7 @@ export default function ListeningTestPage() {
 
                   {part.audio_script ? (
                     <>
-                      <div className="glass flex flex-wrap items-center justify-between gap-4 rounded-[24px] p-6 shadow-soft">
+                      <div className="glass flex flex-wrap items-center justify-between gap-4 rounded-2xl p-6 shadow-soft">
                         <div className="flex items-center gap-4">
                           <NeuralAudioPlayer
                             practiceId={test.practice_id}
@@ -265,7 +264,7 @@ export default function ListeningTestPage() {
                       </div>
 
                       {transcriptOpen && (
-                        <div className="glass overflow-hidden rounded-[24px] p-6 shadow-soft">
+                        <div className="glass overflow-hidden rounded-2xl p-6 shadow-soft">
                           <Badge variant="secondary" className="mb-3">
                             Transcript
                           </Badge>
@@ -276,8 +275,8 @@ export default function ListeningTestPage() {
                       )}
                     </>
                   ) : (
-                    <div className="glass flex items-start gap-3 rounded-[24px] p-5 shadow-soft">
-                      <FileText className="mt-0.5 size-5 shrink-0 text-amber-500" aria-hidden />
+                    <div className="glass flex items-start gap-3 rounded-2xl p-5 shadow-soft">
+                      <FileText className="mt-0.5 size-5 shrink-0 text-warning" aria-hidden />
                       <p className="text-sm text-muted-foreground">
                         No recording for this part — answer from the printed material below.
                       </p>

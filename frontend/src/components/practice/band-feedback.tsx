@@ -36,7 +36,7 @@ export function BandFeedback({
     >
       <motion.div
         variants={fadeUp}
-        className="glass-strong flex flex-col items-center gap-6 rounded-[28px] p-8 shadow-soft sm:flex-row sm:justify-between"
+        className="glass-strong flex flex-col items-center gap-6 rounded-2xl p-8 shadow-soft sm:flex-row sm:justify-between"
       >
         <BandRing band={band ?? null} />
         <div className="w-full flex-1 space-y-4">
@@ -44,7 +44,7 @@ export function BandFeedback({
             <div key={c.label}>
               <div className="mb-1.5 flex justify-between text-sm">
                 <span className="text-muted-foreground">{c.label}</span>
-                <span className="font-display font-semibold">{formatBand(c.value)}</span>
+                <span className="font-display font-medium">{formatBand(c.value)}</span>
               </div>
               <ProgressBar value={c.value != null ? (c.value / 9) * 100 : 0} />
             </div>
@@ -53,8 +53,8 @@ export function BandFeedback({
       </motion.div>
 
       {feedback && (
-        <motion.div variants={fadeUp} className="glass rounded-[24px] p-6 shadow-soft">
-          <h3 className="mb-3 font-display font-semibold">Examiner Feedback</h3>
+        <motion.div variants={fadeUp} className="glass rounded-2xl p-6 shadow-soft">
+          <h3 className="mb-3 font-display font-medium">Examiner Feedback</h3>
           <div className="prose-chat text-sm leading-relaxed text-muted-foreground">
             <ReactMarkdown>{feedback}</ReactMarkdown>
           </div>
@@ -63,7 +63,7 @@ export function BandFeedback({
 
       <div className="grid gap-4 md:grid-cols-3">
         {strengths && strengths.length > 0 && (
-          <motion.div variants={fadeUp} className="glass rounded-[24px] p-5 shadow-soft">
+          <motion.div variants={fadeUp} className="glass rounded-2xl p-5 shadow-soft">
             <h4 className="mb-3 flex items-center gap-2 text-sm font-semibold text-success">
               <CheckCircle2 className="size-4" aria-hidden /> Strengths
             </h4>
@@ -75,7 +75,7 @@ export function BandFeedback({
           </motion.div>
         )}
         {weaknesses && weaknesses.length > 0 && (
-          <motion.div variants={fadeUp} className="glass rounded-[24px] p-5 shadow-soft">
+          <motion.div variants={fadeUp} className="glass rounded-2xl p-5 shadow-soft">
             <h4 className="mb-3 flex items-center gap-2 text-sm font-semibold text-warning">
               <AlertTriangle className="size-4" aria-hidden /> Weaknesses
             </h4>
@@ -87,7 +87,7 @@ export function BandFeedback({
           </motion.div>
         )}
         {suggestions && suggestions.length > 0 && (
-          <motion.div variants={fadeUp} className="glass rounded-[24px] p-5 shadow-soft">
+          <motion.div variants={fadeUp} className="glass rounded-2xl p-5 shadow-soft">
             <h4 className="mb-3 flex items-center gap-2 text-sm font-semibold text-primary">
               <Lightbulb className="size-4" aria-hidden /> Suggestions
             </h4>

@@ -12,6 +12,7 @@ from openai import APIStatusError
 
 from app.config import settings
 from app.database import init_db
+from app.security import BodySizeMiddleware, RateLimitMiddleware, SecurityHeadersMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -101,14 +102,32 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title=settings.app_name, debug=settings.debug, lifespan=lifespan)
+    # The interactive docs map every route and schema for anyone who finds
+    # them. Useful on a laptop, a gift to an attacker in production.
+    docs = settings.debug
+    app = FastAPI(
+        title=settings.app_name,
+        debug=settings.debug,
+        lifespan=lifespan,
+        docs_url="/docs" if docs else None,
+        redoc_url="/redoc" if docs else None,
+        openapi_url="/openapi.json" if docs else None,
+    )
 
+    # Starlette runs the LAST middleware added FIRST. Size and rate checks sit
+    # inside CORS, so even a 413 or 429 carries the CORS headers the browser
+    # needs to show the student the message instead of a network error.
+    app.add_middleware(RateLimitMiddleware)
+    app.add_middleware(BodySizeMiddleware)
+    app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origin_list,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        # The app authenticates with a bearer header, never a cookie, so
+        # browsers have no reason to send credentials cross-origin.
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "X-Admin-Token"],
     )
 
     @app.exception_handler(APIStatusError)

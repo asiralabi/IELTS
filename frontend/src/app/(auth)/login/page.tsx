@@ -50,14 +50,14 @@ export default function LoginPage() {
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20, scale: 0.98 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-      className="glass-strong w-full max-w-md rounded-[28px] p-8 shadow-soft"
+      className="w-full max-w-sm"
     >
-      <h1 className="font-display text-2xl font-bold tracking-tight">Welcome back</h1>
+      <h1 className="font-display text-4xl font-medium tracking-tight">Welcome back</h1>
       <p className="mt-1.5 text-sm text-muted-foreground">
-        Sign in to continue your IELTS journey.
+        Pick up where you left off.
       </p>
 
       <form onSubmit={handleSubmit(onSubmit)} className="mt-8 space-y-5" noValidate>
@@ -88,9 +88,9 @@ export default function LoginPage() {
         </Button>
       </form>
 
-      <p className="mt-6 text-center text-sm text-muted-foreground">
+      <p className="mt-8 border-t border-border pt-6 text-sm text-muted-foreground">
         New here?{" "}
-        <Link href="/register" className="font-medium text-primary hover:underline">
+        <Link href="/register" className="font-medium text-foreground underline decoration-sun decoration-2 underline-offset-4 hover:text-primary">
           Create a free account
         </Link>
       </p>

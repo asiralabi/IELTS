@@ -171,16 +171,15 @@ export default function ListeningPage() {
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
-            className="glass-strong mx-auto max-w-xl rounded-[28px] p-10 text-center shadow-soft"
+            className="glass-strong mx-auto max-w-xl rounded-2xl p-10 text-center shadow-soft"
           >
-            <span className="mx-auto mb-5 flex size-16 items-center justify-center rounded-[22px] bg-gradient-to-br from-sky-500/20 to-blue-500/10 text-sky-500">
+            <span className="mx-auto mb-5 flex size-16 items-center justify-center rounded-xl bg-primary/10 text-primary">
               <Headphones className="size-8" aria-hidden />
             </span>
-            <h2 className="font-display text-2xl font-bold">Listening Practice</h2>
+            <h2 className="font-display text-2xl font-medium">Listening Practice</h2>
             <p className="mx-auto mt-3 max-w-md text-sm text-muted-foreground">
-              The AI writes an IELTS-style recording script, multi-voice neural
-              narration reads it aloud, and — just like the real test — you only
-              get two plays.
+              A fresh IELTS-style recording, read aloud by several voices. Just like
+              the real test, you only get two plays.
             </p>
             <div className="mt-8 flex flex-col items-center gap-3">
               <Button size="lg" onClick={generate}>
@@ -237,12 +236,12 @@ export default function ListeningPage() {
               <motion.div
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className="glass-strong flex flex-col items-center gap-6 rounded-[28px] p-8 shadow-soft sm:flex-row sm:justify-between"
+                className="glass-strong flex flex-col items-center gap-6 rounded-2xl p-8 shadow-soft sm:flex-row sm:justify-between"
               >
                 <div className="flex items-center gap-6">
                   <BandRing band={result.band_estimate ?? null} size={110} label="Band est." />
                   <div>
-                    <div className="font-display text-3xl font-bold">
+                    <div className="font-display text-3xl font-medium">
                       {result.score ?? "—"}/{result.total ?? questions.length}
                     </div>
                     <p className="text-sm text-muted-foreground">correct answers</p>
@@ -260,12 +259,12 @@ export default function ListeningPage() {
 
             {/* Paper-based test — no audio available (Cambridge scanned PDFs, etc.) */}
             {!practice.audio_script && (
-              <div className="glass-strong flex flex-col gap-3 rounded-[24px] p-6 shadow-soft sm:flex-row sm:items-start">
-                <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-500/20 to-orange-500/10 text-amber-500">
+              <div className="glass-strong flex flex-col gap-3 rounded-2xl p-6 shadow-soft sm:flex-row sm:items-start">
+                <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
                   <FileText className="size-5" aria-hidden />
                 </span>
                 <div className="flex-1">
-                  <h3 className="font-display text-base font-semibold">
+                  <h3 className="font-display text-base font-medium">
                     Paper-based Cambridge test
                   </h3>
                   <p className="mt-1 text-sm text-muted-foreground">
@@ -279,7 +278,7 @@ export default function ListeningPage() {
             {/* Player — only when there's an audio script to read */}
             {practice.audio_script && (
               <>
-                <div className="glass flex flex-wrap items-center justify-between gap-4 rounded-[24px] p-6 shadow-soft">
+                <div className="glass flex flex-wrap items-center justify-between gap-4 rounded-2xl p-6 shadow-soft">
                   <NeuralAudioPlayer
                     practiceId={practice.practice_id}
                     disabled={phase === "done"}
@@ -311,7 +310,7 @@ export default function ListeningPage() {
                   <motion.div
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: "auto" }}
-                    className="glass overflow-hidden rounded-[24px] p-6 shadow-soft"
+                    className="glass overflow-hidden rounded-2xl p-6 shadow-soft"
                   >
                     <Badge variant="secondary" className="mb-3">
                       Transcript
@@ -325,7 +324,7 @@ export default function ListeningPage() {
             )}
 
             {practice.note && practice.audio_script && (
-              <div className="glass flex items-start gap-3 rounded-[24px] p-4 text-sm shadow-soft">
+              <div className="glass flex items-start gap-3 rounded-2xl p-4 text-sm shadow-soft">
                 <Info className="mt-0.5 size-4 shrink-0 text-accent" aria-hidden />
                 <span className="text-muted-foreground">{practice.note}</span>
               </div>

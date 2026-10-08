@@ -147,7 +147,7 @@ export default function WritingPage() {
       return;
     }
     if (wordCount < 50) {
-      toast.error("You need at least 50 words for the AI to give useful feedback.");
+      toast.error("Write at least 50 words so the feedback has something to work with.");
       return;
     }
     setPhase("marking");
@@ -288,7 +288,7 @@ export default function WritingPage() {
                       className={cn(
                         "rounded-xl px-4 py-2 text-sm font-medium transition-all",
                         taskType === t
-                          ? "bg-gradient-to-r from-primary to-secondary text-white shadow-glow"
+                          ? "bg-primary text-primary-foreground"
                           : "text-muted-foreground hover:text-foreground"
                       )}
                     >
@@ -303,7 +303,7 @@ export default function WritingPage() {
                   loading={generating}
                 >
                   <Wand2 className="size-4" aria-hidden />
-                  Generate AI prompt
+                  Generate a prompt
                 </Button>
                 <button
                   onClick={() => router.push("/writing/test")}
@@ -328,7 +328,7 @@ export default function WritingPage() {
               />
             )}
 
-            <div className="glass rounded-[24px] p-1.5 shadow-soft">
+            <div className="glass rounded-2xl p-1.5 shadow-soft">
               <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
                 <div className="flex flex-wrap items-center gap-3 text-sm">
                   {focusMode && (
@@ -392,7 +392,7 @@ export default function WritingPage() {
                 onChange={(e) => setEssay(e.target.value)}
                 placeholder="Start writing your answer…"
                 rows={focusMode ? 22 : 14}
-                className="rounded-[20px] border-0 bg-transparent shadow-none focus:shadow-none"
+                className="rounded-xl border-0 bg-transparent shadow-none focus:shadow-none"
                 aria-label="Essay"
               />
             </div>
@@ -404,7 +404,7 @@ export default function WritingPage() {
                 </span>
               )}
               <Button size="lg" onClick={submit} disabled={wordCount < 50}>
-                Submit for AI marking
+                Submit for marking
               </Button>
             </div>
           </motion.div>

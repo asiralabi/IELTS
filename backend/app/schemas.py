@@ -1,12 +1,23 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
 class UserCreate(BaseModel):
     email: EmailStr
-    password: str = Field(min_length=8)
-    full_name: str | None = None
+    # 72 is bcrypt's limit; anything past it was silently ignored before.
+    password: str = Field(min_length=8, max_length=72)
+    full_name: str | None = Field(default=None, max_length=120)
+    # Explicit consent to the Terms and Privacy Policy, required by the
+    # Personal Data Protection Ordinance 2025 before any data is processed.
+    accept_terms: bool = Field(default=False, validate_default=True)
+
+    @field_validator("accept_terms")
+    @classmethod
+    def _must_accept(cls, value: bool) -> bool:
+        if not value:
+            raise ValueError("You need to accept the Terms and Privacy Policy to create an account")
+        return value
     target_band: float | None = None
 
 
@@ -27,12 +38,16 @@ class Token(BaseModel):
     token_type: str = "bearer"
 
 
+class DeleteAccountRequest(BaseModel):
+    password: str = Field(min_length=1, max_length=72)
+
+
 class RefreshRequest(BaseModel):
     refresh_token: str
 
 
 class ChatRequest(BaseModel):
-    message: str = Field(min_length=1)
+    message: str = Field(min_length=1, max_length=4000)
     session_id: int | None = None
 
 

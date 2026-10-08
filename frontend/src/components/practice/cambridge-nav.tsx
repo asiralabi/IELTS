@@ -70,7 +70,7 @@ export function CambridgeNav({
         : `Task ${n + 1}`;
 
   return (
-    <div className="glass mb-5 flex flex-wrap items-center justify-between gap-3 rounded-[20px] px-4 py-2.5 text-sm shadow-soft">
+    <div className="glass mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl px-4 py-2.5 text-sm shadow-soft">
       <Link
         href="/cambridge"
         className="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"

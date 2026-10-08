@@ -106,7 +106,7 @@ async function request<T>(path: string, opts: RequestOptions = {}, retried = fal
   } catch (err) {
     clearTimeout(timer);
     if (err instanceof DOMException && err.name === "AbortError") {
-      throw new ApiError(408, "The AI is taking too long to respond. Please try again.");
+      throw new ApiError(408, "This is taking too long. Please try again.");
     }
     throw new ApiError(0, "Cannot reach the server. Is the backend running?");
   }
@@ -129,6 +129,7 @@ async function request<T>(path: string, opts: RequestOptions = {}, retried = fal
     }
     throw new ApiError(res.status, detail);
   }
+  if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }
 
@@ -180,6 +181,7 @@ export const api = {
     password: string;
     full_name?: string;
     target_band?: number;
+    accept_terms: boolean;
   }) => request<User>("/auth/register", { method: "POST", body: payload, auth: false }),
 
   login: (email: string, password: string) => {
@@ -188,6 +190,12 @@ export const api = {
   },
 
   me: () => request<User>("/auth/me"),
+
+  // Everything the server holds about the signed-in student, and the right to
+  // erase it (Bangladesh PDPO 2025; GDPR for anyone using Oratio from the EU/UK).
+  exportMyData: () => request<Record<string, unknown>>("/auth/me/export"),
+  deleteAccount: (password: string) =>
+    request<void>("/auth/me", { method: "DELETE", body: { password } }),
 
   // --- chat ---
   chat: (message: string, session_id?: number | null) =>

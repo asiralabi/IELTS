@@ -145,6 +145,12 @@ class Settings(BaseSettings):
     # an X-Admin-Token header). There is no admin role in this app; unset
     # means that route stays closed rather than open to anyone.
     feedback_admin_token: str = ""
+    # Per-caller request budgets (see app.security.RATE_RULES). Tests turn
+    # this off; production should never need to.
+    rate_limit_enabled: bool = True
+    # Date of the Terms / Privacy text a new account agrees to. Bump it (and the
+    # LEGAL_VERSION constant in frontend/src/lib/legal.ts) when either changes.
+    legal_policy_version: str = "2026-10-08"
 
     data_dir: str = "./data"
     upload_dir: str = "./data/uploads"

@@ -14,12 +14,17 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 
 def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    return bcrypt.hashpw(password.encode("utf-8")[:72], bcrypt.gensalt()).decode("utf-8")
+
+
+# Checked against when the email is unknown, so a miss costs the same bcrypt
+# time as a wrong password and response timing cannot reveal who has an account.
+_DUMMY_HASH = bcrypt.hashpw(b"oratio-timing-equaliser", bcrypt.gensalt()).decode("utf-8")
 
 
 def verify_password(password: str, hashed: str) -> bool:
     try:
-        return bcrypt.checkpw(password.encode("utf-8"), hashed.encode("utf-8"))
+        return bcrypt.checkpw(password.encode("utf-8")[:72], hashed.encode("utf-8"))
     except ValueError:
         return False
 
@@ -72,7 +77,11 @@ def get_current_user(
             detail="Invalid token type",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    user = db.get(User, int(payload["sub"]))
+    try:
+        user_id = int(payload["sub"])
+    except (KeyError, TypeError, ValueError):
+        user_id = None
+    user = db.get(User, user_id) if user_id is not None else None
     if user is None or not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

@@ -202,12 +202,12 @@ export default function SpeakingTestPage() {
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
-            className="glass-strong mx-auto max-w-xl rounded-[28px] p-10 text-center shadow-soft"
+            className="glass-strong mx-auto max-w-xl rounded-2xl p-10 text-center shadow-soft"
           >
-            <span className="mx-auto mb-5 flex size-16 items-center justify-center rounded-[22px] bg-gradient-to-br from-emerald-500/20 to-accent/10 text-emerald-500">
+            <span className="mx-auto mb-5 flex size-16 items-center justify-center rounded-xl bg-primary/10 text-primary">
               <Mic className="size-8" aria-hidden />
             </span>
-            <h2 className="font-display text-2xl font-bold">Full Speaking Test</h2>
+            <h2 className="font-display text-2xl font-medium">Full Speaking Test</h2>
             <p className="mx-auto mt-3 max-w-md text-sm text-muted-foreground">
               A complete IELTS Speaking interview — the introduction, the cue-card
               long turn and the abstract discussion, about 14 minutes, marked
@@ -255,7 +255,7 @@ export default function SpeakingTestPage() {
             role="status"
             aria-live="polite"
           >
-            <div className="glass-strong flex flex-col items-center gap-6 rounded-[28px] p-8 shadow-soft sm:flex-row sm:justify-between">
+            <div className="glass-strong flex flex-col items-center gap-6 rounded-2xl p-8 shadow-soft sm:flex-row sm:justify-between">
               <div className="flex items-center gap-6">
                 <BandRing band={result.overall_band} size={120} label="Band" />
                 <div>
@@ -318,13 +318,13 @@ export default function SpeakingTestPage() {
                   key={part.part}
                   onClick={() => selectPart(part.part)}
                   className={cn(
-                    "glass rounded-[20px] p-4 text-left transition-all",
+                    "glass rounded-xl p-4 text-left transition-all",
                     active === part.part
                       ? "border-primary/50 shadow-glow"
                       : "hover:border-primary/30 hover:shadow-soft"
                   )}
                 >
-                  <div className="font-display font-semibold">{part.label}</div>
+                  <div className="font-display font-medium">{part.label}</div>
                   <div className="mt-0.5 text-xs text-muted-foreground">
                     ~{part.minutes} minutes
                   </div>
@@ -332,8 +332,8 @@ export default function SpeakingTestPage() {
               ))}
             </div>
 
-            <div className="glass rounded-[24px] p-6 shadow-soft">
-              <h3 className="mb-3 font-display font-semibold">Examiner question</h3>
+            <div className="glass rounded-2xl p-6 shadow-soft">
+              <h3 className="mb-3 font-display font-medium">Examiner question</h3>
               {isCueCardObject(activePart.question) ? (
                 <CueCard question={activePart.question} />
               ) : (
@@ -354,7 +354,7 @@ export default function SpeakingTestPage() {
               />
             )}
 
-            <div className="glass-strong rounded-[28px] p-8 text-center shadow-soft">
+            <div className="glass-strong rounded-2xl p-8 text-center shadow-soft">
               <motion.button
                 onClick={() => (recording ? stopRecording() : startRecording())}
                 whileHover={{ scale: 1.06 }}
@@ -364,7 +364,7 @@ export default function SpeakingTestPage() {
                   "mx-auto flex size-20 items-center justify-center rounded-full text-white shadow-glow transition-colors",
                   recording
                     ? "bg-danger animate-pulse-glow"
-                    : "bg-gradient-to-br from-emerald-500 to-accent"
+                    : "bg-primary"
                 )}
               >
                 {recording ? <Square className="size-7" /> : <Mic className="size-8" />}
@@ -378,8 +378,8 @@ export default function SpeakingTestPage() {
               </p>
             </div>
 
-            <div className="glass rounded-[24px] p-6 shadow-soft">
-              <h3 className="mb-3 font-display font-semibold">
+            <div className="glass rounded-2xl p-6 shadow-soft">
+              <h3 className="mb-3 font-display font-medium">
                 Your answer — {activePart.label}
               </h3>
               <Textarea

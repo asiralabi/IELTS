@@ -2,11 +2,9 @@
 
 import * as React from "react";
 import { motion } from "framer-motion";
-import { FileUp, Database, BookMarked } from "lucide-react";
-import { toast } from "sonner";
+import { Database, BookMarked } from "lucide-react";
 import { api } from "@/lib/api";
 import { Topbar } from "@/components/shell/topbar";
-import { Button } from "@/components/ui/button";
 import { GlowCard } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { fadeUp, staggerContainer } from "@/lib/motion";
@@ -32,27 +30,10 @@ const TIPS = [
 
 export default function ResourcesPage() {
   const [documents, setDocuments] = React.useState<number | null>(null);
-  const [uploading, setUploading] = React.useState(false);
-  const fileRef = React.useRef<HTMLInputElement>(null);
 
   React.useEffect(() => {
     api.knowledgeStatus().then((s) => setDocuments(s.documents)).catch(() => {});
   }, []);
-
-  const upload = async (file: File) => {
-    setUploading(true);
-    try {
-      const res = await api.ingestPdf(file);
-      toast.success(`Indexed ${res.chunks_indexed} chunks from ${file.name}`);
-      const s = await api.knowledgeStatus();
-      setDocuments(s.documents);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Upload failed.");
-    } finally {
-      setUploading(false);
-      if (fileRef.current) fileRef.current.value = "";
-    }
-  };
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -67,10 +48,11 @@ export default function ResourcesPage() {
                   <Database className="size-6" aria-hidden />
                 </span>
                 <div>
-                  <h2 className="font-display font-semibold">AI Knowledge Base</h2>
+                  <h2 className="font-display font-medium">Reference library</h2>
                   <p className="text-sm text-muted-foreground">
-                    Upload IELTS books or guides (PDF) — the AI examiner cites them
-                    when marking.
+                    The IELTS books and guides that marking and study plans cite.
+                    The Oratio team curates it, so every student is marked against
+                    the same sources.
                   </p>
                 </div>
               </div>
@@ -78,38 +60,18 @@ export default function ResourcesPage() {
                 {documents == null ? "…" : `${documents} chunks indexed`}
               </Badge>
             </div>
-            <div className="mt-5">
-              <input
-                ref={fileRef}
-                type="file"
-                accept="application/pdf"
-                className="hidden"
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) upload(f);
-                }}
-              />
-              <Button
-                variant="secondary"
-                loading={uploading}
-                onClick={() => fileRef.current?.click()}
-              >
-                <FileUp className="size-4" aria-hidden />
-                Upload a PDF
-              </Button>
-            </div>
           </GlowCard>
         </motion.div>
 
         <motion.div variants={fadeUp}>
-          <h2 className="mb-4 flex items-center gap-2 font-display text-lg font-semibold">
+          <h2 className="mb-4 flex items-center gap-2 font-display text-lg font-medium">
             <BookMarked className="size-5 text-primary" aria-hidden />
             Study smarter
           </h2>
           <div className="grid gap-4 sm:grid-cols-2">
             {TIPS.map((tip) => (
               <GlowCard key={tip.title} className="p-5">
-                <h3 className="font-display text-sm font-semibold">{tip.title}</h3>
+                <h3 className="font-display text-sm font-medium">{tip.title}</h3>
                 <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{tip.body}</p>
               </GlowCard>
             ))}

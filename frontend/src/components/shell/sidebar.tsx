@@ -16,13 +16,13 @@ import {
   CalendarCheck,
   Library,
   Settings,
-  Sparkles,
   Home,
   MessageSquareHeart,
   Menu,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { LogoMark } from "@/components/brand/logo";
 
 const items = [
   { icon: LayoutDashboard, label: "Dashboard", href: "/dashboard" },
@@ -86,18 +86,18 @@ export function Sidebar() {
     <motion.aside
       onMouseEnter={() => setExpanded(true)}
       onMouseLeave={() => setExpanded(false)}
-      animate={{ width: expanded ? 232 : 76 }}
+      animate={{ width: expanded ? 224 : 68 }}
       transition={{ type: "spring", stiffness: 300, damping: 30 }}
-      className="glass-strong fixed inset-y-3 left-3 z-40 hidden flex-col overflow-hidden rounded-[24px] p-3 shadow-soft md:flex"
+      className="fixed inset-y-0 left-0 z-40 hidden flex-col overflow-hidden border-r border-border bg-card p-3 md:flex"
     >
-      <Link href="/dashboard" className="mb-4 flex items-center gap-3 px-1.5 py-2">
-        <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-secondary shadow-glow">
-          <Sparkles className="size-5 text-white" aria-hidden />
+      <Link href="/dashboard" className="mb-5 flex items-center gap-3 px-1 py-2">
+        <span className="flex size-9 shrink-0 items-center justify-center">
+          <LogoMark className="size-7" />
         </span>
         <motion.span
           animate={{ opacity: expanded ? 1 : 0 }}
           transition={{ duration: 0.15 }}
-          className="whitespace-nowrap font-display text-lg font-bold"
+          className="whitespace-nowrap font-display text-xl font-medium italic tracking-tight"
         >
           Oratio
         </motion.span>
@@ -114,21 +114,21 @@ export function Sidebar() {
               aria-label={item.label}
               aria-current={active ? "page" : undefined}
               className={cn(
-                "group relative flex items-center gap-3 rounded-2xl px-3.5 py-2.5 text-sm font-medium transition-all",
+                "group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
                 active
-                  ? "text-primary-foreground"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                  ? "text-foreground"
+                  : "text-muted-foreground hover:bg-muted/70 hover:text-foreground"
               )}
             >
               {active && (
                 <motion.span
                   layoutId="sidebar-active"
                   transition={{ type: "spring", stiffness: 350, damping: 30 }}
-                  className="absolute inset-0 rounded-2xl bg-gradient-to-r from-primary to-secondary shadow-glow"
+                  className="absolute inset-0 rounded-lg bg-muted before:absolute before:inset-y-2 before:-left-3 before:w-[3px] before:rounded-r before:bg-sun"
                 />
               )}
               <item.icon
-                className="relative size-5 shrink-0 transition-transform duration-200 group-hover:scale-110"
+                className="relative size-5 shrink-0" strokeWidth={1.6}
                 aria-hidden
               />
               <motion.span
@@ -150,10 +150,10 @@ export function Sidebar() {
             href={item.href}
             {...intent}
             aria-label={item.label}
-            className="group relative flex items-center gap-3 rounded-2xl px-3.5 py-2.5 text-sm font-medium text-muted-foreground transition-all hover:bg-muted hover:text-foreground"
+            className="group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted/70 hover:text-foreground"
           >
             <item.icon
-              className="relative size-5 shrink-0 transition-transform duration-200 group-hover:scale-110"
+              className="relative size-5 shrink-0" strokeWidth={1.6}
               aria-hidden
             />
             <motion.span
@@ -178,7 +178,7 @@ export function MobileNav() {
   return (
     <nav
       aria-label="Main navigation"
-      className="glass-strong fixed inset-x-3 bottom-3 z-40 flex items-center justify-around rounded-[24px] px-2 py-2 shadow-soft md:hidden"
+      className="fixed inset-x-0 bottom-0 z-40 flex items-center justify-around border-t border-border bg-card/95 px-2 pt-1.5 pb-[max(0.375rem,env(safe-area-inset-bottom))] backdrop-blur md:hidden"
     >
       {mobileItems.map((item) => {
         const active = pathname.startsWith(item.href);
@@ -190,11 +190,11 @@ export function MobileNav() {
             aria-label={item.label}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "flex flex-col items-center gap-0.5 rounded-xl px-3 py-1.5 text-[10px] font-medium transition-colors",
-              active ? "text-primary" : "text-muted-foreground"
+              "relative flex flex-col items-center gap-1 rounded-lg px-3 py-1.5 text-[10px] font-medium tracking-wide transition-colors",
+              active ? "text-foreground after:absolute after:-top-1.5 after:h-[2px] after:w-6 after:rounded-full after:bg-sun" : "text-muted-foreground"
             )}
           >
-            <item.icon className="size-5" aria-hidden />
+            <item.icon className="size-5" strokeWidth={1.6} aria-hidden />
             {item.label}
           </Link>
         );
@@ -226,7 +226,7 @@ export function MobileDrawer() {
         aria-expanded={open}
         aria-controls="mobile-drawer"
         onClick={() => setOpen((v) => !v)}
-        className="glass inline-flex size-11 items-center justify-center rounded-2xl text-muted-foreground transition-all hover:text-foreground hover:shadow-soft md:hidden"
+        className="inline-flex size-10 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-colors hover:text-foreground md:hidden"
       >
         {open ? <X className="size-5" aria-hidden /> : <Menu className="size-5" aria-hidden />}
       </button>
@@ -240,7 +240,7 @@ export function MobileDrawer() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setOpen(false)}
-              className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm md:hidden"
+              className="fixed inset-0 z-40 bg-[#1b231f]/40 md:hidden"
               aria-hidden
             />
             <motion.aside
@@ -253,14 +253,12 @@ export function MobileDrawer() {
               animate={{ x: 0 }}
               exit={{ x: "-100%" }}
               transition={{ type: "spring", stiffness: 320, damping: 32 }}
-              className="glass-strong fixed inset-y-3 left-3 z-50 flex w-[260px] flex-col rounded-[24px] p-4 shadow-soft md:hidden"
+              className="fixed inset-y-0 left-0 z-50 flex w-[272px] flex-col border-r border-border bg-card p-4 shadow-lift md:hidden"
             >
               <div className="mb-4 flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <span className="flex size-10 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-secondary shadow-glow">
-                    <Sparkles className="size-5 text-white" aria-hidden />
-                  </span>
-                  <span className="font-display text-lg font-bold">Oratio</span>
+                  <LogoMark className="size-7" />
+                  <span className="font-display text-xl font-medium italic tracking-tight">Oratio</span>
                 </div>
                 <button
                   type="button"
@@ -285,13 +283,13 @@ export function MobileDrawer() {
                       onClick={() => setOpen(false)}
                       aria-current={active ? "page" : undefined}
                       className={cn(
-                        "flex items-center gap-3 rounded-2xl px-3.5 py-2.5 text-sm font-medium transition-all",
+                        "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
                         active
-                          ? "bg-gradient-to-r from-primary to-secondary text-white shadow-glow"
+                          ? "bg-muted text-foreground shadow-[inset_3px_0_0_var(--sun)]"
                           : "text-muted-foreground hover:bg-muted hover:text-foreground"
                       )}
                     >
-                      <item.icon className="size-5 shrink-0" aria-hidden />
+                      <item.icon className="size-5 shrink-0" strokeWidth={1.6} aria-hidden />
                       {item.label}
                     </Link>
                   );
@@ -305,9 +303,9 @@ export function MobileDrawer() {
                     href={item.href}
                     {...intent}
                     onClick={() => setOpen(false)}
-                    className="flex items-center gap-3 rounded-2xl px-3.5 py-2.5 text-sm font-medium text-muted-foreground transition-all hover:bg-muted hover:text-foreground"
+                    className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                   >
-                    <item.icon className="size-5 shrink-0" aria-hidden />
+                    <item.icon className="size-5 shrink-0" strokeWidth={1.6} aria-hidden />
                     {item.label}
                   </Link>
                 ))}

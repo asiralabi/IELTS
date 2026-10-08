@@ -25,10 +25,10 @@ import { fadeUp, staggerContainer } from "@/lib/motion";
 import { formatBand } from "@/lib/utils";
 
 const skillMeta = [
-  { key: "writing", label: "Writing", icon: PenLine, href: "/writing", color: "text-orange-500" },
-  { key: "speaking", label: "Speaking", icon: Mic, href: "/speaking", color: "text-emerald-500" },
-  { key: "reading", label: "Reading", icon: BookOpen, href: "/reading", color: "text-violet-500" },
-  { key: "listening", label: "Listening", icon: Headphones, href: "/listening", color: "text-sky-500" },
+  { key: "writing", label: "Writing", icon: PenLine, href: "/writing", color: "text-primary" },
+  { key: "speaking", label: "Speaking", icon: Mic, href: "/speaking", color: "text-primary" },
+  { key: "reading", label: "Reading", icon: BookOpen, href: "/reading", color: "text-primary" },
+  { key: "listening", label: "Listening", icon: Headphones, href: "/listening", color: "text-primary" },
 ] as const;
 
 function currentBand(p: Progress): number | null {
@@ -111,7 +111,7 @@ export default function DashboardPage() {
                     <Link key={s.key} href={s.href} className="group">
                       <div className="glass rounded-2xl p-4 transition-all group-hover:shadow-glow">
                         <s.icon className={`size-5 ${s.color}`} aria-hidden />
-                        <div className="mt-2 font-display text-xl font-bold">
+                        <div className="mt-2 font-display text-xl font-medium">
                           {formatBand(progress.skills[s.key].latest_band)}
                         </div>
                         <div className="text-xs text-muted-foreground">{s.label}</div>
@@ -131,7 +131,7 @@ export default function DashboardPage() {
                   <Flame className="size-6" aria-hidden />
                 </span>
                 <div>
-                  <div className="font-display text-2xl font-bold">{totalActivities}</div>
+                  <div className="font-display text-2xl font-medium">{totalActivities}</div>
                   <div className="text-xs text-muted-foreground">Total activities</div>
                 </div>
               </GlowCard>
@@ -140,7 +140,7 @@ export default function DashboardPage() {
                   <ClipboardList className="size-6" aria-hidden />
                 </span>
                 <div>
-                  <div className="font-display text-2xl font-bold">
+                  <div className="font-display text-2xl font-medium">
                     {progress.counts.mock_exams}
                   </div>
                   <div className="text-xs text-muted-foreground">Mock exams taken</div>
@@ -149,9 +149,9 @@ export default function DashboardPage() {
               <Link href="/mock-test">
                 <GlowCard className="group flex h-full items-center justify-between p-5">
                   <div>
-                    <div className="font-display font-semibold">Today&apos;s Goal</div>
+                    <div className="font-display font-medium">Today&apos;s Goal</div>
                     <div className="text-xs text-muted-foreground">
-                      Take a full AI mock test
+                      Take a full mock test
                     </div>
                   </div>
                   <ArrowRight

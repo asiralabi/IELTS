@@ -7,12 +7,11 @@ export const spring: Transition = {
 };
 
 export const fadeUp: Variants = {
-  hidden: { opacity: 0, y: 24, filter: "blur(6px)" },
+  hidden: { opacity: 0, y: 16 },
   visible: {
     opacity: 1,
     y: 0,
-    filter: "blur(0px)",
-    transition: { duration: 0.55, ease: [0.22, 1, 0.36, 1] },
+    transition: { duration: 0.55, ease: [0.16, 1, 0.3, 1] },
   },
 };
 
@@ -32,22 +31,20 @@ export const staggerContainer: Variants = {
 };
 
 export const pageTransition: Variants = {
-  hidden: { opacity: 0, y: 12, filter: "blur(4px)" },
+  hidden: { opacity: 0, y: 10 },
   visible: {
     opacity: 1,
     y: 0,
-    filter: "blur(0px)",
-    transition: { duration: 0.4, ease: [0.22, 1, 0.36, 1] },
+    transition: { duration: 0.4, ease: [0.16, 1, 0.3, 1] },
   },
   exit: {
     opacity: 0,
     y: -8,
-    filter: "blur(4px)",
     transition: { duration: 0.25 },
   },
 };
 
 export const cardHover = {
-  y: -6,
+  y: -2,
   transition: { type: "spring" as const, stiffness: 300, damping: 20 },
 };

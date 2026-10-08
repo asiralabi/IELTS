@@ -103,12 +103,12 @@ export default function ReadingTestPage() {
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
-            className="glass-strong mx-auto max-w-xl rounded-[28px] p-10 text-center shadow-soft"
+            className="glass-strong mx-auto max-w-xl rounded-2xl p-10 text-center shadow-soft"
           >
-            <span className="mx-auto mb-5 flex size-16 items-center justify-center rounded-[22px] bg-gradient-to-br from-emerald-500/20 to-teal-500/10 text-emerald-500">
+            <span className="mx-auto mb-5 flex size-16 items-center justify-center rounded-xl bg-primary/10 text-primary">
               <BookOpen className="size-8" aria-hidden />
             </span>
-            <h2 className="font-display text-2xl font-bold">Full Reading Test</h2>
+            <h2 className="font-display text-2xl font-medium">Full Reading Test</h2>
             <p className="mx-auto mt-3 max-w-md text-sm text-muted-foreground">
               A complete IELTS Academic Reading paper — three passages that get
               harder as you go, numbered straight through, marked together for
@@ -163,13 +163,13 @@ export default function ReadingTestPage() {
               <motion.div
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className="glass-strong rounded-[28px] p-8 shadow-soft"
+                className="glass-strong rounded-2xl p-8 shadow-soft"
               >
                 <div className="flex flex-col items-center gap-6 sm:flex-row sm:justify-between">
                   <div className="flex items-center gap-6">
                     <BandRing band={result.band_estimate ?? null} size={120} label="Band" />
                     <div>
-                      <div className="font-display text-3xl font-bold">
+                      <div className="font-display text-3xl font-medium">
                         {result.score ?? "—"}/{result.total ?? totalQuestions}
                       </div>
                       <p className="text-sm text-muted-foreground">correct answers</p>
@@ -195,7 +195,7 @@ export default function ReadingTestPage() {
                         <div className="text-xs text-muted-foreground">
                           Passage {p.passage_number}
                         </div>
-                        <div className="font-display text-lg font-semibold">
+                        <div className="font-display text-lg font-medium">
                           {p.score ?? "—"}/{p.total ?? "—"}
                         </div>
                       </div>
@@ -216,7 +216,7 @@ export default function ReadingTestPage() {
                       Passage {passage.passage_number}
                     </Badge>
                     {passage.title && (
-                      <h3 className="font-display text-lg font-semibold">{passage.title}</h3>
+                      <h3 className="font-display text-lg font-medium">{passage.title}</h3>
                     )}
                     {first != null && last != null && (
                       <span className="text-xs text-muted-foreground">
@@ -226,7 +226,7 @@ export default function ReadingTestPage() {
                   </div>
 
                   <div className="grid gap-6 lg:grid-cols-2">
-                    <div className="glass max-h-[70vh] overflow-y-auto rounded-[24px] p-7 shadow-soft lg:sticky lg:top-6">
+                    <div className="glass max-h-[70vh] overflow-y-auto rounded-2xl p-7 shadow-soft lg:sticky lg:top-6">
                       <div className="whitespace-pre-wrap text-[15px] leading-[1.8] text-foreground/90">
                         {passage.passage}
                       </div>

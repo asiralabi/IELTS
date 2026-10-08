@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
 from app.auth import (
+    _DUMMY_HASH,
     create_access_token,
     create_refresh_token,
     decode_token,
@@ -11,8 +12,10 @@ from app.auth import (
     verify_password,
 )
 from app.database import get_db
-from app.models import User
-from app.schemas import RefreshRequest, Token, UserCreate, UserOut
+from app.config import settings
+from app.models import Consent, User
+from app.schemas import DeleteAccountRequest, RefreshRequest, Token, UserCreate, UserOut
+from app.services.account import delete_user_data, export_user_data
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -28,6 +31,8 @@ async def register(payload: UserCreate, db: Session = Depends(get_db)) -> User:
         target_band=payload.target_band,
     )
     db.add(user)
+    db.flush()
+    db.add(Consent(user_id=user.id, policy_version=settings.legal_policy_version))
     db.commit()
     db.refresh(user)
     return user
@@ -38,6 +43,8 @@ async def login(
     form: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)
 ) -> Token:
     user = db.query(User).filter(User.email == form.username).first()
+    if user is None:
+        verify_password(form.password, _DUMMY_HASH)
     if user is None or not verify_password(form.password, user.hashed_password):
         raise HTTPException(
             status_code=401,
@@ -57,7 +64,10 @@ async def refresh(payload: RefreshRequest, db: Session = Depends(get_db)) -> Tok
     data = decode_token(payload.refresh_token)
     if data.get("type") != "refresh":
         raise HTTPException(status_code=401, detail="Invalid token type")
-    user = db.get(User, int(data["sub"]))
+    try:
+        user = db.get(User, int(data["sub"]))
+    except (KeyError, TypeError, ValueError):
+        user = None
     if user is None or not user.is_active:
         raise HTTPException(status_code=401, detail="User not found or inactive")
     return Token(
@@ -69,3 +79,23 @@ async def refresh(payload: RefreshRequest, db: Session = Depends(get_db)) -> Tok
 @router.get("/me", response_model=UserOut)
 async def me(user: User = Depends(get_current_user)) -> User:
     return user
+
+
+@router.get("/me/export")
+async def export_me(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
+    """Everything Oratio holds about the signed-in student, as JSON."""
+    return export_user_data(db, user)
+
+
+@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_me(
+    payload: DeleteAccountRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Response:
+    """Erase the account and all of its data. Asks for the password again, so
+    a token left in an unlocked browser cannot erase someone's history."""
+    if not verify_password(payload.password, user.hashed_password):
+        raise HTTPException(status_code=403, detail="Password is incorrect")
+    delete_user_data(db, user)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

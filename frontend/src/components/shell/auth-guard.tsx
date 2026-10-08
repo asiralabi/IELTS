@@ -42,7 +42,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   if (!ready) {
     return (
       <div className="flex min-h-screen items-center justify-center">
-        <div className="size-16 animate-pulse-glow rounded-[22px] bg-gradient-to-br from-primary to-secondary" />
+        <div className="size-16 animate-pulse-glow rounded-xl bg-primary" />
       </div>
     );
   }

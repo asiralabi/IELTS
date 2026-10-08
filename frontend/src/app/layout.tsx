@@ -1,31 +1,42 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono, Bricolage_Grotesque } from "next/font/google";
+import { Hanken_Grotesk, IBM_Plex_Mono, Newsreader, Tiro_Bangla } from "next/font/google";
 import { ThemeProvider } from "next-themes";
 import { Toaster } from "sonner";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const hanken = Hanken_Grotesk({
+  variable: "--font-hanken",
   subsets: ["latin"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const newsreader = Newsreader({
+  variable: "--font-newsreader",
   subsets: ["latin"],
+  style: ["normal", "italic"],
 });
 
-const bricolage = Bricolage_Grotesque({
-  variable: "--font-bricolage",
+const plexMono = IBM_Plex_Mono({
+  variable: "--font-plex-mono",
   subsets: ["latin"],
+  weight: ["400", "500"],
+});
+
+// Only the landing story sets Bangla, so this face is not preloaded: it would
+// otherwise compete with the Latin faces every app page actually needs.
+const tiroBangla = Tiro_Bangla({
+  variable: "--font-tiro-bangla",
+  subsets: ["bengali"],
+  weight: "400",
+  preload: false,
 });
 
 export const metadata: Metadata = {
   title: {
-    default: "Oratio — Your Personal AI IELTS Instructor",
+    default: "Oratio — IELTS practice for the journey abroad",
     template: "%s · Oratio",
   },
   description:
-    "Practice. Learn. Improve. Achieve your dream IELTS band with an AI instructor that teaches, evaluates, explains mistakes, and creates unlimited IELTS-style exams.",
+    "Sit full IELTS mock tests at home, get a band for every skill, and see exactly what to fix — built for students in Bangladesh preparing to study abroad.",
 };
 
 export default function RootLayout({
@@ -38,12 +49,12 @@ export default function RootLayout({
       lang="en"
       suppressHydrationWarning
       data-scroll-behavior="smooth"
-      className={`${geistSans.variable} ${geistMono.variable} ${bricolage.variable} h-full antialiased`}
+      className={`${hanken.variable} ${newsreader.variable} ${plexMono.variable} ${tiroBangla.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
           {children}
-          <Toaster position="top-center" richColors closeButton />
+          <Toaster position="top-center" closeButton />
         </ThemeProvider>
       </body>
     </html>

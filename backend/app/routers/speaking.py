@@ -12,6 +12,7 @@ from app.agents._marking import speaking_band
 from app.agents.question_generator import as_text
 from app.auth import get_current_user
 from app.config import settings
+from app.security import MAX_UPLOAD_BYTES, read_upload_capped
 from app.database import get_db
 from app.models import SpeakingSubmission, User
 from app.services import practice_pool
@@ -31,7 +32,7 @@ class SpeakingPartAnswer(BaseModel):
     # The generated question comes back as a string for Part 1, a cue-card
     # object for Part 2 and a list for Part 3, so it round-trips as-is.
     question: Any = None
-    transcript: str = Field(min_length=1)
+    transcript: str = Field(min_length=1, max_length=12000)
 
 
 class SpeakingFullTestRequest(BaseModel):
@@ -57,10 +58,12 @@ async def submit_speaking(
                 status_code=400, detail="Provide a transcript or an audio file"
             )
         settings.ensure_data_dirs()
-        suffix = Path(audio.filename or "").suffix or ".wav"
+        suffix = Path(audio.filename or "").suffix.lower()
+        if suffix not in {".wav", ".webm", ".ogg", ".mp3", ".m4a", ".mp4", ".flac"}:
+            suffix = ".wav"
         audio_path = str(Path(settings.upload_dir) / f"{uuid4().hex}{suffix}")
         with open(audio_path, "wb") as f:
-            f.write(await audio.read())
+            f.write(await read_upload_capped(audio, MAX_UPLOAD_BYTES))
         text = speaking_examiner.transcribe(audio_path)
         if not text.strip():
             raise HTTPException(

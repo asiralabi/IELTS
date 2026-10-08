@@ -2,6 +2,13 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/*
+ * Oratio's palette is taken from the journey it serves: the paper of an
+ * exercise khata and a passport page, the ink a student writes in, the bottle
+ * green and the red sun of the flag they carry with them. Two accents, used
+ * sparingly — green means "go / correct / yours", red means "the sun, the
+ * mark, the thing to fix".
+ */
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -12,72 +19,111 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-paper: var(--paper);
+  --color-ink: var(--ink);
 
-  --color-primary: #5b5ceb;
-  --color-primary-foreground: #ffffff;
-  --color-secondary: #7c4dff;
-  --color-secondary-foreground: #ffffff;
-  --color-accent: #38bdf8;
-  --color-accent-foreground: #062a3d;
-  --color-success: #22c55e;
-  --color-warning: #f59e0b;
-  --color-danger: #ef4444;
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-sun: var(--sun);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
 
-  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
-  --font-display: var(--font-bricolage), var(--font-geist-sans), sans-serif;
-  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  --font-sans: var(--font-hanken), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-newsreader), ui-serif, Georgia, serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
+  --font-bangla: var(--font-tiro-bangla), var(--font-newsreader), serif;
 
-  --radius-xl2: 20px;
-  --radius-xl3: 24px;
-  --radius-xl4: 28px;
+  /* Tighter corners everywhere: paper is cut, not inflated. */
+  --radius-sm: 0.1875rem;
+  --radius-md: 0.3125rem;
+  --radius-lg: 0.4375rem;
+  --radius-xl: 0.5625rem;
+  --radius-2xl: 0.75rem;
+  --radius-3xl: 0.875rem;
 
-  --shadow-soft: 0 8px 30px rgb(15 23 42 / 0.06);
-  --shadow-lift: 0 20px 50px -12px rgb(91 92 235 / 0.25);
-  --shadow-glow: 0 0 40px -8px rgb(91 92 235 / 0.45);
-  --shadow-glow-accent: 0 0 40px -8px rgb(56 189 248 / 0.5);
+  --shadow-soft: 0 1px 0 rgb(27 35 31 / 0.04), 0 12px 28px -22px rgb(27 35 31 / 0.35);
+  --shadow-lift: 0 1px 0 rgb(27 35 31 / 0.05), 0 18px 36px -24px rgb(27 35 31 / 0.45);
+  --shadow-glow: 0 1px 0 rgb(27 35 31 / 0.05), 0 14px 30px -22px rgb(15 92 69 / 0.55);
+  --shadow-glow-accent: 0 14px 30px -22px rgb(201 55 44 / 0.55);
 
-  --animate-float: float 6s ease-in-out infinite;
-  --animate-float-slow: float 9s ease-in-out infinite;
+  --animate-float: float 7s ease-in-out infinite;
+  --animate-float-slow: float 10s ease-in-out infinite;
   --animate-shimmer: shimmer 2.2s linear infinite;
-  --animate-aurora: aurora 14s ease-in-out infinite alternate;
-  --animate-pulse-glow: pulse-glow 3s ease-in-out infinite;
+  --animate-aurora: none;
+  --animate-pulse-glow: breathe 3.2s ease-in-out infinite;
   --animate-spin-slow: spin 12s linear infinite;
-  --animate-gradient-x: gradient-x 8s ease infinite;
+  --animate-gradient-x: none;
   --animate-equalizer: equalizer 1s ease-in-out infinite;
   --animate-blink: blink 4.2s infinite;
+  --animate-marquee: marquee 38s linear infinite;
 }
 
 :root {
-  --background: #f8fafc;
-  --foreground: #0f172a;
-  --card: rgb(255 255 255 / 0.95);
-  --card-foreground: #0f172a;
-  --muted: #eef2f7;
-  --muted-foreground: #64748b;
-  --border: rgb(15 23 42 / 0.08);
-  --input: rgb(15 23 42 / 0.1);
-  --ring: #5b5ceb;
-  --glass: rgb(255 255 255 / 0.72);
-  --glass-strong: rgb(255 255 255 / 0.9);
+  --paper: #f3eee3;
+  --ink: #1b231f;
+  --background: #f3eee3;
+  --foreground: #1b231f;
+  --card: #faf7f0;
+  --card-foreground: #1b231f;
+  --muted: #e9e3d5;
+  --muted-foreground: #5d645e;
+  --border: rgb(27 35 31 / 0.13);
+  --input: rgb(27 35 31 / 0.2);
+  --ring: #0f5c45;
+
+  --primary: #0f5c45;
+  --primary-foreground: #f6f2e8;
+  --secondary: #173b30;
+  --secondary-foreground: #f6f2e8;
+  --accent: #c9372c;
+  --accent-foreground: #fbf3ef;
+  --sun: #c9372c;
+  --success: #2f7a4d;
+  --warning: #a86a12;
+  --danger: #b8322a;
+
+  --rule: rgb(15 92 69 / 0.09);
+  --glass: #faf7f0;
+  --glass-strong: #fbf9f3;
 }
 
 .dark {
-  --background: #09090b;
-  --foreground: #f1f5f9;
-  --card: rgb(24 24 30 / 0.85);
-  --card-foreground: #f1f5f9;
-  --muted: rgb(39 39 46 / 0.8);
-  --muted-foreground: #94a3b8;
-  --border: rgb(248 250 252 / 0.09);
-  --input: rgb(248 250 252 / 0.12);
-  --ring: #7c7dff;
-  --glass: rgb(18 18 23 / 0.66);
-  --glass-strong: rgb(18 18 23 / 0.88);
+  --paper: #111814;
+  --ink: #ebe5d6;
+  --background: #0f1512;
+  --foreground: #ebe5d6;
+  --card: #161e1a;
+  --card-foreground: #ebe5d6;
+  --muted: #1d2721;
+  --muted-foreground: #9aa49c;
+  --border: rgb(235 229 214 / 0.11);
+  --input: rgb(235 229 214 / 0.18);
+  --ring: #5fb98f;
+
+  --primary: #5fb98f;
+  --primary-foreground: #0d1411;
+  --secondary: #2b5a4a;
+  --secondary-foreground: #ebe5d6;
+  --accent: #e2604f;
+  --accent-foreground: #170c0a;
+  --sun: #e2604f;
+  --success: #6cc08f;
+  --warning: #e0a446;
+  --danger: #e66a5a;
+
+  --rule: rgb(95 185 143 / 0.07);
+  --glass: #161e1a;
+  --glass-strong: #18211c;
 }
 
 @keyframes float {
   0%, 100% { transform: translateY(0px); }
-  50% { transform: translateY(-14px); }
+  50% { transform: translateY(-8px); }
 }
 
 @keyframes shimmer {
@@ -85,20 +131,9 @@
   to { background-position: 200% 0; }
 }
 
-@keyframes aurora {
-  0% { transform: translate(-8%, -6%) scale(1) rotate(0deg); }
-  50% { transform: translate(6%, 8%) scale(1.15) rotate(12deg); }
-  100% { transform: translate(-4%, 4%) scale(1.05) rotate(-8deg); }
-}
-
-@keyframes pulse-glow {
-  0%, 100% { box-shadow: 0 0 24px -6px rgb(91 92 235 / 0.4); }
-  50% { box-shadow: 0 0 48px -6px rgb(124 77 255 / 0.65); }
-}
-
-@keyframes gradient-x {
-  0%, 100% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
+@keyframes breathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
 }
 
 @keyframes equalizer {
@@ -109,6 +144,21 @@
 @keyframes blink {
   0%, 45%, 55%, 100% { transform: scaleY(1); }
   50% { transform: scaleY(0.08); }
+}
+
+@keyframes marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+@keyframes flap-top {
+  from { transform: rotateX(0deg); }
+  to { transform: rotateX(-90deg); visibility: hidden; }
+}
+
+@keyframes flap-bottom {
+  from { transform: rotateX(90deg); }
+  to { transform: rotateX(0deg); }
 }
 
 @layer base {
@@ -124,12 +174,13 @@
     background: var(--background);
     color: var(--foreground);
     font-family: var(--font-sans);
+    font-feature-settings: "ss01", "cv11";
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
   }
 
   ::selection {
-    background: rgb(91 92 235 / 0.25);
+    background: rgb(201 55 44 / 0.2);
   }
 
   :focus-visible {
@@ -145,46 +196,53 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: rgb(100 116 139 / 0.35);
+    background: rgb(93 100 94 / 0.3);
     border-radius: 999px;
     border: 2px solid transparent;
     background-clip: content-box;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: rgb(100 116 139 / 0.55);
+    background: rgb(93 100 94 / 0.5);
     border: 2px solid transparent;
     background-clip: content-box;
   }
 }
 
+/*
+ * The old names stay so the forty-odd pages that use them keep working, but
+ * they no longer mean frosted glass and gradients. A "glass" panel is now a
+ * sheet of paper with a hairline edge.
+ */
 @utility glass {
   background: var(--glass);
-  backdrop-filter: blur(18px) saturate(1.4);
-  -webkit-backdrop-filter: blur(18px) saturate(1.4);
   border: 1px solid var(--border);
 }
 
 @utility glass-strong {
   background: var(--glass-strong);
-  backdrop-filter: blur(24px) saturate(1.5);
-  -webkit-backdrop-filter: blur(24px) saturate(1.5);
   border: 1px solid var(--border);
 }
 
 @utility text-gradient {
-  background: linear-gradient(115deg, #5b5ceb 10%, #7c4dff 45%, #38bdf8 90%);
-  background-size: 200% auto;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  color: var(--primary);
 }
 
 @utility bg-mesh {
+  background-color: var(--background);
+}
+
+/* Ruled like an exercise khata: faint horizontal lines and one red margin. */
+@utility bg-khata {
   background-image:
-    radial-gradient(at 20% 15%, rgb(91 92 235 / 0.16) 0px, transparent 55%),
-    radial-gradient(at 80% 10%, rgb(56 189 248 / 0.14) 0px, transparent 50%),
-    radial-gradient(at 65% 80%, rgb(124 77 255 / 0.13) 0px, transparent 55%),
-    radial-gradient(at 10% 85%, rgb(56 189 248 / 0.1) 0px, transparent 50%);
+    linear-gradient(to right, transparent calc(var(--margin, 3.5rem) - 1px), rgb(201 55 44 / 0.22) calc(var(--margin, 3.5rem) - 1px), rgb(201 55 44 / 0.22) var(--margin, 3.5rem), transparent var(--margin, 3.5rem)),
+    repeating-linear-gradient(to bottom, transparent 0, transparent 2.1rem, var(--rule) 2.1rem, var(--rule) calc(2.1rem + 1px));
+}
+
+/* A perforated edge, as on a ticket stub. */
+@utility perforated {
+  background-image: radial-gradient(circle, var(--background) 3.5px, transparent 4px);
+  background-size: 14px 14px;
+  background-repeat: repeat-y;
 }
 
 @layer components {
@@ -259,8 +317,8 @@
     border-radius: 6px;
   }
   .prose-chat pre {
-    background: rgb(15 23 42 / 0.85);
-    color: #e2e8f0;
+    background: #1b231f;
+    color: #ebe5d6;
     padding: 0.85rem 1rem;
     border-radius: 14px;
     overflow-x: auto;
@@ -308,4 +366,17 @@
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* Lists inside the legal pages. */
+.legal-body ul {
+  list-style: disc;
+  padding-inline-start: 1.25rem;
+}
+.legal-body li + li {
+  margin-top: 0.4rem;
+}
+.legal-body strong {
+  color: var(--foreground);
+  font-weight: 600;
 }

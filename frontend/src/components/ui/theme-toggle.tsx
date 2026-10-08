@@ -23,7 +23,7 @@ export function ThemeToggle({ className }: { className?: string }) {
       aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
       onClick={() => setTheme(isDark ? "light" : "dark")}
       className={cn(
-        "glass inline-flex size-11 items-center justify-center rounded-2xl text-muted-foreground transition-all hover:text-foreground hover:shadow-glow",
+        "inline-flex size-10 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground",
         className
       )}
     >
@@ -35,7 +35,7 @@ export function ThemeToggle({ className }: { className?: string }) {
           exit={{ rotate: 90, opacity: 0, scale: 0.6 }}
           transition={{ duration: 0.2 }}
         >
-          {isDark ? <Moon className="size-5" /> : <Sun className="size-5" />}
+          {isDark ? <Moon className="size-[18px]" strokeWidth={1.6} /> : <Sun className="size-[18px]" strokeWidth={1.6} />}
         </motion.span>
       </AnimatePresence>
     </button>

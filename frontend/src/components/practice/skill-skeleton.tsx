@@ -15,7 +15,7 @@ export function ReadingSkeleton() {
       aria-live="polite"
       aria-label="Loading passage"
     >
-      <div className="glass rounded-[24px] p-7 shadow-soft">
+      <div className="glass rounded-2xl p-7 shadow-soft">
         <Skeleton className="mb-4 h-5 w-24" />
         <Skeleton className="mb-4 h-7 w-3/4" />
         <div className="space-y-3">
@@ -28,7 +28,7 @@ export function ReadingSkeleton() {
       </div>
       <div className="space-y-4">
         {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="glass rounded-[20px] p-5 shadow-soft">
+          <div key={i} className="glass rounded-xl p-5 shadow-soft">
             <Skeleton className="mb-3 h-4 w-5/6" />
             <Skeleton className="mb-2 h-4 w-3/5" />
             <Skeleton className="h-10 w-full rounded-xl" />
@@ -36,7 +36,7 @@ export function ReadingSkeleton() {
         ))}
       </div>
       <span className="sr-only">
-        The AI examiner is preparing your passage — this can take a minute.
+        Preparing your passage. This can take a minute.
       </span>
     </div>
   );
@@ -50,7 +50,7 @@ export function ListeningSkeleton() {
       aria-live="polite"
       aria-label="Loading listening practice"
     >
-      <div className="glass flex items-center justify-between rounded-[24px] p-6 shadow-soft">
+      <div className="glass flex items-center justify-between rounded-2xl p-6 shadow-soft">
         <div className="flex items-center gap-4">
           <Skeleton className="size-11 rounded-2xl" />
           <Skeleton className="h-8 w-48" />
@@ -59,7 +59,7 @@ export function ListeningSkeleton() {
       </div>
       <div className="space-y-4">
         {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="glass rounded-[20px] p-5 shadow-soft">
+          <div key={i} className="glass rounded-xl p-5 shadow-soft">
             <Skeleton className="mb-3 h-4 w-5/6" />
             <Skeleton className="mb-2 h-4 w-3/5" />
             <Skeleton className="h-10 w-full rounded-xl" />
@@ -67,7 +67,7 @@ export function ListeningSkeleton() {
         ))}
       </div>
       <span className="sr-only">
-        The AI examiner is producing your recording — this can take a minute.
+        Recording your listening section. This can take a minute.
       </span>
     </div>
   );
@@ -86,9 +86,9 @@ export function WritingSkeleton() {
         <Skeleton className="h-9 w-40 rounded-2xl" />
       </div>
       <Skeleton className="h-24 w-full rounded-2xl" />
-      <Skeleton className="h-[360px] w-full rounded-[24px]" />
+      <Skeleton className="h-[360px] w-full rounded-2xl" />
       <span className="sr-only">
-        The AI examiner is preparing your task prompt.
+        Preparing your task prompt.
       </span>
     </div>
   );

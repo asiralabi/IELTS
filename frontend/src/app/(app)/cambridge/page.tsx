@@ -142,16 +142,16 @@ export default function CambridgePage() {
     <div className="mx-auto max-w-5xl">
       <Topbar title="Cambridge Tests" />
 
-      <div className="glass-strong mb-6 flex items-start gap-4 rounded-[24px] p-5 shadow-soft">
-        <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-primary/20 to-secondary/10 text-primary">
+      <div className="glass-strong mb-6 flex items-start gap-4 rounded-2xl p-5 shadow-soft">
+        <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
           <BookOpenCheck className="size-6" aria-hidden />
         </span>
         <div className="text-sm">
-          <h2 className="mb-1 font-display text-lg font-semibold">
+          <h2 className="mb-1 font-display text-lg font-medium">
             Practise real Cambridge tests
           </h2>
           <p className="text-muted-foreground">
-            The default practice pages use AI-generated questions so you can&rsquo;t
+            The everyday practice pages write fresh questions each time, so you can&rsquo;t
             memorise the answers. Use this page when you want to sit a real
             Cambridge IELTS test end-to-end. Answer keys are marked instantly.
           </p>
@@ -194,7 +194,7 @@ export default function CambridgePage() {
               className={cn(
                 "flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-medium transition-all",
                 filter === f.id
-                  ? "bg-gradient-to-r from-primary to-secondary text-white shadow-glow"
+                  ? "bg-primary text-primary-foreground"
                   : "text-muted-foreground hover:text-foreground"
               )}
             >
@@ -215,7 +215,7 @@ export default function CambridgePage() {
       {!index && !error && (
         <div className="space-y-3" role="status" aria-live="polite">
           {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-24 w-full rounded-[24px]" />
+            <Skeleton key={i} className="h-24 w-full rounded-2xl" />
           ))}
         </div>
       )}
@@ -285,7 +285,7 @@ function BookCard({
   }, [book, filter, summaries]);
 
   return (
-    <div className="glass overflow-hidden rounded-[24px] shadow-soft">
+    <div className="glass overflow-hidden rounded-2xl shadow-soft">
       <button
         onClick={onToggle}
         aria-expanded={open}
@@ -293,7 +293,7 @@ function BookCard({
       >
         <div className="flex flex-1 items-center gap-3">
           <div>
-            <h3 className="font-display text-base font-semibold">{book.book_title}</h3>
+            <h3 className="font-display text-base font-medium">{book.book_title}</h3>
             <p className="text-xs text-muted-foreground">
               {book.tests.length} test{book.tests.length === 1 ? "" : "s"} available
               {attemptedCount > 0 && ` · ${attemptedCount} attempted`}

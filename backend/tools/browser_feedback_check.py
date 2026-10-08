@@ -45,7 +45,7 @@ def make_account() -> dict:
     email = f"pilot-{uuid.uuid4().hex[:8]}@gmail.com"
     httpx.post(
         f"{API}/auth/register",
-        json={"email": email, "password": "password123", "full_name": "Pilot Tester"},
+        json={"email": email, "password": "password123", "full_name": "Pilot Tester", "accept_terms": True},
         timeout=20,
     ).raise_for_status()
     tokens = httpx.post(
@@ -83,7 +83,7 @@ def await_thank_you(page, label: str, failures: list[str]) -> None:
     warm and honest when cold.
     """
     try:
-        page.get_by_text("Got it", exact=False).wait_for(state="visible", timeout=90_000)
+        page.get_by_text("Posted. Thank you.", exact=False).wait_for(state="visible", timeout=90_000)
     except PlaywrightTimeout:
         body = " | ".join(page.locator("#feedback").inner_text().split("\n"))
         failures.append(f"no thank-you after {label} send; section said: {body[:220]!r}")
@@ -128,7 +128,7 @@ def main() -> int:
         if readonly is not None:
             failures.append("anonymous email field is read-only; it must be typable")
 
-        page.get_by_role("button", name="Send Feedback").click()
+        page.get_by_role("button", name="Post it").click()
         await_thank_you(page, "anonymous", failures)
         shot(page, "21_feedback_anonymous_sent")
 
@@ -154,7 +154,7 @@ def main() -> int:
             failures.append("signed-in email field should be read-only")
         shot(page, "22_feedback_signed_in_prefilled")
 
-        page.get_by_role("button", name="Send Feedback").click()
+        page.get_by_role("button", name="Post it").click()
         await_thank_you(page, "signed-in", failures)
         shot(page, "23_feedback_signed_in_sent")
 

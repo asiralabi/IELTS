@@ -85,7 +85,10 @@ def main() -> int:
         # 1. Cambridge picker landing page
         print("\n[2] /cambridge — picker index ...")
         page.goto(f"{BASE}/cambridge", wait_until="domcontentloaded")
-        text = wait_for_hydrate(page, min_chars=100)
+        wait_for_hydrate(page, min_chars=100)
+        # The book list arrives by fetch after the shell has already painted.
+        page.get_by_text(re.compile(r"Cambridge IELTS \d+")).first.wait_for(timeout=15000)
+        text = page.locator("body").inner_text()
         shot(page, "cam_10_index")
         book_ids = sorted(set(re.findall(r"Cambridge IELTS \d+", text)))
         print(f"    body chars={len(text)}  books listed={book_ids}")
@@ -144,7 +147,7 @@ def main() -> int:
         wait_for_hydrate(page, min_chars=100)
         shot(page, "cam_40_writing_default")
         default_text = page.locator("body").inner_text()
-        has_generate_btn = "Generate AI prompt" in default_text
+        has_generate_btn = "Generate a prompt" in default_text
         print(f"    generate button visible: {has_generate_btn}")
 
         # ------------------------------------------------------------------

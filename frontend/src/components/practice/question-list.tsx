@@ -62,7 +62,7 @@ export function QuestionList({
             key={key}
             variants={fadeUp}
             className={cn(
-              "glass rounded-[20px] p-5 shadow-soft transition-shadow",
+              "glass rounded-xl p-5 shadow-soft transition-shadow",
               verdict?.correct === true && "border-success/40",
               verdict?.correct === false && "border-danger/40"
             )}

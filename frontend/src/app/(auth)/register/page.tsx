@@ -16,11 +16,14 @@ import { Input, Label, FieldError } from "@/components/ui/input";
 const schema = z.object({
   full_name: z.string().min(2, "Tell us your name"),
   email: z.string().email("Enter a valid email address"),
-  password: z.string().min(8, "At least 8 characters"),
+  password: z.string().min(8, "At least 8 characters").max(72, "At most 72 characters"),
   target_band: z
     .number({ message: "Between 4.0 and 9.0" })
     .min(4, "Between 4.0 and 9.0")
     .max(9, "Between 4.0 and 9.0"),
+  accept_terms: z.literal(true, {
+    message: "Please read and accept the Terms and Privacy Policy",
+  }),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -34,7 +37,7 @@ export default function RegisterPage() {
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { target_band: 7 },
+    defaultValues: { target_band: 7, accept_terms: false as unknown as true },
   });
 
   const onSubmit = async (values: FormValues) => {
@@ -59,16 +62,16 @@ export default function RegisterPage() {
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20, scale: 0.98 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-      className="glass-strong w-full max-w-md rounded-[28px] p-8 shadow-soft"
+      className="w-full max-w-sm"
     >
-      <h1 className="font-display text-2xl font-bold tracking-tight">
+      <h1 className="font-display text-4xl font-medium tracking-tight">
         Create your account
       </h1>
       <p className="mt-1.5 text-sm text-muted-foreground">
-        Your personal AI instructor is one step away.
+        Free to start. Your first mock test is a few minutes away.
       </p>
 
       <form onSubmit={handleSubmit(onSubmit)} className="mt-8 space-y-5" noValidate>
@@ -111,14 +114,38 @@ export default function RegisterPage() {
           />
           <FieldError message={errors.target_band?.message} />
         </div>
+        <div>
+          <label htmlFor="accept_terms" className="flex items-start gap-3 text-sm leading-relaxed text-muted-foreground">
+            <input
+              id="accept_terms"
+              type="checkbox"
+              className="mt-1 size-4 shrink-0 accent-[var(--primary)]"
+              {...register("accept_terms")}
+            />
+            <span>
+              I have read and agree to the{" "}
+              <Link href="/terms" target="_blank" className="text-foreground underline underline-offset-4">
+                Terms
+              </Link>{" "}
+              and{" "}
+              <Link href="/privacy" target="_blank" className="text-foreground underline underline-offset-4">
+                Privacy Policy
+              </Link>
+              , including my essays and recordings being processed by the service
+              providers named there, some outside Bangladesh. I am 18 or older, or
+              my parent or guardian agrees.
+            </span>
+          </label>
+          <FieldError message={errors.accept_terms?.message} />
+        </div>
         <Button type="submit" loading={isSubmitting} className="w-full" size="lg">
-          Start Free
+          Create account
         </Button>
       </form>
 
-      <p className="mt-6 text-center text-sm text-muted-foreground">
+      <p className="mt-8 border-t border-border pt-6 text-sm text-muted-foreground">
         Already have an account?{" "}
-        <Link href="/login" className="font-medium text-primary hover:underline">
+        <Link href="/login" className="font-medium text-foreground underline decoration-sun decoration-2 underline-offset-4 hover:text-primary">
           Sign in
         </Link>
       </p>

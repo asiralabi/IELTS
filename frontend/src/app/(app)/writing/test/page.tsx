@@ -141,12 +141,12 @@ export default function WritingTestPage() {
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
-            className="glass-strong mx-auto max-w-xl rounded-[28px] p-10 text-center shadow-soft"
+            className="glass-strong mx-auto max-w-xl rounded-2xl p-10 text-center shadow-soft"
           >
-            <span className="mx-auto mb-5 flex size-16 items-center justify-center rounded-[22px] bg-gradient-to-br from-violet-500/20 to-fuchsia-500/10 text-violet-500">
+            <span className="mx-auto mb-5 flex size-16 items-center justify-center rounded-xl bg-primary/10 text-primary">
               <PenLine className="size-8" aria-hidden />
             </span>
-            <h2 className="font-display text-2xl font-bold">Full Writing Test</h2>
+            <h2 className="font-display text-2xl font-medium">Full Writing Test</h2>
             <p className="mx-auto mt-3 max-w-md text-sm text-muted-foreground">
               A complete IELTS Academic Writing paper — a Task 1 chart report and
               a Task 2 essay, one hour, marked together for one band. Task 2 is
@@ -194,7 +194,7 @@ export default function WritingTestPage() {
             role="status"
             aria-live="polite"
           >
-            <div className="glass-strong flex flex-col items-center gap-6 rounded-[28px] p-8 shadow-soft sm:flex-row sm:justify-between">
+            <div className="glass-strong flex flex-col items-center gap-6 rounded-2xl p-8 shadow-soft sm:flex-row sm:justify-between">
               <div className="flex items-center gap-6">
                 <BandRing band={result.overall_band} size={120} label="Band" />
                 <div>
@@ -265,7 +265,7 @@ export default function WritingTestPage() {
                     className={cn(
                       "rounded-xl px-4 py-2 text-sm font-medium transition-all",
                       active === task.task
-                        ? "bg-gradient-to-r from-primary to-secondary text-white shadow-glow"
+                        ? "bg-primary text-primary-foreground"
                         : "text-muted-foreground hover:text-foreground"
                     )}
                   >
@@ -286,9 +286,9 @@ export default function WritingTestPage() {
               </span>
             </div>
 
-            <div className="glass rounded-[24px] p-6 shadow-soft">
+            <div className="glass rounded-2xl p-6 shadow-soft">
               <div className="mb-3 flex flex-wrap items-center gap-3">
-                <h3 className="font-display font-semibold">{activeTask.label}</h3>
+                <h3 className="font-display font-medium">{activeTask.label}</h3>
                 <span className="text-xs text-muted-foreground">
                   ~{activeTask.minutes} minutes · at least {activeTask.min_words} words
                 </span>
@@ -299,7 +299,7 @@ export default function WritingTestPage() {
               <Visuals visual={activeTask.visual} className="mt-5" />
             </div>
 
-            <div className="glass rounded-[24px] p-1.5 shadow-soft">
+            <div className="glass rounded-2xl p-1.5 shadow-soft">
               <div className="flex items-center justify-between px-4 py-2.5">
                 <Badge
                   variant={
@@ -320,7 +320,7 @@ export default function WritingTestPage() {
                 }
                 placeholder="Write your answer…"
                 rows={16}
-                className="rounded-[20px] border-0 bg-transparent shadow-none focus:shadow-none"
+                className="rounded-xl border-0 bg-transparent shadow-none focus:shadow-none"
                 aria-label={`${activeTask.label} answer`}
               />
             </div>

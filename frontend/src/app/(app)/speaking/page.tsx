@@ -52,7 +52,7 @@ function Waveform({ active }: { active: boolean }) {
         <span
           key={i}
           className={cn(
-            "w-1 origin-center rounded-full bg-gradient-to-t from-emerald-500 to-accent transition-all",
+            "w-1 origin-center rounded-full bg-primary transition-all",
             active ? "animate-equalizer" : "scale-y-[0.2] opacity-40"
           )}
           style={{
@@ -248,22 +248,22 @@ export default function SpeakingPage() {
                   key={p.id}
                   onClick={() => setPart(p.id)}
                   className={cn(
-                    "glass rounded-[20px] p-4 text-left transition-all",
+                    "glass rounded-xl p-4 text-left transition-all",
                     part === p.id
                       ? "border-primary/50 shadow-glow"
                       : "hover:border-primary/30 hover:shadow-soft"
                   )}
                 >
-                  <div className="font-display font-semibold">{p.label}</div>
+                  <div className="font-display font-medium">{p.label}</div>
                   <div className="mt-0.5 text-xs text-muted-foreground">{p.hint}</div>
                 </button>
               ))}
             </div>
 
             {/* Question */}
-            <div className="glass rounded-[24px] p-6 shadow-soft">
+            <div className="glass rounded-2xl p-6 shadow-soft">
               <div className="mb-3 flex items-center justify-between gap-2">
-                <h3 className="font-display font-semibold">Examiner question</h3>
+                <h3 className="font-display font-medium">Examiner question</h3>
                 <div className="flex items-center gap-2">
                   {(part === "part1" || part === "part3") && (
                     <SpeakingElapsedHint active={recording} />
@@ -289,7 +289,7 @@ export default function SpeakingPage() {
                     setQuestionText(e.target.value);
                     setQuestionRaw(e.target.value);
                   }}
-                  placeholder="Generate an AI question or type your own…"
+                  placeholder="Generate a question or type your own…"
                   rows={2}
                   aria-label="Speaking question"
                 />
@@ -307,7 +307,7 @@ export default function SpeakingPage() {
             )}
 
             {/* Recorder */}
-            <div className="glass-strong rounded-[28px] p-8 text-center shadow-soft">
+            <div className="glass-strong rounded-2xl p-8 text-center shadow-soft">
               <Waveform active={recording} />
               <motion.button
                 onClick={toggleRecording}
@@ -318,7 +318,7 @@ export default function SpeakingPage() {
                   "mx-auto mt-4 flex size-20 items-center justify-center rounded-full text-white shadow-glow transition-colors",
                   recording
                     ? "bg-danger animate-pulse-glow"
-                    : "bg-gradient-to-br from-emerald-500 to-accent"
+                    : "bg-primary"
                 )}
               >
                 {recording ? <Square className="size-7" /> : <Mic className="size-8" />}
@@ -333,8 +333,8 @@ export default function SpeakingPage() {
             </div>
 
             {/* Transcript */}
-            <div className="glass rounded-[24px] p-6 shadow-soft">
-              <h3 className="mb-3 font-display font-semibold">Your answer (transcript)</h3>
+            <div className="glass rounded-2xl p-6 shadow-soft">
+              <h3 className="mb-3 font-display font-medium">Your answer (transcript)</h3>
               <Textarea
                 value={transcript}
                 onChange={(e) => setTranscript(e.target.value)}
@@ -346,7 +346,7 @@ export default function SpeakingPage() {
 
             <div className="flex justify-end">
               <Button size="lg" onClick={submit} disabled={!transcript.trim()}>
-                Submit for AI assessment
+                Submit for marking
               </Button>
             </div>
           </motion.div>

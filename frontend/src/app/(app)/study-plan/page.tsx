@@ -51,7 +51,7 @@ export default function StudyPlanPage() {
             className={cn(
               "flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition-all",
               tab === t.id
-                ? "bg-gradient-to-r from-primary to-secondary text-white shadow-glow"
+                ? "bg-primary text-primary-foreground"
                 : "text-muted-foreground hover:text-foreground"
             )}
           >
@@ -73,7 +73,7 @@ export default function StudyPlanPage() {
             key={tab}
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
-            className="glass rounded-[28px] p-8 shadow-soft"
+            className="glass rounded-2xl p-8 shadow-soft"
           >
             <JsonContent value={current} />
             <div className="mt-6 flex justify-end">
@@ -87,17 +87,17 @@ export default function StudyPlanPage() {
             key={`${tab}-empty`}
             initial={{ opacity: 0, y: 12 }}
             animate={{ opacity: 1, y: 0 }}
-            className="glass-strong rounded-[28px] p-10 text-center shadow-soft"
+            className="glass-strong rounded-2xl p-10 text-center shadow-soft"
           >
-            <h2 className="font-display text-xl font-bold">
+            <h2 className="font-display text-xl font-medium">
               {tab === "plan"
                 ? "A plan built from your real results"
                 : "Find out exactly what is holding you back"}
             </h2>
             <p className="mx-auto mt-3 max-w-md text-sm text-muted-foreground">
               {tab === "plan"
-                ? "The AI reviews your submissions and scores, then lays out what to practise and when."
-                : "The AI scans your writing and speaking history for recurring grammar and vocabulary issues."}
+                ? "Oratio reads your submissions and scores, then lays out what to practise and when."
+                : "Oratio looks through your writing and speaking for the grammar and vocabulary slips you keep repeating."}
             </p>
             <Button size="lg" className="mt-8" onClick={() => load(tab)}>
               {tab === "plan" ? "Build my study plan" : "Analyse my weaknesses"}

@@ -14,7 +14,7 @@ function Equalizer({ playing }: { playing: boolean }) {
         <span
           key={i}
           className={cn(
-            "w-1.5 origin-bottom rounded-full bg-gradient-to-t from-primary to-accent",
+            "w-1.5 origin-bottom rounded-full bg-primary",
             playing ? "animate-equalizer" : "scale-y-[0.35]"
           )}
           style={{ height: `${10 + ((i * 7) % 18)}px`, animationDelay: `${i * 0.09}s` }}
