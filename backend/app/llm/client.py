@@ -554,6 +554,21 @@ class AnthropicClient(LLMClient):
         return "".join(block.text for block in resp.content if block.type == "text").strip()
 
 
+# One semaphore per event loop: a semaphore is tied to the loop it first
+# waits on, and tests and the CLI tools each run their own loop.
+_hosted_semaphores: dict[int, asyncio.Semaphore] = {}
+
+
+def _hosted_slot() -> asyncio.Semaphore:
+    loop = id(asyncio.get_running_loop())
+    sem = _hosted_semaphores.get(loop)
+    if sem is None:
+        sem = _hosted_semaphores[loop] = asyncio.Semaphore(
+            max(1, settings.openai_max_concurrency)
+        )
+    return sem
+
+
 class OpenAIClient(LLMClient):
     def __init__(self) -> None:
         import openai
@@ -561,6 +576,7 @@ class OpenAIClient(LLMClient):
         kwargs: dict[str, Any] = {
             "api_key": settings.openai_api_key,
             "timeout": settings.llm_timeout,
+            "max_retries": settings.openai_max_retries,
         }
         if settings.openai_base_url:
             kwargs["base_url"] = settings.openai_base_url
@@ -608,15 +624,16 @@ class OpenAIClient(LLMClient):
         kwargs["stream"] = True
         watch = _RunawayWatch(self.model)
         completed = False
-        stream = await self.client.chat.completions.create(**kwargs)
-        async for event in stream:
-            if not event.choices:
-                continue
-            choice = event.choices[0]
-            watch.add(choice.delta.content or "")
-            if choice.finish_reason:
-                completed = True
-                break
+        async with _hosted_slot():
+            stream = await self.client.chat.completions.create(**kwargs)
+            async for event in stream:
+                if not event.choices:
+                    continue
+                choice = event.choices[0]
+                watch.add(choice.delta.content or "")
+                if choice.finish_reason:
+                    completed = True
+                    break
         return watch.finish(completed).strip()
 
 

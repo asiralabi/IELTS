@@ -100,6 +100,14 @@ class Settings(BaseSettings):
     # switch instead: enable_thinking=False wrote the same JSON with zero
     # reasoning in 3s instead of 64s. False means the switch is not sent.
     openai_disable_thinking: bool = False
+    # Calls in flight to the hosted model from one instance. Marking a mock
+    # exam asks for one verdict per non-matching answer, all at once: 75
+    # parallel calls drew 429s from NVIDIA's free tier (2026-10-09), and a
+    # refused verdict is marked wrong. Six at a time marks 75 in ~40s.
+    openai_max_concurrency: int = 6
+    # The SDK backs off between retries and honours Retry-After; its default
+    # of 2 was not enough to ride out a burst.
+    openai_max_retries: int = 5
     llm_temperature: float = 0.4
     # 2048 was cutting off 650-900 word IELTS passages mid-JSON; 4096 gives
     # comfortable headroom for a full passage + 8-13 questions + answer key.

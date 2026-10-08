@@ -884,3 +884,42 @@ class TestThinkingSwitch:
         with client_module.thinking():
             assert client_module._thinking.get() is True
         assert client_module._thinking.get() is False
+
+
+def test_hosted_calls_are_capped_so_a_burst_is_not_refused(monkeypatch):
+    """Marking a mock exam fired 75 verdicts at once and drew 429s from the
+    free tier; a refused verdict is marked wrong. At most N may be in flight."""
+    import openai
+
+    monkeypatch.setattr(settings, "openai_max_concurrency", 3)
+    client_module._hosted_semaphores.clear()
+    state = {"now": 0, "peak": 0}
+
+    class Chunk:
+        def __init__(self, text, finish):
+            self.choices = [SimpleNamespace(delta=SimpleNamespace(content=text), finish_reason=finish)]
+
+    class SlowStream:
+        async def __aiter__(self):
+            await asyncio.sleep(0.02)
+            yield Chunk("{}", "stop")
+
+    class Completions:
+        async def create(self, **kwargs):
+            # Overlap measured while the request is being answered; the slot
+            # is held for the whole stream, so this cannot exceed the cap.
+            state["now"] += 1
+            state["peak"] = max(state["peak"], state["now"])
+            await asyncio.sleep(0.02)
+            state["now"] -= 1
+            return SlowStream()
+
+    fake = SimpleNamespace(chat=SimpleNamespace(completions=Completions()))
+    monkeypatch.setattr(openai, "AsyncOpenAI", lambda **kwargs: fake)
+    client = OpenAIClient()
+
+    async def burst():
+        await asyncio.gather(*[client.complete("s", [{"role": "user", "content": "x"}]) for _ in range(20)])
+
+    asyncio.run(burst())
+    assert state["peak"] <= 3
