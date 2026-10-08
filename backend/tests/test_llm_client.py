@@ -802,3 +802,85 @@ def test_a_rate_limited_model_is_not_reported_as_a_server_fault():
     assert r.status_code == 503
     assert "busy" in r.json()["detail"]
     assert "Internal Server Error" not in r.text
+
+
+def _headings_set(paragraphs: int = 9) -> str:
+    """A reading set the way nemotron writes it: one short question per
+    paragraph, each carrying the same twelve headings."""
+    headings = [f"{n}. A heading about part {n} of the forest network story" for n in
+                ("i", "ii", "iii", "iv", "v", "vi", "vii", "viii", "ix", "x", "xi", "xii")]
+    questions = [
+        {"number": i, "type": "matching_headings",
+         "question": f"Choose the correct heading for Paragraph {chr(64 + i)}.",
+         "options": headings, "word_limit": None}
+        for i in range(1, paragraphs + 1)
+    ]
+    return json.dumps({"title": "Trees", "questions": questions,
+                       "answer_key": {str(i): "i" for i in range(1, paragraphs + 1)}})
+
+
+def test_a_finished_headings_set_is_not_mistaken_for_a_loop():
+    text = _headings_set()
+    assert _runaway_ratio(text) < client_module._RUNAWAY_MIN_RATIO  # it does look repetitive
+    watch = client_module._RunawayWatch("m")
+    for i in range(0, len(text), 50):
+        watch.add(text[i:i + 50])  # must not raise: the object closed
+    assert watch.finish(True) == text
+
+
+def test_a_model_stuck_on_one_question_is_still_a_loop():
+    """The same block, but the count stops: question 9, again and again."""
+    block = json.loads(_headings_set(1))["questions"][0]
+    block["number"] = 9
+    text = '{"title": "Trees", "questions": [' + ", ".join([json.dumps(block)] * 14)
+    watch = client_module._RunawayWatch("m")
+    with pytest.raises(RunawayGeneration, match="anything new"):
+        for i in range(0, len(text), 50):
+            watch.add(text[i:i + 50])
+
+
+def test_json_closed_ignores_braces_inside_strings():
+    assert client_module._json_closed('{"a": "x}"}')
+    assert not client_module._json_closed('{"a": "}"')
+    assert not client_module._json_closed('{"a": {"b": 1}')
+
+
+class TestThinkingSwitch:
+    """nemotron ignores reasoning_effort and thinks until the budget runs out
+    when it generates, yet follows the tutor's instructions only when it does
+    think. OPENAI_DISABLE_THINKING turns it off everywhere except inside
+    `thinking()`, which the tutor and the examiners use."""
+
+    @staticmethod
+    def _run(monkeypatch, disable: bool, inside: bool) -> dict:
+        import openai
+
+        monkeypatch.setattr(settings, "openai_disable_thinking", disable)
+        fake = FakeOpenAIStream(["{}"])
+        monkeypatch.setattr(openai, "AsyncOpenAI", lambda **kwargs: fake)
+        client = OpenAIClient()
+
+        async def call():
+            if inside:
+                with client_module.thinking():
+                    await client.complete("sys", [{"role": "user", "content": "x"}])
+            else:
+                await client.complete("sys", [{"role": "user", "content": "x"}])
+
+        asyncio.run(call())
+        return fake.kwargs
+
+    def test_generation_is_sent_with_thinking_off(self, monkeypatch):
+        kwargs = self._run(monkeypatch, disable=True, inside=False)
+        assert kwargs["extra_body"] == {"chat_template_kwargs": {"enable_thinking": False}}
+
+    def test_the_tutor_and_examiners_keep_thinking(self, monkeypatch):
+        assert "extra_body" not in self._run(monkeypatch, disable=True, inside=True)
+
+    def test_nothing_is_sent_when_the_setting_is_off(self, monkeypatch):
+        assert "extra_body" not in self._run(monkeypatch, disable=False, inside=False)
+
+    def test_the_switch_resets_after_the_block(self):
+        with client_module.thinking():
+            assert client_module._thinking.get() is True
+        assert client_module._thinking.get() is False

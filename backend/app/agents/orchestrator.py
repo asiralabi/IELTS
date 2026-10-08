@@ -133,6 +133,13 @@ async def score_mock_exam(
         if section in ("listening", "reading"):
             results[section] = outcome
         else:
+            # Keep what they wrote and said beside its marks. Without it the
+            # report and the tutor had the verdict but not the work, so "what
+            # did I do wrong in Part 1?" could only be answered by guessing.
+            if isinstance(outcome, dict):
+                work = essays if section == "writing" else transcripts
+                field = "essay" if section == "writing" else "transcript"
+                outcome = {**outcome, field: work.get(sub_key)}
             results[section][sub_key] = outcome
 
     section_bands: dict[str, float] = {}

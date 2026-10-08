@@ -1,6 +1,6 @@
 from typing import Any
 
-from app.llm.client import get_llm_client
+from app.llm.client import get_llm_client, thinking
 from app.llm.prompts import WRITING_EXAMINER_SYSTEM
 from app.agents._plan import named_areas
 from app.rag.retriever import retrieve_context
@@ -150,12 +150,13 @@ async def evaluate(
     parts.append(f"Candidate response:\n{essay}")
     user_msg = "\n".join(parts)
 
-    result = await get_llm_client().complete_json(
-        system,
-        [{"role": "user", "content": user_msg}],
-        required_keys=SCORED_FIELDS + ("feedback",),
-        validate=require_numeric_bands(SCORED_FIELDS),
-    )
+    with thinking():
+        result = await get_llm_client().complete_json(
+            system,
+            [{"role": "user", "content": user_msg}],
+            required_keys=SCORED_FIELDS + ("feedback",),
+            validate=require_numeric_bands(SCORED_FIELDS),
+        )
     for field in BAND_FIELDS:
         if field in result:
             result[field] = clamp_band(result[field])

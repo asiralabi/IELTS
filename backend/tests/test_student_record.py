@@ -26,7 +26,11 @@ def test_record_carries_the_latest_exam_and_its_wrong_answers(client):
     with SessionLocal() as db:
         user = _user(db, "record-full@example.com")
         db.add(MockExam(
-            user_id=user.id, status="scored", overall_band=6.0, exam={},
+            user_id=user.id, status="scored", overall_band=6.0,
+            exam={"listening": {"questions": [
+                {"number": 1, "type": "form completion", "question": "Name of the street"},
+                {"number": 2, "type": "note completion", "question": "Day of the visit"},
+            ]}},
             results={
                 "listening": {"score": 1, "total": 2, "band_estimate": 5.0, "results": [
                     {"number": 1, "correct": True, "student_answer": "x", "correct_answer": "x"},
@@ -43,12 +47,14 @@ def test_record_carries_the_latest_exam_and_its_wrong_answers(client):
         db.commit()
         text = student_record(db, user)
 
-    assert "overall band 6.0" in text
-    assert "Q2: wrote 'tuesday', answer 'Thursday'" in text
-    assert "Q1:" not in text  # right answers are not listed
+    assert "LATEST FULL MOCK EXAM" in text and "overall band 6.0" in text
+    # The wrong answer arrives with its question, so the tutor can explain it.
+    assert "Q2 [note completion] Day of the visit" in text
+    assert "student wrote: tuesday | correct: Thursday" in text
+    assert "Q1 " not in text  # right answers are not listed
     assert "Writing task2: band 6.5 (lexical resource 6.0)" in text
-    assert "Repeats 'important'" in text
-    assert "reading: 8/13 correct, band 6.0" in text
+    assert "weakness: Repeats 'important'" in text
+    assert "Reading practice set, 8/13 correct" in text
     assert "No marked work yet" not in text
 
 

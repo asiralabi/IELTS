@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 
-from app.llm.client import get_llm_client
+from app.llm.client import get_llm_client, thinking
 from app.llm.prompts import FEEDBACK_SYSTEM
 from app.models import PracticeAttempt, SpeakingSubmission, User, WritingSubmission
 from app.rag.retriever import retrieve_context
@@ -73,8 +73,9 @@ async def study_plan(db: Session, user: User) -> dict:
     system = FEEDBACK_SYSTEM.format(
         context=context or "No reference material retrieved."
     )
-    return await get_llm_client().complete_json(
-        system,
-        [{"role": "user", "content": f"Student performance summary:\n{summary}"}],
-        required_keys=("summary", "priorities", "study_plan"),
-    )
+    with thinking():
+        return await get_llm_client().complete_json(
+            system,
+            [{"role": "user", "content": f"Student performance summary:\n{summary}"}],
+            required_keys=("summary", "priorities", "study_plan"),
+        )

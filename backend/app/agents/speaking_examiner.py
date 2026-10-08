@@ -2,7 +2,7 @@ from fastapi import HTTPException
 
 from app.agents.writing_examiner import clamp_band, require_numeric_bands
 from app.config import settings
-from app.llm.client import get_llm_client
+from app.llm.client import get_llm_client, thinking
 from app.llm.prompts import SPEAKING_EXAMINER_SYSTEM
 from app.rag.retriever import retrieve_context
 
@@ -26,12 +26,13 @@ async def evaluate(part: str, question: str, transcript: str) -> dict:
         f"Examiner question:\n{question}\n\n"
         f"Candidate transcript (no audio features available):\n{transcript}"
     )
-    result = await get_llm_client().complete_json(
-        system,
-        [{"role": "user", "content": user_msg}],
-        required_keys=SCORED_FIELDS + ("feedback",),
-        validate=require_numeric_bands(SCORED_FIELDS),
-    )
+    with thinking():
+        result = await get_llm_client().complete_json(
+            system,
+            [{"role": "user", "content": user_msg}],
+            required_keys=SCORED_FIELDS + ("feedback",),
+            validate=require_numeric_bands(SCORED_FIELDS),
+        )
     for field in BAND_FIELDS:
         if field in result and result[field] is not None:
             result[field] = clamp_band(result[field])

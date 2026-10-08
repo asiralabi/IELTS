@@ -1,7 +1,7 @@
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.llm.client import get_llm_client
+from app.llm.client import get_llm_client, thinking
 from app.llm.prompts import INSTRUCTOR_SYSTEM
 from app.models import ChatMessage, ChatSession, User
 from app.agents.student_record import student_record
@@ -57,7 +57,8 @@ async def chat(db: Session, user: User, message: str, session_id: int | None) ->
     messages = [{"role": m.role, "content": m.content} for m in history]
     messages.append({"role": "user", "content": message})
 
-    reply = await get_llm_client().complete(system, messages)
+    with thinking():
+        reply = await get_llm_client().complete(system, messages)
 
     db.add(ChatMessage(session_id=session.id, role="user", content=message))
     db.add(ChatMessage(session_id=session.id, role="assistant", content=reply))

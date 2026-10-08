@@ -2,6 +2,8 @@ import asyncio
 import json
 import re
 from abc import ABC, abstractmethod
+from contextlib import contextmanager
+from contextvars import ContextVar
 from collections.abc import Callable, Coroutine, Iterable, Sequence
 from typing import Any
 
@@ -123,6 +125,72 @@ def _runaway_ratio(text: str) -> float:
     return len(set(grams)) / len(grams)
 
 
+# Measured 2026-10-09 on nemotron: thinking is what breaks generation (it
+# thinks until the token budget runs out, 6 of 6 reading sets failed) and what
+# makes the tutor follow its instructions (with it off, the tutor ignored an
+# explicit "go through THIS one first" 3 of 3 times; with it on, 3 of 3 right).
+# So OPENAI_DISABLE_THINKING turns it off for generation, and the tutor, the
+# writing and speaking examiners and the study plan run inside `thinking()`,
+# which keeps it on. The per-answer verdicts in _marking stay off on purpose:
+# they ask for 320 tokens, which thinking would spend before the verdict.
+_thinking: ContextVar[bool] = ContextVar("llm_thinking", default=False)
+
+
+@contextmanager
+def thinking():
+    """Let the model think for the calls made inside this block."""
+    token = _thinking.set(True)
+    try:
+        yield
+    finally:
+        _thinking.reset(token)
+
+
+def _json_closed(text: str) -> bool:
+    """True when the reply is one JSON object that has already closed.
+
+    A model locked in a loop never gets back out to close its object, so a
+    closed one is finished, however repetitive. Measured 2026-10-09: nemotron
+    writes "Choose the correct heading for Paragraph I." followed by the same
+    twelve headings for every paragraph, which reads as 23-25% distinct, and
+    the guard threw away three complete reading sets in seven.
+    """
+    body = text.strip()
+    start = body.find("{")
+    if start == -1 or not body.endswith("}"):
+        return False
+    depth, in_string, escaped = 0, False, False
+    for ch in body[start:]:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+        elif ch == '"':
+            in_string = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+    return depth == 0
+
+
+_NUMBER_RE = re.compile(r'"number"\s*:\s*(\d+)')
+
+
+def _numbering_advances(text: str) -> bool:
+    """True when the tail walks forward through question numbers.
+
+    The same headings block repeats for every paragraph, so its tail can read
+    as a loop while the paper is still being written. What a loop cannot do is
+    count: a model stuck on question 9 writes "number": 9 again and again.
+    """
+    numbers = [int(n) for n in _NUMBER_RE.findall(text[-_RUNAWAY_WINDOW:])]
+    return len(numbers) >= 2 and all(b > a for a, b in zip(numbers, numbers[1:]))
+
+
 class _RunawayWatch:
     """Accumulates a streamed reply, refusing one that stops making progress.
 
@@ -156,7 +224,11 @@ class _RunawayWatch:
         if self.size >= self._next_check:
             self._next_check = self.size + _RUNAWAY_CHECK_EVERY
             ratio = _runaway_ratio(self.text)
-            if ratio < _RUNAWAY_MIN_RATIO:
+            if (
+                ratio < _RUNAWAY_MIN_RATIO
+                and not _json_closed(self.text)
+                and not _numbering_advances(self.text)
+            ):
                 # Raising drops the connection, which is how the server learns
                 # to stop generating.
                 raise RunawayGeneration(
@@ -526,6 +598,8 @@ class OpenAIClient(LLMClient):
                 kwargs["max_tokens"] + _REASONING_RESERVE,
                 max(kwargs["max_tokens"], settings.llm_max_tokens),
             )
+        if settings.openai_disable_thinking and not _thinking.get():
+            kwargs["extra_body"] = {"chat_template_kwargs": {"enable_thinking": False}}
         # Streamed for the same reason ollama is, plus one the hosted side adds:
         # a gateway in front of the model will abandon a request that stays
         # silent too long. Measured against NVIDIA — an unstreamed part-2

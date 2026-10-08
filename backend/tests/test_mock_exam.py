@@ -148,6 +148,9 @@ def test_submit_scores_all_sections(client, exam_headers, exam_id):
     assert (results["reading"]["score"], results["reading"]["total"]) == (3, 6)
     assert results["writing"]["task2"]["band_score"] == 6.5
     assert results["speaking"]["part1"]["band_score"] == 6.0
+    # The work is kept beside its marks, so the report and the tutor can quote it.
+    assert results["writing"]["task1"]["essay"] == ESSAY
+    assert results["speaking"]["part2"]["transcript"] == TRANSCRIPT
 
 
 def test_scored_exam_reveals_answer_key_and_persists(client, exam_headers, exam_id):

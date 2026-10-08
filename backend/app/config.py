@@ -94,6 +94,12 @@ class Settings(BaseSettings):
     # Blank means the parameter is not sent at all, because a model that does
     # not know it answers 400. Set it per provider in .env.
     openai_reasoning_effort: str = ""
+    # nemotron-3-super ignores reasoning_effort: at "low" it still thought for
+    # 21-34k characters on a reading set and ran out of tokens before the JSON
+    # (6 of 6 calls at 7168 tokens, 2026-10-09). It obeys the chat-template
+    # switch instead: enable_thinking=False wrote the same JSON with zero
+    # reasoning in 3s instead of 64s. False means the switch is not sent.
+    openai_disable_thinking: bool = False
     llm_temperature: float = 0.4
     # 2048 was cutting off 650-900 word IELTS passages mid-JSON; 4096 gives
     # comfortable headroom for a full passage + 8-13 questions + answer key.
