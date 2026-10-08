@@ -11,11 +11,12 @@ rest as one line each. It rides on every chat turn, so every field is capped.
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.agents._marking import speaking_band
 from app.models import (
     GeneratedQuestion,
     MockExam,
@@ -27,7 +28,10 @@ from app.models import (
 
 _WRONG_SHOWN = 10  # wrong answers explained per section
 _TIMELINE = 8  # one-line entries in the activity list
-_SPEAKING_SHOWN = 3  # a full speaking test is three parts
+_SPEAKING_SITTINGS = 3  # speaking sittings shown in full
+# A full interview stores its parts in one request, a moment apart; two
+# single-part practices are minutes apart at the very least.
+_SITTING_GAP = timedelta(seconds=30)
 
 _MIN_WORDS = {"task1": 150, "task2": 250}
 _WRITING = ("task_response", "coherence_cohesion", "lexical_resource", "grammatical_range_accuracy")
@@ -52,6 +56,16 @@ def _text(node: Any) -> str:
     if isinstance(node, dict):
         return " / ".join(t for t in (_text(v) for v in node.values()) if t)
     return ""
+
+
+def _when(obj: Any) -> str:
+    """Date and clock time: two tests on one day need an order the model can read."""
+    return obj.created_at.strftime("%d %b %Y, %H:%M UTC") if obj.created_at else "unknown date"
+
+
+def _naive(dt: datetime | None) -> datetime:
+    # SQLite hands back naive datetimes and Postgres aware ones; compare as naive.
+    return (dt or datetime.min).replace(tzinfo=None)
 
 
 def _day(obj: Any) -> str:
@@ -182,11 +196,39 @@ def _speaking(
         lines.append(f"  question: {_cut(question, 200)}")
     if transcript:
         lines.append(f"  they said: \"{_cut(transcript, 350)}\"")
+    if part.get("pronunciation") is None:
+        lines.append("  pronunciation: NOT marked; the answer was marked from a transcript")
     for w in (part.get("weaknesses") or [])[:3]:
         lines.append(f"  weakness: {_cut(w, 200)}")
     for s in (part.get("strengths") or [])[:1]:
         lines.append(f"  strength: {_cut(s, 160)}")
     return lines
+
+
+def _sittings(subs: list[SpeakingSubmission]) -> list[list[SpeakingSubmission]]:
+    """Newest-first submissions grouped into the sittings they came from.
+
+    A full interview is stored as one submission per part. Listed one by one
+    and newest first, the tutor read a later Part 2 practice as the "first
+    attempt", averaged it into the interview's band, and lost Part 1 off the
+    end of the list.
+    """
+    groups: list[list[SpeakingSubmission]] = []
+    for sub in subs:
+        group = groups[-1] if groups else None
+        if (
+            group
+            and sub.part not in {g.part for g in group}
+            and _naive(group[-1].created_at) - _naive(sub.created_at) <= _SITTING_GAP
+        ):
+            group.append(sub)
+        else:
+            groups.append([sub])
+    return [sorted(g, key=lambda x: x.part) for g in groups]
+
+
+def _sitting_band(group: list[SpeakingSubmission]) -> float | None:
+    return speaking_band([float(g.band_score) for g in group if g.band_score is not None])
 
 
 def _attempt_label(attempt: PracticeAttempt, paper: GeneratedQuestion | None) -> str:
@@ -250,17 +292,22 @@ def student_record(db: Session, user: User) -> str:
 
     # 1. What they did, newest first, so "my recent exam" means the right thing.
     timeline: list[tuple[datetime, str]] = []
+    sittings = _sittings(speaking)
     for e in exams:
-        timeline.append((e.created_at, f"{_day(e)}: full mock exam (all four sections), overall band {e.overall_band}"))
+        timeline.append((e.created_at, f"{_when(e)}: full mock exam (all four sections), overall band {e.overall_band}"))
     for a in attempts:
         score = f"{a.score:g}/{a.total} correct" if a.score is not None else "not marked"
-        timeline.append((a.created_at, f"{_day(a)}: {_attempt_label(a, papers.get(a.question_id))}, {score}"))
+        timeline.append((a.created_at, f"{_when(a)}: {_attempt_label(a, papers.get(a.question_id))}, {score}"))
     for w in writing:
-        timeline.append((w.created_at, f"{_day(w)}: writing {w.task_type}, band {w.band_score}"))
-    for s in speaking:
-        timeline.append((s.created_at, f"{_day(s)}: speaking {s.part}, band {s.band_score}"))
-    # SQLite hands back naive datetimes and Postgres aware ones; compare as naive.
-    timeline.sort(key=lambda t: (t[0] or datetime.min).replace(tzinfo=None), reverse=True)
+        timeline.append((w.created_at, f"{_when(w)}: writing {w.task_type}, band {w.band_score}"))
+    for group in sittings:
+        if len(group) > 1:
+            parts = ", ".join(g.part for g in group)
+            text = f"full speaking test ({parts}), overall band {_sitting_band(group)}"
+        else:
+            text = f"speaking {group[0].part} practice on its own, band {group[0].band_score}"
+        timeline.append((group[0].created_at, f"{_when(group[0])}: {text}"))
+    timeline.sort(key=lambda t: _naive(t[0]), reverse=True)
     # Spelled out because the model kept reading "exam" as "mock exam" and
     # skipped a newer practice set two lines further down.
     lines.append(
@@ -320,15 +367,18 @@ def student_record(db: Session, user: User) -> str:
         block = [f"\nLATEST WRITING {w.task_type.upper()} ({_day(w)}):"]
         block += _writing(f"Writing {w.task_type}", w.result or {"band_score": w.band_score}, w.prompt)
         blocks.append((w.created_at, block))
-    if speaking:
-        block = ["\nLATEST SPEAKING ANSWERS:"]
-        for s in speaking[:_SPEAKING_SHOWN]:
+    for group in sittings[:_SPEAKING_SITTINGS]:
+        if len(group) > 1:
+            block = [f"\nFULL SPEAKING TEST ({_when(group[0])}), official overall band {_sitting_band(group)}:"]
+        else:
+            block = [f"\nSPEAKING {group[0].part.upper()} PRACTICE on its own ({_when(group[0])}):"]
+        for sub in group:
             block += _speaking(
-                f"{_day(s)}, {s.part}", s.result or {"band_score": s.band_score}, s.question, s.transcript
+                f"Speaking {sub.part}", sub.result or {"band_score": sub.band_score}, sub.question, sub.transcript
             )
-        blocks.append((speaking[0].created_at, block))
+        blocks.append((group[0].created_at, block))
 
-    blocks.sort(key=lambda b: (b[0] or datetime.min).replace(tzinfo=None), reverse=True)
+    blocks.sort(key=lambda b: _naive(b[0]), reverse=True)
     for _, block in blocks:
         lines += block
 
