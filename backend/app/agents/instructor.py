@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.llm.client import get_llm_client
 from app.llm.prompts import INSTRUCTOR_SYSTEM
 from app.models import ChatMessage, ChatSession, User
+from app.agents.student_record import student_record
 from app.rag.retriever import retrieve_context
 
 # Below this, treat the turn as a follow-up rather than a new question. Real
@@ -50,7 +51,8 @@ async def chat(db: Session, user: User, message: str, session_id: int | None) ->
 
     context = retrieve_context(_retrieval_query(history, message))
     system = INSTRUCTOR_SYSTEM.format(
-        context=context or "No reference material retrieved."
+        record=student_record(db, user),
+        context=context or "No reference material retrieved.",
     )
     messages = [{"role": m.role, "content": m.content} for m in history]
     messages.append({"role": "user", "content": message})

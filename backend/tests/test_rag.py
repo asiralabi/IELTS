@@ -82,3 +82,23 @@ class TestRetrieveContext:
             assert retrieve_context("anything") == ""
         finally:
             set_vector_store(previous)
+
+
+class _DeadStore(MockVectorStore):
+    """A store whose every search fails, like a suspended Qdrant Cloud cluster."""
+
+    def search(self, *args, **kwargs):
+        raise ConnectionResetError("[Errno 104] Connection reset by peer")
+
+
+def test_retrieve_context_degrades_when_store_is_down():
+    original = get_vector_store()
+    try:
+        set_vector_store(_DeadStore())
+        assert retrieve_context("band descriptors outage probe") == ""
+        # The outage is not cached: once the store is back, the same query
+        # is answered from it.
+        set_vector_store(MockVectorStore())
+        assert "band descriptor snippet" in retrieve_context("band descriptors outage probe")
+    finally:
+        set_vector_store(original)

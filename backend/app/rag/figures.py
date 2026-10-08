@@ -130,7 +130,11 @@ def figure_conventions(
     from app.rag.store import get_vector_store
 
     # Over-fetched, because most of what comes back belongs to another family.
-    hits = get_vector_store().search(query, top_k=top_k * 8, source=SOURCE)
+    try:
+        hits = get_vector_store().search(query, top_k=top_k * 8, source=SOURCE)
+    except Exception:
+        # Same promise as an empty store: the generator draws without it.
+        return ""
     wanted = ALIASES.get(family, (family,))
     summary_tags = tuple(f"FIGURE FAMILY SUMMARY — {f}" for f in wanted)
     tags = tuple(f"— {f} " for f in wanted)
@@ -144,13 +148,13 @@ def figure_conventions(
         # family summary carries the measured ranges — blanks per figure, words
         # per item — which is the single most useful thing to tell a generator,
         # and it is one record competing with 260 others for the top slots.
-        summaries = [
-            h
-            for h in get_vector_store().search(
+        try:
+            extra = get_vector_store().search(
                 f"FIGURE FAMILY SUMMARY {wanted[0]}", top_k=6, source=SOURCE
             )
-            if str(h.get("text", "")).startswith(summary_tags)
-        ]
+        except Exception:
+            extra = []
+        summaries = [h for h in extra if str(h.get("text", "")).startswith(summary_tags)]
     examples = [
         h
         for h in hits
