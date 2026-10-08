@@ -100,15 +100,16 @@ def test_a_full_speaking_test_is_one_sitting_and_later_practice_is_separate(clie
         db.add(SpeakingSubmission(user_id=user.id, part="part2", question="part2 question",
                                   transcript="My smartphone, again.", band_score=4.0,
                                   result={"band_score": 4.0, "pronunciation": None},
-                                  created_at=start + timedelta(minutes=5)))
+                                  # Seconds later, as a quick re-try would be.
+                                  created_at=start + timedelta(seconds=17)))
         db.commit()
         text = student_record(db, user)
 
     # The interview's official band (3.0), not an average that includes the practice.
     assert "full speaking test (part1, part2, part3), overall band 3.0" in text
-    assert "FULL SPEAKING TEST (09 Oct 2026, 10:00 UTC), official overall band 3.0" in text
+    assert "FULL SPEAKING TEST (09 Oct 2026, 10:00:00 UTC), official overall band 3.0" in text
     assert "speaking part2 practice on its own, band 4.0" in text
     # Part 1 is still there, and the later practice reads as later.
     assert 'they said: "I live in Dhaka."' in text
-    assert text.index("SPEAKING PART2 PRACTICE on its own (09 Oct 2026, 10:05 UTC)") < text.index("FULL SPEAKING TEST")
+    assert text.index("SPEAKING PART2 PRACTICE on its own (09 Oct 2026, 10:00:17 UTC)") < text.index("FULL SPEAKING TEST")
     assert "pronunciation: NOT marked" in text

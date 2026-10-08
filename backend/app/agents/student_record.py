@@ -29,9 +29,10 @@ from app.models import (
 _WRONG_SHOWN = 10  # wrong answers explained per section
 _TIMELINE = 8  # one-line entries in the activity list
 _SPEAKING_SITTINGS = 3  # speaking sittings shown in full
-# A full interview stores its parts in one request, a moment apart; two
-# single-part practices are minutes apart at the very least.
-_SITTING_GAP = timedelta(seconds=30)
+# A full interview stores all its parts in one database write, milliseconds
+# apart. 30s was too wide: a Part 2 practice sent 17s after a test was folded
+# into it, and the tutor reported two "full tests".
+_SITTING_GAP = timedelta(seconds=2)
 
 _MIN_WORDS = {"task1": 150, "task2": 250}
 _WRITING = ("task_response", "coherence_cohesion", "lexical_resource", "grammatical_range_accuracy")
@@ -60,7 +61,7 @@ def _text(node: Any) -> str:
 
 def _when(obj: Any) -> str:
     """Date and clock time: two tests on one day need an order the model can read."""
-    return obj.created_at.strftime("%d %b %Y, %H:%M UTC") if obj.created_at else "unknown date"
+    return obj.created_at.strftime("%d %b %Y, %H:%M:%S UTC") if obj.created_at else "unknown date"
 
 
 def _naive(dt: datetime | None) -> datetime:
