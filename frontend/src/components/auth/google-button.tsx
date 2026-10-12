@@ -87,6 +87,9 @@ export function GoogleButton({
           size: "large",
           shape: "pill",
           text,
+          // The site is English; left to itself Google guesses a language
+          // from the visitor's machine and can label the button in another.
+          locale: "en",
           width: Math.min(400, el.offsetWidth || 320),
         });
       })
