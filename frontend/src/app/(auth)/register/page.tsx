@@ -45,8 +45,12 @@ export default function RegisterPage() {
   const accepted = useWatch({ control, name: "accept_terms" }) === true;
 
   const onGoogle = async (credential: string) => {
+    if (!accepted) {
+      toast.error("Please read and accept the Terms and Privacy Policy first.");
+      return;
+    }
     try {
-      const tokens = await api.googleLogin(credential, true);
+      const tokens = await api.googleLogin(credential, accepted);
       setTokens(tokens.access_token, tokens.refresh_token);
       const user = await api.me();
       setUser(user);
@@ -164,10 +168,8 @@ export default function RegisterPage() {
         <>
           <OrDivider />
           {/* Google signs you up in one click, so the same consent box gates it. */}
-          <div
-            className={accepted ? "" : "pointer-events-none opacity-40"}
-            aria-disabled={!accepted}
-          >
+          {/* inert, not just pointer-events: the iframe is still reachable by Tab otherwise. */}
+          <div className={accepted ? "" : "opacity-40"} inert={!accepted}>
             <GoogleButton text="signup_with" onCredential={onGoogle} />
           </div>
           {!accepted && (

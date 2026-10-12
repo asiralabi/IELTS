@@ -52,6 +52,21 @@ function loadScript(): Promise<void> {
   return scriptPromise;
 }
 
+// GIS keeps one callback per page load and warns when initialize() runs again,
+// which every client-side hop between /login and /register used to do. So it
+// is initialized once, and the callback goes to whichever button is mounted.
+let currentHandler: ((credential: string) => void) | null = null;
+let initialized = false;
+
+function initializeOnce(gsi: Gsi["accounts"]["id"]) {
+  if (initialized) return;
+  initialized = true;
+  gsi.initialize({
+    client_id: CLIENT_ID,
+    callback: (response) => currentHandler?.(response.credential),
+  });
+}
+
 export const googleSignInEnabled = CLIENT_ID !== "";
 
 export function GoogleButton({
@@ -62,42 +77,57 @@ export function GoogleButton({
   onCredential: (credential: string) => void;
 }) {
   const ref = React.useRef<HTMLDivElement>(null);
-  // GIS keeps the first callback it is given; route through a ref so it
-  // always reaches the latest handler (and the latest form state).
-  const handler = React.useRef(onCredential);
+  // Always hand GIS the latest handler (and so the latest form state).
   React.useEffect(() => {
-    handler.current = onCredential;
+    currentHandler = onCredential;
   }, [onCredential]);
+  React.useEffect(
+    () => () => {
+      currentHandler = null;
+    },
+    [],
+  );
 
   React.useEffect(() => {
     if (!CLIENT_ID) return;
     let cancelled = false;
+    let observer: ResizeObserver | null = null;
     loadScript()
       .then(() => {
         const el = ref.current;
         const gsi = window.google?.accounts.id;
         if (cancelled || !el || !gsi) return;
-        gsi.initialize({
-          client_id: CLIENT_ID,
-          callback: (response) => handler.current(response.credential),
-        });
-        gsi.renderButton(el, {
-          type: "standard",
-          theme: "outline",
-          size: "large",
-          shape: "pill",
-          text,
-          // The site is English; left to itself Google guesses a language
-          // from the visitor's machine and can label the button in another.
-          locale: "en",
-          width: Math.min(400, el.offsetWidth || 320),
-        });
+        initializeOnce(gsi);
+        // Google draws the button at a fixed pixel width, so it is redrawn
+        // when the column changes size (a phone turned upright would
+        // otherwise keep the wide button and scroll sideways).
+        let drawnWidth = 0;
+        const draw = () => {
+          const width = Math.min(400, Math.floor(el.clientWidth) || 320);
+          if (width === drawnWidth) return;
+          drawnWidth = width;
+          gsi.renderButton(el, {
+            type: "standard",
+            theme: "outline",
+            size: "large",
+            shape: "pill",
+            text,
+            // The site is English; left to itself Google guesses a language
+            // from the visitor's machine and can label the button in another.
+            locale: "en",
+            width,
+          });
+        };
+        draw();
+        observer = new ResizeObserver(draw);
+        observer.observe(el);
       })
       .catch(() => {
         /* No button is better than a broken one; email sign-in still works. */
       });
     return () => {
       cancelled = true;
+      observer?.disconnect();
     };
   }, [text]);
 
