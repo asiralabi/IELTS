@@ -17,6 +17,9 @@ const isProd = process.env.NODE_ENV === "production";
 const api = apiOrigin();
 // Listening audio is served from a Vercel Blob store via a redirect.
 const blob = "https://*.public.blob.vercel-storage.com";
+// "Sign in with Google" (Google Identity Services): its script, its button
+// iframe, its stylesheet and the calls it makes all live under this path.
+const gsi = "https://accounts.google.com/gsi/";
 
 /**
  * A Content-Security-Policy that stops the page from loading scripts from
@@ -27,13 +30,14 @@ const blob = "https://*.public.blob.vercel-storage.com";
  */
 const csp = [
   "default-src 'self'",
-  `script-src 'self' 'unsafe-inline'${isProd ? "" : " 'unsafe-eval'"}`,
-  "style-src 'self' 'unsafe-inline'",
+  `script-src 'self' 'unsafe-inline'${isProd ? "" : " 'unsafe-eval'"} ${gsi}client`,
+  `style-src 'self' 'unsafe-inline' ${gsi}style`,
+  `frame-src ${gsi}`,
   `img-src 'self' data: blob:${api ? ` ${api}` : ""} ${blob}`,
   `media-src 'self' blob: data:${api ? ` ${api}` : ""} ${blob}`,
   // The blob origin is here too: the audio is fetched with fetch(), and the API
   // answers with a redirect to the blob store, which connect-src governs.
-  `connect-src 'self'${api ? ` ${api}` : ""} ${blob}${isProd ? "" : " ws: wss:"}`,
+  `connect-src 'self'${api ? ` ${api}` : ""} ${blob} ${gsi}${isProd ? "" : " ws: wss:"}`,
   "font-src 'self' data:",
   "object-src 'none'",
   "base-uri 'self'",
@@ -51,7 +55,9 @@ const securityHeaders = [
   { key: "Strict-Transport-Security", value: "max-age=63072000; includeSubDomains" },
   // The speaking module needs the microphone; nothing needs the rest.
   { key: "Permissions-Policy", value: "microphone=(self), camera=(), geolocation=(), payment=(), usb=()" },
-  { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
+  // allow-popups, not same-origin: the Google sign-in popup has to be able to
+  // hand its result back to this window, which plain same-origin severs.
+  { key: "Cross-Origin-Opener-Policy", value: "same-origin-allow-popups" },
 ];
 
 const nextConfig: NextConfig = {

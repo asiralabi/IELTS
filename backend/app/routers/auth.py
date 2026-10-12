@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.auth import (
@@ -9,12 +10,20 @@ from app.auth import (
     decode_token,
     get_current_user,
     hash_password,
+    verify_google_credential,
     verify_password,
 )
 from app.database import get_db
 from app.config import settings
 from app.models import Consent, User
-from app.schemas import DeleteAccountRequest, RefreshRequest, Token, UserCreate, UserOut
+from app.schemas import (
+    DeleteAccountRequest,
+    GoogleLoginRequest,
+    RefreshRequest,
+    Token,
+    UserCreate,
+    UserOut,
+)
 from app.services.account import delete_user_data, export_user_data
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -59,6 +68,46 @@ async def login(
     )
 
 
+@router.post("/google", response_model=Token)
+async def google_login(payload: GoogleLoginRequest, db: Session = Depends(get_db)) -> Token:
+    """Sign in (or sign up) with a Google ID token from the GIS button."""
+    claims = verify_google_credential(payload.credential)
+    sub = str(claims.get("sub") or "")
+    email = str(claims.get("email") or "").lower()
+    # An unverified address could belong to anyone; it must not open, or
+    # create, an account in that address's name.
+    if not sub or not email or claims.get("email_verified") is not True:
+        raise HTTPException(status_code=401, detail="Google did not verify this email address")
+
+    user = db.query(User).filter(User.google_sub == sub).first()
+    if user is None:
+        user = db.query(User).filter(func.lower(User.email) == email).first()
+        if user is not None:
+            # Same verified address as an existing password account: the
+            # person proved they own it, so the two become one account.
+            user.google_sub = sub
+        else:
+            if not payload.accept_terms:
+                raise HTTPException(status_code=403, detail="No account yet: sign up first")
+            user = User(
+                email=email,
+                hashed_password=None,
+                google_sub=sub,
+                full_name=(claims.get("name") or None),
+            )
+            db.add(user)
+            db.flush()
+            db.add(Consent(user_id=user.id, policy_version=settings.legal_policy_version))
+        db.commit()
+        db.refresh(user)
+    if not user.is_active:
+        raise HTTPException(status_code=401, detail="User is inactive")
+    return Token(
+        access_token=create_access_token(user.id),
+        refresh_token=create_refresh_token(user.id),
+    )
+
+
 @router.post("/refresh", response_model=Token)
 async def refresh(payload: RefreshRequest, db: Session = Depends(get_db)) -> Token:
     data = decode_token(payload.refresh_token)
@@ -94,8 +143,12 @@ async def delete_me(
     db: Session = Depends(get_db),
 ) -> Response:
     """Erase the account and all of its data. Asks for the password again, so
-    a token left in an unlocked browser cannot erase someone's history."""
-    if not verify_password(payload.password, user.hashed_password):
-        raise HTTPException(status_code=403, detail="Password is incorrect")
+    a token left in an unlocked browser cannot erase someone's history. A
+    Google-only account has no password and types its email instead."""
+    if user.has_password:
+        if not verify_password(payload.password or "", user.hashed_password):
+            raise HTTPException(status_code=403, detail="Password is incorrect")
+    elif (payload.email or "").strip().lower() != user.email.lower():
+        raise HTTPException(status_code=403, detail="Email does not match this account")
     delete_user_data(db, user)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

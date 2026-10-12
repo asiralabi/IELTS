@@ -189,13 +189,23 @@ export const api = {
     return request<TokenPair>("/auth/login", { method: "POST", form, auth: false });
   },
 
+  // A Google ID token from the GIS button. `accept_terms` is only true from the
+  // sign-up page; a first Google sign-in from the login page answers 403.
+  googleLogin: (credential: string, accept_terms: boolean) =>
+    request<TokenPair>("/auth/google", {
+      method: "POST",
+      body: { credential, accept_terms },
+      auth: false,
+    }),
+
   me: () => request<User>("/auth/me"),
 
   // Everything the server holds about the signed-in student, and the right to
   // erase it (Bangladesh PDPO 2025; GDPR for anyone using Oratio from the EU/UK).
   exportMyData: () => request<Record<string, unknown>>("/auth/me/export"),
-  deleteAccount: (password: string) =>
-    request<void>("/auth/me", { method: "DELETE", body: { password } }),
+  // A password account confirms with its password; a Google-only one with its email.
+  deleteAccount: (confirm: { password: string } | { email: string }) =>
+    request<void>("/auth/me", { method: "DELETE", body: confirm }),
 
   // --- chat ---
   chat: (message: string, session_id?: number | null) =>

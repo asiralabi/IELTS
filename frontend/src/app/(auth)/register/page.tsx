@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
@@ -12,6 +12,7 @@ import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Input, Label, FieldError } from "@/components/ui/input";
+import { GoogleButton, OrDivider, googleSignInEnabled } from "@/components/auth/google-button";
 
 const schema = z.object({
   full_name: z.string().min(2, "Tell us your name"),
@@ -34,11 +35,27 @@ export default function RegisterPage() {
   const {
     register,
     handleSubmit,
+    control,
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: { target_band: 7, accept_terms: false as unknown as true },
   });
+
+  const accepted = useWatch({ control, name: "accept_terms" }) === true;
+
+  const onGoogle = async (credential: string) => {
+    try {
+      const tokens = await api.googleLogin(credential, true);
+      setTokens(tokens.access_token, tokens.refresh_token);
+      const user = await api.me();
+      setUser(user);
+      toast.success("Account created — welcome aboard!");
+      router.push("/dashboard");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Google sign-up failed.");
+    }
+  };
 
   const onSubmit = async (values: FormValues) => {
     try {
@@ -142,6 +159,24 @@ export default function RegisterPage() {
           Create account
         </Button>
       </form>
+
+      {googleSignInEnabled && (
+        <>
+          <OrDivider />
+          {/* Google signs you up in one click, so the same consent box gates it. */}
+          <div
+            className={accepted ? "" : "pointer-events-none opacity-40"}
+            aria-disabled={!accepted}
+          >
+            <GoogleButton text="signup_with" onCredential={onGoogle} />
+          </div>
+          {!accepted && (
+            <p className="mt-2 text-center text-xs text-muted-foreground">
+              Tick the box above to sign up with Google.
+            </p>
+          )}
+        </>
+      )}
 
       <p className="mt-8 border-t border-border pt-6 text-sm text-muted-foreground">
         Already have an account?{" "}

@@ -52,3 +52,6 @@ Thumbs.db
 
 # Supabase connection string for the migration script — secret, never committed.
 .env.deploy
+
+# Google OAuth client secret downloads. The GIS flow needs only the public client id.
+client_secret_*.json

@@ -30,6 +30,8 @@ class UserOut(BaseModel):
     target_band: float | None
     is_active: bool
     created_at: datetime
+    # False for a Google-only account, which confirms deletion with its email.
+    has_password: bool
 
 
 class Token(BaseModel):
@@ -39,7 +41,17 @@ class Token(BaseModel):
 
 
 class DeleteAccountRequest(BaseModel):
-    password: str = Field(min_length=1, max_length=72)
+    # A password account confirms with its password; a Google-only account,
+    # which has none, confirms by typing its email.
+    password: str | None = Field(default=None, max_length=72)
+    email: str | None = Field(default=None, max_length=255)
+
+
+class GoogleLoginRequest(BaseModel):
+    credential: str = Field(min_length=1, max_length=8192)
+    # Only the sign-up page sends True. A first Google sign-in from the login
+    # page has agreed to nothing yet, so it is sent to sign up instead.
+    accept_terms: bool = False
 
 
 class RefreshRequest(BaseModel):

@@ -12,6 +12,7 @@ import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Input, Label, FieldError } from "@/components/ui/input";
+import { GoogleButton, OrDivider, googleSignInEnabled } from "@/components/auth/google-button";
 
 const schema = z.object({
   email: z.string().email("Enter a valid email address"),
@@ -29,14 +30,30 @@ export default function LoginPage() {
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({ resolver: zodResolver(schema) });
 
+  const signedIn = async (tokens: { access_token: string; refresh_token: string }) => {
+    setTokens(tokens.access_token, tokens.refresh_token);
+    const user = await api.me();
+    setUser(user);
+    toast.success(`Welcome back${user.full_name ? `, ${user.full_name}` : ""}!`);
+    router.push("/dashboard");
+  };
+
+  const onGoogle = async (credential: string) => {
+    try {
+      await signedIn(await api.googleLogin(credential, false));
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 403) {
+        toast.info("No account for that Google address yet. Create one first.");
+        router.push("/register");
+        return;
+      }
+      toast.error(err instanceof Error ? err.message : "Google sign-in failed.");
+    }
+  };
+
   const onSubmit = async (values: FormValues) => {
     try {
-      const tokens = await api.login(values.email, values.password);
-      setTokens(tokens.access_token, tokens.refresh_token);
-      const user = await api.me();
-      setUser(user);
-      toast.success(`Welcome back${user.full_name ? `, ${user.full_name}` : ""}!`);
-      router.push("/dashboard");
+      await signedIn(await api.login(values.email, values.password));
     } catch (err) {
       const message =
         err instanceof ApiError && err.status === 401
@@ -87,6 +104,13 @@ export default function LoginPage() {
           Sign In
         </Button>
       </form>
+
+      {googleSignInEnabled && (
+        <>
+          <OrDivider />
+          <GoogleButton text="signin_with" onCredential={onGoogle} />
+        </>
+      )}
 
       <p className="mt-8 border-t border-border pt-6 text-sm text-muted-foreground">
         New here?{" "}

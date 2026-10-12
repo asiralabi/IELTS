@@ -5,8 +5,8 @@
  * it is what a new account's consent record says they agreed to. Bump both
  * whenever the Terms or the Privacy Policy change in substance.
  */
-export const LEGAL_VERSION = "2026-10-08";
-export const LEGAL_UPDATED = "8 October 2026";
+export const LEGAL_VERSION = "2026-10-12";
+export const LEGAL_UPDATED = "12 October 2026";
 
 /**
  * Where people send privacy requests and legal notices. If it is ever left

@@ -22,11 +22,38 @@ def hash_password(password: str) -> str:
 _DUMMY_HASH = bcrypt.hashpw(b"oratio-timing-equaliser", bcrypt.gensalt()).decode("utf-8")
 
 
-def verify_password(password: str, hashed: str) -> bool:
+def verify_password(password: str, hashed: str | None) -> bool:
+    if not hashed:
+        return False
     try:
         return bcrypt.checkpw(password.encode("utf-8")[:72], hashed.encode("utf-8"))
     except ValueError:
         return False
+
+
+_GOOGLE_ISSUERS = ("accounts.google.com", "https://accounts.google.com")
+_google_keys = jwt.PyJWKClient("https://www.googleapis.com/oauth2/v3/certs")
+
+
+def verify_google_credential(credential: str) -> dict:
+    """The claims of a Google Sign-In ID token, or 401.
+
+    The token is a JWT signed by Google. Checking the signature against
+    Google's published keys, the audience against our client id, and the
+    issuer is the whole of the verification; nothing is sent back to Google.
+    """
+    if not settings.google_client_id:
+        raise HTTPException(status_code=503, detail="Google sign-in is not configured")
+    try:
+        key = _google_keys.get_signing_key_from_jwt(credential)
+        claims = jwt.decode(
+            credential, key.key, algorithms=["RS256"], audience=settings.google_client_id
+        )
+    except (jwt.PyJWTError, jwt.PyJWKClientError) as exc:
+        raise HTTPException(status_code=401, detail="Google sign-in failed") from exc
+    if claims.get("iss") not in _GOOGLE_ISSUERS:
+        raise HTTPException(status_code=401, detail="Google sign-in failed")
+    return claims
 
 
 def _create_token(user_id: int, token_type: str, expires_delta: timedelta) -> str:

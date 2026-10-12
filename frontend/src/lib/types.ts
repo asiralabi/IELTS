@@ -9,6 +9,8 @@ export interface User {
   target_band: number | null;
   is_active: boolean;
   created_at: string;
+  // False for an account that only signs in with Google.
+  has_password: boolean;
 }
 
 export interface TokenPair {

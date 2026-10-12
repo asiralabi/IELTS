@@ -44,11 +44,14 @@ export default function SettingsPage() {
     }
   };
 
+  // A Google-only account has no password; it confirms by typing its email.
+  const googleOnly = user?.has_password === false;
+
   const deleteAccount = async (e: React.FormEvent) => {
     e.preventDefault();
     setDeleting(true);
     try {
-      await api.deleteAccount(password);
+      await api.deleteAccount(googleOnly ? { email: password } : { password });
       logout();
       toast.success("Your account and all of its data have been deleted.");
       router.push("/");
@@ -130,12 +133,12 @@ export default function SettingsPage() {
                   chats. It cannot be undone.
                 </p>
                 <Label htmlFor="delete-password" className="mt-4">
-                  Enter your password to confirm
+                  {googleOnly ? "Type your email address to confirm" : "Enter your password to confirm"}
                 </Label>
                 <Input
                   id="delete-password"
-                  type="password"
-                  autoComplete="current-password"
+                  type={googleOnly ? "email" : "password"}
+                  autoComplete={googleOnly ? "off" : "current-password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                 />

@@ -27,7 +27,11 @@ class User(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
-    hashed_password: Mapped[str] = mapped_column(String(255))
+    # None for an account that only ever signed in with Google.
+    hashed_password: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Google's permanent id for the person ("sub"), not their email: an email
+    # can change hands, the sub never does.
+    google_sub: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
     full_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     target_band: Mapped[float | None] = mapped_column(Float, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -36,6 +40,10 @@ class User(Base):
     sessions: Mapped[list["ChatSession"]] = relationship(back_populates="user")
     writing_submissions: Mapped[list["WritingSubmission"]] = relationship(back_populates="user")
     speaking_submissions: Mapped[list["SpeakingSubmission"]] = relationship(back_populates="user")
+
+    @property
+    def has_password(self) -> bool:
+        return bool(self.hashed_password)
 
 
 class ChatSession(Base):

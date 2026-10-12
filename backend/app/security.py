@@ -76,6 +76,7 @@ limiter = SlidingWindowLimiter()
 # the hosted model, so they share a per-caller budget.
 RATE_RULES: list[tuple[str, str, int, int]] = [
     ("POST", "/auth/login", 10, 60),
+    ("POST", "/auth/google", 10, 60),
     ("POST", "/auth/register", 5, 3600),
     ("POST", "/auth/refresh", 30, 60),
     ("DELETE", "/auth/me", 5, 3600),

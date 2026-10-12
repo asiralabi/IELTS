@@ -32,7 +32,7 @@ export default function PrivacyPage() {
           title: "What we collect",
           body: (
             <ul>
-              <li><strong>Account details:</strong> your email address, your name if you give it, your target band, and your password, which is stored only as a one-way hash.</li>
+              <li><strong>Account details:</strong> your email address, your name if you give it, your target band, and your password, which is stored only as a one-way hash. If you sign in with Google instead, Google sends us your email address, your name and an account identifier, and you have no password with us at all.</li>
               <li><strong>Your practice work:</strong> essays, speaking transcripts, any speaking audio you upload, your answers to reading and listening questions, mock exams, and the scores and feedback we produce.</li>
               <li><strong>Chats:</strong> questions you ask in “Ask Oratio” and the replies.</li>
               <li><strong>Feedback:</strong> notes you send through the feedback form, with the email you give, the page you were on and your browser type.</li>

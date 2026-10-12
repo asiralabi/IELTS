@@ -56,6 +56,9 @@ class Settings(BaseSettings):
 
     jwt_secret: str = _DEFAULT_JWT_SECRET
     jwt_algorithm: str = "HS256"
+    # OAuth client id of the "Sign in with Google" button. Not a secret: the
+    # page ships it to every browser. Blank turns POST /auth/google off.
+    google_client_id: str = ""
     access_token_expire_minutes: int = 60
     refresh_token_expire_days: int = 7
 
@@ -164,7 +167,7 @@ class Settings(BaseSettings):
     rate_limit_enabled: bool = True
     # Date of the Terms / Privacy text a new account agrees to. Bump it (and the
     # LEGAL_VERSION constant in frontend/src/lib/legal.ts) when either changes.
-    legal_policy_version: str = "2026-10-08"
+    legal_policy_version: str = "2026-10-12"
 
     data_dir: str = "./data"
     upload_dir: str = "./data/uploads"
