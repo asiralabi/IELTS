@@ -18,6 +18,7 @@ import {
   Settings,
   Home,
   MessageSquareHeart,
+  UserX,
   Menu,
   X,
 } from "lucide-react";
@@ -48,6 +49,11 @@ const outboundItems = [
   { icon: Home, label: "Home", href: "/" },
   { icon: MessageSquareHeart, label: "Feedback", href: "/#feedback" },
 ];
+
+// Straight to the delete form in Settings, which opens itself on this hash.
+// The form still asks for the password (or the email, for a Google account),
+// so the shortcut makes erasing easy to find, not easy to do by accident.
+const deleteItem = { icon: UserX, label: "Delete account", href: "/settings#delete-account" };
 
 /**
  * Props that hold a link's prefetch back until the user shows intent.
@@ -165,6 +171,21 @@ export function Sidebar() {
             </motion.span>
           </Link>
         ))}
+        <Link
+          href={deleteItem.href}
+          {...intent}
+          aria-label={deleteItem.label}
+          className="group relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-danger/10 hover:text-danger"
+        >
+          <deleteItem.icon className="relative size-5 shrink-0" strokeWidth={1.6} aria-hidden />
+          <motion.span
+            animate={{ opacity: expanded ? 1 : 0 }}
+            transition={{ duration: 0.15 }}
+            className="relative whitespace-nowrap"
+          >
+            {deleteItem.label}
+          </motion.span>
+        </Link>
       </div>
     </motion.aside>
   );
@@ -309,6 +330,15 @@ export function MobileDrawer() {
                     {item.label}
                   </Link>
                 ))}
+                <Link
+                  href={deleteItem.href}
+                  {...intent}
+                  onClick={() => setOpen(false)}
+                  className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-danger/10 hover:text-danger"
+                >
+                  <deleteItem.icon className="size-5 shrink-0" strokeWidth={1.6} aria-hidden />
+                  {deleteItem.label}
+                </Link>
               </div>
             </motion.aside>
           </>

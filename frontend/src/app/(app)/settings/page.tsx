@@ -25,6 +25,31 @@ export default function SettingsPage() {
   const [password, setPassword] = React.useState("");
   const [deleting, setDeleting] = React.useState(false);
 
+  // The sidebar's "Delete account" lands on #delete-account: open the form and
+  // bring it into view. Next.js moves between hashes on the same page with
+  // pushState, which fires no hashchange, so the sidebar link is also caught
+  // by listening for clicks on links to this hash.
+  React.useEffect(() => {
+    const open = () => {
+      if (window.location.hash !== "#delete-account") return;
+      setConfirming(true);
+      requestAnimationFrame(() =>
+        document.getElementById("delete-account")?.scrollIntoView({ behavior: "smooth", block: "center" })
+      );
+    };
+    const onClick = (e: MouseEvent) => {
+      const link = (e.target as Element | null)?.closest?.('a[href$="#delete-account"]');
+      if (link) setTimeout(open, 0);
+    };
+    open();
+    window.addEventListener("hashchange", open);
+    document.addEventListener("click", onClick);
+    return () => {
+      window.removeEventListener("hashchange", open);
+      document.removeEventListener("click", onClick);
+    };
+  }, []);
+
   const downloadData = async () => {
     setExporting(true);
     try {
@@ -103,7 +128,7 @@ export default function SettingsPage() {
           </GlowCard>
         </motion.div>
 
-        <motion.div variants={fadeUp}>
+        <motion.div variants={fadeUp} id="delete-account" className="scroll-mt-24">
           <GlowCard className="p-7">
             <h2 className="font-display font-medium">Your data</h2>
             <p className="mt-1 text-sm text-muted-foreground">
