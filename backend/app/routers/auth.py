@@ -54,6 +54,14 @@ async def login(
     user = db.query(User).filter(User.email == form.username).first()
     if user is None:
         verify_password(form.password, _DUMMY_HASH)
+    elif user.hashed_password is None:
+        # Made with Google, so there is no password to get right. Saying so
+        # reveals no more than sign-up's "Email already registered" does.
+        raise HTTPException(
+            status_code=401,
+            detail="This account signs in with Google. Use the Google button below.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     if user is None or not verify_password(form.password, user.hashed_password):
         raise HTTPException(
             status_code=401,

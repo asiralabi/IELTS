@@ -62,6 +62,30 @@ def test_a_token_meant_for_elsewhere_is_refused(overrides):
     assert exc.value.status_code == 401
 
 
+def test_an_expired_token_says_so():
+    stale = _google_token(exp=datetime.now(timezone.utc) - timedelta(minutes=5))
+    with pytest.raises(HTTPException) as exc:
+        auth_module.verify_google_credential(stale)
+    assert exc.value.status_code == 401
+    assert "expired" in exc.value.detail
+
+
+def test_a_server_clock_slightly_behind_google_still_accepts():
+    early = _google_token(iat=datetime.now(timezone.utc) + timedelta(seconds=30))
+    assert auth_module.verify_google_credential(early)["sub"] == "google-sub-1"
+
+
+def test_google_unreachable_is_a_503_not_a_bad_login(monkeypatch):
+    class _Down:
+        def get_signing_key_from_jwt(self, token):
+            raise jwt.PyJWKClientConnectionError("network down")
+
+    monkeypatch.setattr(auth_module, "_google_keys", _Down())
+    with pytest.raises(HTTPException) as exc:
+        auth_module.verify_google_credential(_google_token())
+    assert exc.value.status_code == 503
+
+
 def test_a_token_not_signed_by_google_is_refused():
     other = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     forged = jwt.encode(
@@ -132,6 +156,8 @@ def test_a_google_account_cannot_log_in_with_an_empty_password(client):
     _google_login(client, accept_terms=True, sub="nopw-1", email="nopw1@gmail.com")
     resp = client.post("/auth/login", data={"username": "nopw1@gmail.com", "password": "x"})
     assert resp.status_code == 401
+    # ...and is told to use Google rather than that the password is wrong.
+    assert "Google" in resp.json()["detail"]
 
 
 def test_a_google_account_deletes_itself_by_typing_its_email(client):

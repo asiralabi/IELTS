@@ -47,8 +47,22 @@ def verify_google_credential(credential: str) -> dict:
     try:
         key = _google_keys.get_signing_key_from_jwt(credential)
         claims = jwt.decode(
-            credential, key.key, algorithms=["RS256"], audience=settings.google_client_id
+            credential,
+            key.key,
+            algorithms=["RS256"],
+            audience=settings.google_client_id,
+            # A server clock a few seconds behind Google's would otherwise
+            # reject a token Google issued a moment ago ("issued in the future").
+            leeway=60,
         )
+    except jwt.ExpiredSignatureError as exc:
+        # Google's tokens live an hour; one held through a long consent step dies.
+        raise HTTPException(status_code=401, detail="Your Google sign-in expired.") from exc
+    except jwt.PyJWKClientConnectionError as exc:
+        # Not the student's fault: we could not fetch Google's signing keys.
+        raise HTTPException(
+            status_code=503, detail="Couldn't reach Google just now. Please try again."
+        ) from exc
     except (jwt.PyJWTError, jwt.PyJWKClientError) as exc:
         raise HTTPException(status_code=401, detail="Google sign-in failed") from exc
     if claims.get("iss") not in _GOOGLE_ISSUERS:
