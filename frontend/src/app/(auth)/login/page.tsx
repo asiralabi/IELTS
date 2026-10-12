@@ -13,6 +13,7 @@ import { useAuth } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Input, Label, FieldError } from "@/components/ui/input";
 import { GoogleButton, OrDivider, googleSignInEnabled } from "@/components/auth/google-button";
+import { FinishGoogleSignUp } from "@/components/auth/consent";
 
 const schema = z.object({
   email: z.string().email("Enter a valid email address"),
@@ -30,11 +31,18 @@ export default function LoginPage() {
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({ resolver: zodResolver(schema) });
 
-  const signedIn = async (tokens: { access_token: string; refresh_token: string }) => {
+  // A Google credential for an address with no account yet, held while the
+  // student agrees to the terms. Google's ID tokens stay valid for an hour.
+  const [pendingGoogle, setPendingGoogle] = React.useState<string | null>(null);
+
+  const signedIn = async (
+    tokens: { access_token: string; refresh_token: string },
+    greeting = "Welcome back",
+  ) => {
     setTokens(tokens.access_token, tokens.refresh_token);
     const user = await api.me();
     setUser(user);
-    toast.success(`Welcome back${user.full_name ? `, ${user.full_name}` : ""}!`);
+    toast.success(`${greeting}${user.full_name ? `, ${user.full_name}` : ""}!`);
     router.push("/dashboard");
   };
 
@@ -43,11 +51,23 @@ export default function LoginPage() {
       await signedIn(await api.googleLogin(credential, false));
     } catch (err) {
       if (err instanceof ApiError && err.status === 403) {
-        toast.info("No account for that Google address yet. Create one first.");
-        router.push("/register");
+        setPendingGoogle(credential);
         return;
       }
       toast.error(err instanceof Error ? err.message : "Google sign-in failed.");
+    }
+  };
+
+  const createFromGoogle = async () => {
+    if (!pendingGoogle) return;
+    try {
+      await signedIn(await api.googleLogin(pendingGoogle, true), "Welcome to Oratio");
+    } catch (err) {
+      // An expired credential lands here; a fresh click on the button fixes it.
+      setPendingGoogle(null);
+      toast.error(
+        err instanceof Error ? `${err.message} Please try Google again.` : "Google sign-up failed.",
+      );
     }
   };
 
@@ -56,7 +76,7 @@ export default function LoginPage() {
       await signedIn(await api.login(values.email, values.password));
     } catch (err) {
       const message =
-        err instanceof ApiError && err.status === 401
+        err instanceof ApiError && err.status === 401 && !/google/i.test(err.message)
           ? "Incorrect email or password."
           : err instanceof Error
             ? err.message
@@ -108,7 +128,14 @@ export default function LoginPage() {
       {googleSignInEnabled && (
         <>
           <OrDivider />
-          <GoogleButton text="signin_with" onCredential={onGoogle} />
+          {pendingGoogle ? (
+            <FinishGoogleSignUp
+              onCreate={createFromGoogle}
+              onCancel={() => setPendingGoogle(null)}
+            />
+          ) : (
+            <GoogleButton text="signin_with" onCredential={onGoogle} />
+          )}
         </>
       )}
 

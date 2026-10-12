@@ -69,6 +69,16 @@ function initializeOnce(gsi: Gsi["accounts"]["id"]) {
 
 export const googleSignInEnabled = CLIENT_ID !== "";
 
+// Google refuses to sign anyone in from inside another app's built-in browser
+// ("403 disallowed_useragent"), and links shared on Messenger or Facebook open
+// in exactly that. Those visitors are told to open the page in a real browser.
+const IN_APP_BROWSER =
+  /FBAN|FBAV|FB_IAB|FBIOS|Messenger|Instagram|Line\/|MicroMessenger|Snapchat|TikTok|musical_ly|BytedanceWebview|; wv\)/i;
+
+type ButtonState = "loading" | "ready" | "failed";
+
+const noSubscribe = () => () => {};
+
 export function GoogleButton({
   text,
   onCredential,
@@ -77,26 +87,34 @@ export function GoogleButton({
   onCredential: (credential: string) => void;
 }) {
   const ref = React.useRef<HTMLDivElement>(null);
-  // Always hand GIS the latest handler (and so the latest form state).
-  React.useEffect(() => {
-    currentHandler = onCredential;
-  }, [onCredential]);
-  React.useEffect(
-    () => () => {
-      currentHandler = null;
-    },
-    [],
+  const [state, setState] = React.useState<ButtonState>("loading");
+  // Read after hydration only: the server has no user agent to test.
+  const inApp = React.useSyncExternalStore(
+    noSubscribe,
+    () => IN_APP_BROWSER.test(navigator.userAgent),
+    () => false,
   );
 
+  // Always hand GIS the latest handler (and so the latest form state). The
+  // cleanup only clears the slot if it is still ours, so a page that unmounts
+  // after the next one mounted cannot switch the next one's button off.
   React.useEffect(() => {
-    if (!CLIENT_ID) return;
+    currentHandler = onCredential;
+    return () => {
+      if (currentHandler === onCredential) currentHandler = null;
+    };
+  }, [onCredential]);
+
+  React.useEffect(() => {
+    if (!CLIENT_ID || inApp) return;
     let cancelled = false;
     let observer: ResizeObserver | null = null;
     loadScript()
       .then(() => {
         const el = ref.current;
         const gsi = window.google?.accounts.id;
-        if (cancelled || !el || !gsi) return;
+        if (cancelled || !el) return;
+        if (!gsi) throw new Error("Google sign-in did not start");
         initializeOnce(gsi);
         // Google draws the button at a fixed pixel width, so it is redrawn
         // when the column changes size (a phone turned upright would
@@ -121,17 +139,28 @@ export function GoogleButton({
         draw();
         observer = new ResizeObserver(draw);
         observer.observe(el);
+        setState("ready");
       })
       .catch(() => {
-        /* No button is better than a broken one; email sign-in still works. */
+        // Usually an ad or tracker blocker, or a network that blocks Google.
+        if (!cancelled) setState("failed");
       });
     return () => {
       cancelled = true;
       observer?.disconnect();
     };
-  }, [text]);
+  }, [text, inApp]);
 
   if (!CLIENT_ID) return null;
+  if (inApp) return <InAppBrowserNotice />;
+  if (state === "failed") {
+    return (
+      <p className="rounded-xl border border-border bg-card p-4 text-center text-sm text-muted-foreground">
+        Google sign-in couldn&apos;t load here. An ad blocker or your network may be
+        stopping it. Use your email and password, or try another browser.
+      </p>
+    );
+  }
   // contain: inline-size stops the drawn iframe from setting the column's
   // minimum width, so the column can shrink and the observer can redraw.
   return (
@@ -139,6 +168,34 @@ export function GoogleButton({
       ref={ref}
       className="flex min-h-[44px] w-full justify-center overflow-hidden [contain:inline-size]"
     />
+  );
+}
+
+function InAppBrowserNotice() {
+  const [copied, setCopied] = React.useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setCopied(true);
+    } catch {
+      /* Some in-app browsers block the clipboard; the steps above still work. */
+    }
+  };
+  return (
+    <div className="rounded-xl border border-border bg-card p-4 text-sm text-muted-foreground">
+      <p className="font-medium text-foreground">Google sign-in doesn&apos;t work inside this app.</p>
+      <p className="mt-1">
+        Open this page in Chrome or Safari: tap the <span aria-hidden>⋮</span> or share menu
+        and choose &ldquo;Open in browser&rdquo;. Email and password work here too.
+      </p>
+      <button
+        type="button"
+        onClick={copy}
+        className="mt-3 text-xs font-medium text-foreground underline underline-offset-4"
+      >
+        {copied ? "Link copied. Paste it into your browser." : "Copy link to this page"}
+      </button>
+    </div>
   );
 }
 

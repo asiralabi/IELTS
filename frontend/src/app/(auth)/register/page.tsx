@@ -13,6 +13,7 @@ import { useAuth } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Input, Label, FieldError } from "@/components/ui/input";
 import { GoogleButton, OrDivider, googleSignInEnabled } from "@/components/auth/google-button";
+import { ConsentText } from "@/components/auth/consent";
 
 const schema = z.object({
   full_name: z.string().min(2, "Tell us your name"),
@@ -36,6 +37,8 @@ export default function RegisterPage() {
     register,
     handleSubmit,
     control,
+    setError,
+    clearErrors,
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -44,21 +47,42 @@ export default function RegisterPage() {
 
   const accepted = useWatch({ control, name: "accept_terms" }) === true;
 
-  const onGoogle = async (credential: string) => {
-    if (!accepted) {
-      toast.error("Please read and accept the Terms and Privacy Policy first.");
-      return;
-    }
+  // A Google credential that came back before the consent box was ticked.
+  // Google's ID tokens stay valid for an hour, so it is held, not thrown away.
+  const [pendingGoogle, setPendingGoogle] = React.useState<string | null>(null);
+  const [googleBusy, setGoogleBusy] = React.useState(false);
+
+  React.useEffect(() => {
+    if (accepted) clearErrors("accept_terms");
+  }, [accepted, clearErrors]);
+
+  const createFromGoogle = async (credential: string) => {
+    setGoogleBusy(true);
     try {
-      const tokens = await api.googleLogin(credential, accepted);
+      const tokens = await api.googleLogin(credential, true);
       setTokens(tokens.access_token, tokens.refresh_token);
       const user = await api.me();
       setUser(user);
-      toast.success("Account created — welcome aboard!");
+      toast.success(`Welcome to Oratio${user.full_name ? `, ${user.full_name}` : ""}!`);
       router.push("/dashboard");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Google sign-up failed.");
+      setPendingGoogle(null);
+      toast.error(
+        err instanceof Error ? `${err.message} Please try Google again.` : "Google sign-up failed.",
+      );
+    } finally {
+      setGoogleBusy(false);
     }
+  };
+
+  const onGoogle = (credential: string) => {
+    if (accepted) {
+      void createFromGoogle(credential);
+      return;
+    }
+    setPendingGoogle(credential);
+    setError("accept_terms", { message: "Tick this box to finish signing up with Google." });
+    document.getElementById("accept_terms")?.focus();
   };
 
   const onSubmit = async (values: FormValues) => {
@@ -143,19 +167,7 @@ export default function RegisterPage() {
               className="mt-1 size-4 shrink-0 accent-[var(--primary)]"
               {...register("accept_terms")}
             />
-            <span>
-              I have read and agree to the{" "}
-              <Link href="/terms" target="_blank" className="text-foreground underline underline-offset-4">
-                Terms
-              </Link>{" "}
-              and{" "}
-              <Link href="/privacy" target="_blank" className="text-foreground underline underline-offset-4">
-                Privacy Policy
-              </Link>
-              , including my essays and recordings being processed by the service
-              providers named there, some outside Bangladesh. I am 18 or older, or
-              my parent or guardian agrees.
-            </span>
+            <ConsentText />
           </label>
           <FieldError message={errors.accept_terms?.message} />
         </div>
@@ -167,15 +179,19 @@ export default function RegisterPage() {
       {googleSignInEnabled && (
         <>
           <OrDivider />
-          {/* Google signs you up in one click, so the same consent box gates it. */}
-          {/* inert, not just pointer-events: the iframe is still reachable by Tab otherwise. */}
-          <div className={accepted ? "" : "opacity-40"} inert={!accepted}>
+          {pendingGoogle ? (
+            <Button
+              type="button"
+              className="w-full"
+              size="lg"
+              disabled={!accepted}
+              loading={googleBusy}
+              onClick={() => createFromGoogle(pendingGoogle)}
+            >
+              Finish signing up with Google
+            </Button>
+          ) : (
             <GoogleButton text="signup_with" onCredential={onGoogle} />
-          </div>
-          {!accepted && (
-            <p className="mt-2 text-center text-xs text-muted-foreground">
-              Tick the box above to sign up with Google.
-            </p>
           )}
         </>
       )}
