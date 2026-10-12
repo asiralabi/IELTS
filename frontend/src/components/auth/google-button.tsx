@@ -132,7 +132,14 @@ export function GoogleButton({
   }, [text]);
 
   if (!CLIENT_ID) return null;
-  return <div ref={ref} className="flex min-h-[44px] w-full justify-center" />;
+  // contain: inline-size stops the drawn iframe from setting the column's
+  // minimum width, so the column can shrink and the observer can redraw.
+  return (
+    <div
+      ref={ref}
+      className="flex min-h-[44px] w-full justify-center overflow-hidden [contain:inline-size]"
+    />
+  );
 }
 
 export function OrDivider() {
