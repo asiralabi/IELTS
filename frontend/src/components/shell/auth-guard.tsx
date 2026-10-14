@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/store";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import { syncUserState } from "@/lib/user-state";
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
@@ -28,9 +28,16 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
           setUser(fresh);
           setReady(true);
         })
-        .catch(() => {
-          logout();
-          router.replace("/login");
+        .catch((err) => {
+          // Only a rejected session signs the student out. A dropped mobile
+          // connection, or a reload that cancels this request mid-flight, is
+          // not a reason to lose their sign-in.
+          if (err instanceof ApiError && err.status === 401) {
+            logout();
+            router.replace("/login");
+            return;
+          }
+          setReady(true);
         });
       // Bring this account's saved progress down (and anything made offline up).
       syncUserState().catch(() => {});
