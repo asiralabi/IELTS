@@ -26,6 +26,7 @@ from app.models import (
     PracticeAttempt,
     SpeakingSubmission,
     User,
+    UserState,
     WeaknessProfile,
     WritingSubmission,
 )
@@ -68,6 +69,7 @@ def export_user_data(db: Session, user: User) -> dict[str, Any]:
         "weakness_profile": rows(WeaknessProfile, WeaknessProfile.user_id),
         "feedback": rows(Feedback, Feedback.user_id),
         "consents": rows(Consent, Consent.user_id),
+        "saved_progress": rows(UserState, UserState.user_id),
     }
 
 
@@ -98,5 +100,6 @@ def delete_user_data(db: Session, user: User) -> None:
     db.execute(delete(GeneratedQuestion).where(GeneratedQuestion.user_id == uid))
     db.execute(delete(Feedback).where(Feedback.user_id == uid))
     db.execute(delete(Consent).where(Consent.user_id == uid))
+    db.execute(delete(UserState).where(UserState.user_id == uid))
     db.delete(user)
     db.commit()

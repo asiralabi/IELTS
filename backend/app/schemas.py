@@ -38,6 +38,9 @@ class Token(BaseModel):
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
+    # Sent with a sign-in so the browser does not need a second round trip
+    # to /auth/me before it can show the dashboard.
+    user: UserOut | None = None
 
 
 class DeleteAccountRequest(BaseModel):

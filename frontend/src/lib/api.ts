@@ -200,6 +200,11 @@ export const api = {
 
   me: () => request<User>("/auth/me"),
 
+  // Cambridge ticks and vocabulary cards, kept per account (lib/user-state.ts).
+  userState: () => request<Record<string, Record<string, unknown>>>("/progress/state"),
+  saveUserState: (key: string, value: Record<string, unknown>) =>
+    request<Record<string, unknown>>(`/progress/state/${key}`, { method: "PUT", body: value }),
+
   // Everything the server holds about the signed-in student, and the right to
   // erase it (Bangladesh PDPO 2025; GDPR for anyone using Oratio from the EU/UK).
   exportMyData: () => request<Record<string, unknown>>("/auth/me/export"),

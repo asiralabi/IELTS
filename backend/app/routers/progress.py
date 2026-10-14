@@ -1,7 +1,9 @@
 from collections import OrderedDict
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+import json
+
+from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.agents import feedback, weakness
@@ -12,6 +14,7 @@ from app.models import (
     PracticeAttempt,
     SpeakingSubmission,
     User,
+    UserState,
     WritingSubmission,
 )
 
@@ -199,3 +202,41 @@ async def get_study_plan(
         raise HTTPException(status_code=502, detail="LLM returned invalid output")
     _cache_set(_study_plan_cache, key, result)
     return result
+
+
+# Progress the browser shows from its own copy, mirrored here per account so it
+# survives a sign-out and follows the student to another device.
+_STATE_KEYS = {"cambridge", "vocab"}
+_STATE_MAX_BYTES = 64_000
+
+
+@router.get("/state")
+async def get_state(
+    db: Session = Depends(get_db), user: User = Depends(get_current_user)
+) -> dict[str, dict]:
+    rows = db.query(UserState).filter(UserState.user_id == user.id).all()
+    return {r.key: r.value for r in rows}
+
+
+@router.put("/state/{key}")
+async def put_state(
+    key: str,
+    value: dict[str, Any] = Body(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict[str, Any]:
+    if key not in _STATE_KEYS:
+        raise HTTPException(status_code=404, detail="Unknown progress key")
+    if len(json.dumps(value)) > _STATE_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="Progress record too large")
+    row = (
+        db.query(UserState)
+        .filter(UserState.user_id == user.id, UserState.key == key)
+        .first()
+    )
+    if row is None:
+        db.add(UserState(user_id=user.id, key=key, value=value))
+    else:
+        row.value = value
+    db.commit()
+    return value

@@ -7,6 +7,7 @@ import { Topbar } from "@/components/shell/topbar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ProgressBar } from "@/components/ui/progress";
+import { pushUserState } from "@/lib/user-state";
 
 interface Card {
   word: string;
@@ -35,11 +36,15 @@ const DECK: Card[] = [
 type Verdict = "known" | "learning";
 
 const STORAGE_KEY = "ai-ielts-vocab";
-const emptySubscribe = () => () => {};
+// Re-read when sign-in brings the account's saved cards down (lib/user-state.ts).
+const subscribe = (onChange: () => void) => {
+  window.addEventListener(STORAGE_KEY, onChange);
+  return () => window.removeEventListener(STORAGE_KEY, onChange);
+};
 
-function loadVerdicts(): Record<string, Verdict> {
+function parseVerdicts(raw: string): Record<string, Verdict> {
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "{}");
+    return JSON.parse(raw);
   } catch {
     return {};
   }
@@ -48,12 +53,12 @@ function loadVerdicts(): Record<string, Verdict> {
 export default function VocabularyPage() {
   const [index, setIndex] = React.useState(0);
   const [flipped, setFlipped] = React.useState(false);
-  const mounted = React.useSyncExternalStore(
-    emptySubscribe,
-    () => true,
-    () => false
+  const raw = React.useSyncExternalStore(
+    subscribe,
+    () => localStorage.getItem(STORAGE_KEY) ?? "{}",
+    () => "{}"
   );
-  const stored = React.useMemo(() => (mounted ? loadVerdicts() : {}), [mounted]);
+  const stored = React.useMemo(() => parseVerdicts(raw), [raw]);
   const [overrides, setOverrides] = React.useState<Record<string, Verdict> | null>(null);
   const verdicts = overrides ?? stored;
 
@@ -65,6 +70,7 @@ export default function VocabularyPage() {
     const next = { ...verdicts, [card.word]: verdict };
     setOverrides(next);
     localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    pushUserState("vocab", next);
     setFlipped(false);
     setTimeout(() => setIndex((i) => i + 1), 150);
   };

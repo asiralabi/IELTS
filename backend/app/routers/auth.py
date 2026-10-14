@@ -29,6 +29,14 @@ from app.services.account import delete_user_data, export_user_data
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
+def _signed_in(user: User) -> Token:
+    return Token(
+        access_token=create_access_token(user.id),
+        refresh_token=create_refresh_token(user.id),
+        user=UserOut.model_validate(user),
+    )
+
+
 @router.post("/register", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 async def register(payload: UserCreate, db: Session = Depends(get_db)) -> User:
     if db.query(User).filter(User.email == payload.email).first():
@@ -70,10 +78,7 @@ async def login(
         )
     if not user.is_active:
         raise HTTPException(status_code=401, detail="User is inactive")
-    return Token(
-        access_token=create_access_token(user.id),
-        refresh_token=create_refresh_token(user.id),
-    )
+    return _signed_in(user)
 
 
 @router.post("/google", response_model=Token)
@@ -110,10 +115,7 @@ async def google_login(payload: GoogleLoginRequest, db: Session = Depends(get_db
         db.refresh(user)
     if not user.is_active:
         raise HTTPException(status_code=401, detail="User is inactive")
-    return Token(
-        access_token=create_access_token(user.id),
-        refresh_token=create_refresh_token(user.id),
-    )
+    return _signed_in(user)
 
 
 @router.post("/refresh", response_model=Token)
@@ -127,10 +129,7 @@ async def refresh(payload: RefreshRequest, db: Session = Depends(get_db)) -> Tok
         user = None
     if user is None or not user.is_active:
         raise HTTPException(status_code=401, detail="User not found or inactive")
-    return Token(
-        access_token=create_access_token(user.id),
-        refresh_token=create_refresh_token(user.id),
-    )
+    return _signed_in(user)
 
 
 @router.get("/me", response_model=UserOut)

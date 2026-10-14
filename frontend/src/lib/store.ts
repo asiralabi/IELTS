@@ -22,7 +22,17 @@ export const useAuth = create<AuthState>()(
       setTokens: (access, refresh) =>
         set({ accessToken: access, refreshToken: refresh }),
       setUser: (user) => set({ user }),
-      logout: () => set({ accessToken: null, refreshToken: null, user: null }),
+      logout: () => {
+        // Progress is kept on the account (lib/user-state.ts); the local copy
+        // goes, so the next person on a shared computer does not inherit it.
+        try {
+          localStorage.removeItem("ai-ielts-cambridge-progress");
+          localStorage.removeItem("ai-ielts-vocab");
+        } catch {
+          /* private mode */
+        }
+        set({ accessToken: null, refreshToken: null, user: null });
+      },
     }),
     { name: "ai-ielts-auth" }
   )

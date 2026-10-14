@@ -61,7 +61,7 @@ export default function RegisterPage() {
     try {
       const tokens = await api.googleLogin(credential, true);
       setTokens(tokens.access_token, tokens.refresh_token);
-      const user = await api.me();
+      const user = tokens.user ?? (await api.me());
       setUser(user);
       toast.success(`Welcome to Oratio${user.full_name ? `, ${user.full_name}` : ""}!`);
       router.push("/dashboard");
@@ -90,7 +90,7 @@ export default function RegisterPage() {
       await api.register(values);
       const tokens = await api.login(values.email, values.password);
       setTokens(tokens.access_token, tokens.refresh_token);
-      const user = await api.me();
+      const user = tokens.user ?? (await api.me());
       setUser(user);
       toast.success("Account created — welcome aboard!");
       router.push("/dashboard");

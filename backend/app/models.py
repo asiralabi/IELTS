@@ -242,3 +242,20 @@ class Feedback(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, index=True
     )
+
+
+class UserState(Base):
+    """Small bits of progress the browser used to keep alone: which Cambridge
+    tests are done, which vocabulary cards are known. Kept here so they follow
+    the student to another device and survive a sign-out."""
+
+    __tablename__ = "user_states"
+    __table_args__ = (UniqueConstraint("user_id", "key", name="uq_user_state_key"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    key: Mapped[str] = mapped_column(String(40))
+    value: Mapped[dict[str, Any]] = mapped_column(JSON)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow
+    )

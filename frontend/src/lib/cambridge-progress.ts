@@ -8,6 +8,8 @@
  *   { [bookId]: { [testNumber]: { reading?: {done, timestamp, n?}, listening?: ..., writing?: ... } } }
  */
 
+import { pushUserState } from "./user-state";
+
 export type CambridgeSkill = "reading" | "listening" | "writing";
 
 export interface SectionProgress {
@@ -44,6 +46,7 @@ function saveCambridgeProgress(value: CambridgeProgress): void {
   } catch {
     /* ignore quota / private-mode errors */
   }
+  pushUserState("cambridge", value);
 }
 
 export function markCambridgeSectionDone(

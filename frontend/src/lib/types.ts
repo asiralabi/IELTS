@@ -17,6 +17,8 @@ export interface TokenPair {
   access_token: string;
   refresh_token: string;
   token_type: "bearer";
+  /** The signed-in account, so the browser can skip a call to /auth/me. */
+  user?: User;
 }
 
 export interface ChatReply {

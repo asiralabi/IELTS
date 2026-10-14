@@ -10,6 +10,7 @@ import { z } from "zod";
 import { toast } from "sonner";
 import { api, ApiError } from "@/lib/api";
 import { useAuth } from "@/lib/store";
+import type { TokenPair } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Input, Label, FieldError } from "@/components/ui/input";
 import { GoogleButton, OrDivider, googleSignInEnabled } from "@/components/auth/google-button";
@@ -36,11 +37,11 @@ export default function LoginPage() {
   const [pendingGoogle, setPendingGoogle] = React.useState<string | null>(null);
 
   const signedIn = async (
-    tokens: { access_token: string; refresh_token: string },
+    tokens: TokenPair,
     greeting = "Welcome back",
   ) => {
     setTokens(tokens.access_token, tokens.refresh_token);
-    const user = await api.me();
+    const user = tokens.user ?? (await api.me());
     setUser(user);
     toast.success(`${greeting}${user.full_name ? `, ${user.full_name}` : ""}!`);
     router.push("/dashboard");

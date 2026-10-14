@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Logo } from "@/components/brand/logo";
+import { WarmUp } from "@/components/auth/warm-up";
 
 /**
  * Sign-in and sign-up share one frame: the form on paper, and beside it a
@@ -8,6 +9,7 @@ import { Logo } from "@/components/brand/logo";
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
     <main className="grid min-h-[100dvh] bg-background lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
+      <WarmUp />
       <aside className="relative hidden overflow-hidden bg-secondary text-[#efe9dc] lg:flex lg:flex-col lg:justify-between lg:p-12 xl:p-16">
         <div
           aria-hidden
