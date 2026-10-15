@@ -2,7 +2,8 @@
 
 import * as React from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { type Components } from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { Send, Plus, MessageSquare } from "lucide-react";
 import { LogoMark } from "@/components/brand/logo";
 import { toast } from "sonner";
@@ -14,6 +15,22 @@ import { Textarea } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
 type LocalMessage = Pick<ChatMessage, "role" | "content"> & { id: string };
+
+// The tutor answers in GitHub-flavoured markdown: score tables, question
+// tables, headings. A table wider than a phone scrolls inside its own box
+// rather than stretching the bubble.
+const markdownComponents: Components = {
+  table: ({ children }) => (
+    <div className="table-scroll">
+      <table>{children}</table>
+    </div>
+  ),
+  a: ({ href, children }) => (
+    <a href={href} target="_blank" rel="noreferrer">
+      {children}
+    </a>
+  ),
+};
 
 function ThinkingDots() {
   return (
@@ -163,10 +180,12 @@ export default function ChatPage() {
                   >
                     {m.role === "assistant" ? (
                       <div className="prose-chat">
-                        <ReactMarkdown>{m.content}</ReactMarkdown>
+                        <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                          {m.content}
+                        </ReactMarkdown>
                       </div>
                     ) : (
-                      m.content
+                      <span className="whitespace-pre-wrap">{m.content}</span>
                     )}
                   </div>
                 </motion.div>
